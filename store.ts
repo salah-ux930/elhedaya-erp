@@ -4,8 +4,8 @@ import {
   Store, StockTransaction, Employee, FinancialAccount, 
   Transaction, FundingEntity, ShiftRecord, LabTest, AuditLog,
   User, Permission
-} from './types';
-import { supabase } from './supabase';
+} from './types.ts';
+import { supabase } from './supabase.ts';
 
 export class DB {
   static patients: Patient[] = [];
@@ -145,7 +145,7 @@ export class DB {
   // --- Audit Logs ---
   static async log(action: string, details: string) {
     const { error } = await supabase.from('audit_logs').insert([{
-      user_id: 'current-user', // Should be dynamic in production
+      user_id: 'current-user',
       action,
       details,
       timestamp: new Date().toISOString()

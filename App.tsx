@@ -1,14 +1,15 @@
+
 import React, { useState } from 'react';
-import Layout from './components/Layout';
-import DashboardModule from './modules/Dashboard';
-import ReceptionModule from './modules/Reception';
-import PatientModule from './modules/Patients';
-import BillingModule from './modules/Billing';
-import PayrollModule from './modules/Payroll';
-import InventoryModule from './modules/Inventory';
-import FinanceModule from './modules/Finance';
-import SetupModule from './modules/Setup';
-import UsersModule from './modules/Users';
+import Layout from './components/Layout.tsx';
+import DashboardModule from './modules/Dashboard.tsx';
+import ReceptionModule from './modules/Reception.tsx';
+import PatientModule from './modules/Patients.tsx';
+import BillingModule from './modules/Billing.tsx';
+import PayrollModule from './modules/Payroll.tsx';
+import InventoryModule from './modules/Inventory.tsx';
+import FinanceModule from './modules/Finance.tsx';
+import SetupModule from './modules/Setup.tsx';
+import UsersModule from './modules/Users.tsx';
 
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');

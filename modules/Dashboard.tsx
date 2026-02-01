@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
-import { AR } from '../constants';
-import { DB } from '../store';
+import { AR } from '../constants.ts';
+import { DB } from '../store.ts';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area 
 } from 'recharts';
@@ -35,10 +35,9 @@ const DashboardModule: React.FC = () => {
       try {
         const patients = await DB.getPatients();
         const funding = await DB.getFundingEntities();
-        // Here we simulate some stats until full logic is in place
         setStats({
           patientsCount: patients?.length || 0,
-          sessionsToday: 12, // Example
+          sessionsToday: 12,
           fundingCount: funding?.length || 0,
           delayedInvoices: '1,250 ج.م'
         });
