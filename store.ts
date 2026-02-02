@@ -8,6 +8,7 @@ import {
 import { supabase } from './supabase.ts';
 
 export class DB {
+  static currentUser: any = null;
   static patients: Patient[] = [];
   static funding: FundingEntity[] = [];
   static services: Service[] = [];
@@ -45,6 +46,7 @@ export class DB {
   static async addSession(s: Partial<DialysisSession>) {
     const { data, error } = await supabase.from('dialysis_sessions').insert([s]).select();
     if (error) throw error;
+    await this.log('تسجيل حضور', `بدء جلسة للمريض ID: ${s.patientId}`);
     return data[0];
   }
 
@@ -56,96 +58,54 @@ export class DB {
     return data;
   }
 
-  // --- Services ---
-  static async getServices() {
-    const { data, error } = await supabase.from('services').select('*');
-    if (error) throw error;
-    this.services = data || [];
-    return data;
-  }
-
-  // --- Inventory ---
-  static async getProducts() {
-    const { data, error } = await supabase.from('products').select('*');
-    if (error) throw error;
-    this.products = data || [];
-    return data;
-  }
-
-  static async getStores() {
-    const { data, error } = await supabase.from('stores').select('*');
-    if (error) throw error;
-    this.stores = data || [];
-    return data;
-  }
-
-  // --- HR & Payroll ---
-  static async getEmployees() {
-    const { data, error } = await supabase.from('employees').select('*');
-    if (error) throw error;
-    this.employees = data || [];
-    return data;
-  }
-
-  static async getShifts() {
-    const { data, error } = await supabase.from('shifts').select('*');
-    if (error) throw error;
-    this.shifts = data || [];
-    return data;
-  }
-
-  static async resetShifts() {
-    const { error } = await supabase.from('shifts').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    if (error) throw error;
-    await this.log('تصفير الشفتات', 'تم حذف جميع سجلات الشفتات');
-  }
-
-  // --- Finance ---
-  static async getAccounts() {
-    const { data, error } = await supabase.from('financial_accounts').select('*');
-    if (error) throw error;
-    this.accounts = data || [];
-    return data;
-  }
-
-  static async getTransactions() {
-    const { data, error } = await supabase.from('transactions').select('*').order('date', { ascending: false });
-    if (error) throw error;
-    this.transactions = data || [];
-    return data;
-  }
-
-  static async addFinanceTx(tx: Partial<Transaction>) {
-    const { data, error } = await supabase.from('transactions').insert([tx]).select();
-    if (error) throw error;
-    return data[0];
-  }
-
   // --- Users ---
-  static async getUsers() {
-    const { data, error } = await supabase.from('system_users').select('*');
-    if (error) throw error;
-    this.users = data || [];
-    return data;
-  }
-
-  static async addUser(user: Partial<User>) {
+  // Fix for: Property 'addUser' does not exist on type 'typeof DB'.
+  static async addUser(user: User) {
     const { data, error } = await supabase.from('system_users').insert([user]).select();
     if (error) throw error;
+    this.users.push(user);
     await this.log('إضافة مستخدم', `تمت إضافة المستخدم ${user.name}`);
-    return data[0];
+    return data?.[0];
   }
 
+  // Fix for: Property 'deleteUser' does not exist on type 'typeof DB'.
   static async deleteUser(id: string) {
     const { error } = await supabase.from('system_users').delete().eq('id', id);
     if (error) throw error;
-    await this.log('حذف مستخدم', `تم حذف المستخدم ذو المعرف ${id}`);
+    this.users = this.users.filter(u => u.id !== id);
+    await this.log('حذف مستخدم', `تم حذف المستخدم ID: ${id}`);
+  }
+
+  // --- Finance ---
+  // Fix for: Property 'addFinanceTx' does not exist on type 'typeof DB'.
+  static async addFinanceTx(tx: Transaction) {
+    const { data, error } = await supabase.from('transactions').insert([tx]).select();
+    if (error) throw error;
+    this.transactions.push(tx);
+    // Locally update balance if account exists
+    const acc = this.accounts.find(a => a.id === tx.accountId);
+    if (acc) {
+      if (tx.type === 'INCOME') acc.balance += tx.amount;
+      else acc.balance -= tx.amount;
+    }
+    await this.log('حركة مالية', `تم تسجيل ${tx.type === 'INCOME' ? 'إيراد' : 'مصروف'} بقيمة ${tx.amount}`);
+    return data?.[0];
+  }
+
+  // --- Payroll ---
+  // Fix for: Property 'resetShifts' does not exist on type 'typeof DB'.
+  static async resetShifts() {
+    const { error } = await supabase.from('shifts').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) throw error;
+    this.shifts = [];
+    await this.log('تصفير الشفتات', 'تم حذف جميع سجلات الشفتات');
   }
 
   // --- Audit Logs ---
   static async log(action: string, details: string) {
+    const user = JSON.parse(localStorage.getItem('dialysis_user') || '{}');
     const { error } = await supabase.from('audit_logs').insert([{
-      user_id: 'current-user',
+      user_id: user.name || 'غير معروف',
       action,
       details,
       timestamp: new Date().toISOString()
