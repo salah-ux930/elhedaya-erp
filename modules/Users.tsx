@@ -1,8 +1,9 @@
+
 import React, { useState } from 'react';
-import { AR, PERMISSIONS_MAP } from '../constants';
-import { DB } from '../store';
-import { User, Permission } from '../types';
-import { UserCog, UserPlus, Search, Trash2, Key, UserCheck, Shield, Check } from 'lucide-react';
+import { AR, PERMISSIONS_MAP } from '../constants.ts';
+import { DB } from '../store.ts';
+import { User, Permission } from '../types.ts';
+import { UserCog, UserPlus, Search, Trash2, Key, UserCheck, Shield, Check, X } from 'lucide-react';
 
 const UsersModule: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -105,18 +106,21 @@ const UsersModule: React.FC = () => {
       </div>
 
       {showAddModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden animate-in zoom-in-95">
-            <div className="p-6 bg-primary-600 text-white flex justify-between items-center">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
+            {/* Header - Fixed */}
+            <div className="p-6 bg-primary-600 text-white flex justify-between items-center shrink-0">
               <h3 className="text-xl font-bold flex items-center gap-2">
                 <UserCheck size={22} /> {AR.newUser}
               </h3>
-              <button onClick={() => setShowAddModal(false)} className="text-white hover:opacity-75">
-                <UserPlus size={24} className="rotate-45" />
+              <button onClick={() => setShowAddModal(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                <X size={24} />
               </button>
             </div>
-            <div className="p-8">
-              <form onSubmit={handleAddUser} className="space-y-6">
+
+            {/* Scrollable Body */}
+            <div className="p-8 overflow-y-auto custom-scrollbar">
+              <form id="addUserForm" onSubmit={handleAddUser} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-bold text-gray-600 mb-1">{AR.name}</label>
@@ -167,16 +171,30 @@ const UsersModule: React.FC = () => {
                     className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none"
                   />
                 </div>
-
-                <div className="flex gap-3 pt-4 border-t">
-                  <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-4 bg-gray-100 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors">إلغاء</button>
-                  <button type="submit" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors">حفظ الحساب</button>
-                </div>
               </form>
+            </div>
+
+            {/* Footer - Fixed */}
+            <div className="p-6 border-t bg-gray-50 flex gap-3 shrink-0">
+              <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">إلغاء</button>
+              <button form="addUserForm" type="submit" className="flex-1 py-3 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors">حفظ الحساب</button>
             </div>
           </div>
         </div>
       )}
+      
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #0ea5e9;
+          border-radius: 10px;
+        }
+      `}</style>
     </div>
   );
 };

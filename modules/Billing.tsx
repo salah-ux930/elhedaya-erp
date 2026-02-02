@@ -1,8 +1,9 @@
+
 import React, { useState } from 'react';
-import { AR, ROOMS } from '../constants';
-import { DB } from '../store';
-import { Invoice } from '../types';
-import { FileDown, Filter, Printer, MoreVertical, CheckCircle, Clock, Plus, Search } from 'lucide-react';
+import { AR, ROOMS } from '../constants.ts';
+import { DB } from '../store.ts';
+import { Invoice } from '../types.ts';
+import { FileDown, Filter, Printer, MoreVertical, CheckCircle, Clock, Plus, Search, X } from 'lucide-react';
 
 const BillingModule: React.FC = () => {
   const [filterRoom, setFilterRoom] = useState('');
@@ -118,16 +119,19 @@ const BillingModule: React.FC = () => {
       </div>
 
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-xl overflow-hidden animate-in fade-in zoom-in-95">
-            <div className="p-6 bg-primary-600 text-white flex justify-between items-center">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
+            {/* Header */}
+            <div className="p-6 bg-primary-600 text-white flex justify-between items-center shrink-0">
               <h3 className="text-xl font-bold">إنشاء فاتورة جديدة</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-white hover:opacity-75">
-                <Plus size={24} className="rotate-45" />
+              <button onClick={() => setShowCreateModal(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                <X size={24} />
               </button>
             </div>
-            <div className="p-8">
-              <form className="space-y-6">
+
+            {/* Body */}
+            <div className="p-8 overflow-y-auto custom-scrollbar">
+              <form id="createInvoiceForm" className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="block text-sm font-bold text-gray-600 mb-2">اختيار المريض</label>
@@ -168,20 +172,30 @@ const BillingModule: React.FC = () => {
                   <div className="text-primary-900 font-bold">الإجمالي المستحق</div>
                   <div className="text-2xl font-bold text-primary-600">500.00 ج.م</div>
                 </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 py-4 bg-gray-100 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors">
-                    إلغاء
-                  </button>
-                  <button type="button" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors">
-                    حفظ الفاتورة
-                  </button>
-                </div>
               </form>
+            </div>
+
+            {/* Footer */}
+            <div className="p-6 border-t bg-gray-50 flex gap-3 shrink-0">
+              <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 py-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">إلغاء</button>
+              <button form="createInvoiceForm" type="submit" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors">حفظ الفاتورة</button>
             </div>
           </div>
         </div>
       )}
+      
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #0ea5e9;
+          border-radius: 10px;
+        }
+      `}</style>
     </div>
   );
 };

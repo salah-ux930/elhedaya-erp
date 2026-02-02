@@ -1,11 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
-import { AR, ROOMS } from '../constants';
-import { DB } from '../store';
-import { DialysisSession, Patient } from '../types';
+import { AR, ROOMS } from '../constants.ts';
+import { DB } from '../store.ts';
+import { DialysisSession, Patient } from '../types.ts';
 import { 
   UserPlus, Search, Clock, Activity, ArrowRight, 
-  CheckCircle2, AlertCircle, MapPin, Scale, HeartPulse, MoreVertical, Loader2 
+  CheckCircle2, AlertCircle, MapPin, Scale, HeartPulse, MoreVertical, Loader2, X 
 } from 'lucide-react';
 
 const ReceptionModule: React.FC = () => {
@@ -143,7 +143,7 @@ const ReceptionModule: React.FC = () => {
               />
             </div>
 
-            <div className="space-y-2 max-h-96 overflow-y-auto">
+            <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
               {searchTerm && filteredPatients.map(p => (
                 <button 
                   key={p.id}
@@ -164,53 +164,71 @@ const ReceptionModule: React.FC = () => {
       </div>
 
       {showCheckInModal && selectedPatient && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95">
-            <div className="p-6 bg-primary-600 text-white flex justify-between items-center">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300">
+            {/* Header */}
+            <div className="p-6 bg-primary-600 text-white flex justify-between items-center shrink-0">
               <div>
                 <h3 className="text-xl font-bold">تسجيل دخول للجلسة</h3>
                 <p className="text-sm opacity-80 mt-1">{selectedPatient.name}</p>
               </div>
-              <button onClick={() => setShowCheckInModal(false)} className="hover:opacity-75 transition-opacity">
-                <AlertCircle size={24} className="rotate-45" />
+              <button onClick={() => setShowCheckInModal(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                <X size={24} />
               </button>
             </div>
             
-            <form onSubmit={confirmCheckIn} className="p-8 space-y-6">
-              <div className="grid grid-cols-2 gap-6">
-                <div className="space-y-2">
-                  <label className="text-sm font-bold text-gray-600 flex items-center gap-2">
-                    <Scale size={16} /> {AR.weightBefore} (كجم)
-                  </label>
-                  <input name="weightBefore" type="number" step="0.1" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="00.0" />
+            {/* Body */}
+            <div className="p-8 overflow-y-auto custom-scrollbar">
+              <form id="checkInForm" onSubmit={confirmCheckIn} className="space-y-6">
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-gray-600 flex items-center gap-2">
+                      <Scale size={16} /> {AR.weightBefore} (كجم)
+                    </label>
+                    <input name="weightBefore" type="number" step="0.1" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="00.0" />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-gray-600 flex items-center gap-2">
+                      <HeartPulse size={16} /> {AR.bp}
+                    </label>
+                    <input name="bp" type="text" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="120/80" />
+                  </div>
                 </div>
+
                 <div className="space-y-2">
-                  <label className="text-sm font-bold text-gray-600 flex items-center gap-2">
-                    <HeartPulse size={16} /> {AR.bp}
-                  </label>
-                  <input name="bp" type="text" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="120/80" />
+                  <label className="text-sm font-bold text-gray-600">تخصيص الغرفة / الماكينة</label>
+                  <select name="room" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none">
+                    {ROOMS.map(room => (
+                      <option key={room} value={room}>{room}</option>
+                    ))}
+                  </select>
                 </div>
-              </div>
+              </form>
+            </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-bold text-gray-600">تخصيص الغرفة / الماكينة</label>
-                <select name="room" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none">
-                  {ROOMS.map(room => (
-                    <option key={room} value={room}>{room}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="flex gap-3 pt-4 border-t">
-                <button type="button" onClick={() => setShowCheckInModal(false)} className="flex-1 py-4 bg-gray-100 rounded-xl font-bold text-gray-600 hover:bg-gray-200 transition-colors">إلغاء</button>
-                <button type="submit" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors">
-                  تأكيد الحضور وبدء الجلسة
-                </button>
-              </div>
-            </form>
+            {/* Footer */}
+            <div className="p-6 border-t bg-gray-50 flex gap-3 shrink-0">
+              <button type="button" onClick={() => setShowCheckInModal(false)} className="flex-1 py-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">إلغاء</button>
+              <button form="checkInForm" type="submit" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors">
+                تأكيد الحضور وبدء الجلسة
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #0ea5e9;
+          border-radius: 10px;
+        }
+      `}</style>
     </div>
   );
 };
