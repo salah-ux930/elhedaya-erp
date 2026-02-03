@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
-import { AR } from '../constants';
-import { DB } from '../store';
+import { AR } from '../constants.ts';
+import { DB } from '../store.ts';
 import { Users, Upload, Download, RotateCcw, Archive, DollarSign, Wallet } from 'lucide-react';
 
 const PayrollModule: React.FC = () => {
@@ -71,11 +72,11 @@ const PayrollModule: React.FC = () => {
             <div className="flex gap-2">
               <button 
                 onClick={() => {
-                  if(confirm(AR.confirmation)) DB.resetShifts();
+                  if(confirm("هل أنت متأكد من رغبتك في تجهيز المرتبات؟ سيتم تصفير سجلات الشفتات الحالية.")) DB.resetShifts();
                 }}
                 className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-red-100"
               >
-                <RotateCcw size={16} /> {AR.resetData}
+                <RotateCcw size={16} /> {AR.preparePayroll}
               </button>
               <button className="bg-gray-100 text-gray-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-200">
                 <Upload size={16} /> {AR.uploadData}
@@ -118,7 +119,6 @@ const PayrollModule: React.FC = () => {
             <h3 className="font-bold text-lg">بيانات الموظفين الدائمة</h3>
             <button className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold">+ إضافة موظف</button>
           </div>
-          {/* Employee list UI */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
              {DB.employees.map(emp => (
                <div key={emp.id} className="p-4 border rounded-xl flex items-center gap-4 hover:border-primary-300 transition-colors">

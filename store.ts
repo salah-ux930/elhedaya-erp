@@ -50,6 +50,21 @@ export class DB {
     return data[0];
   }
 
+  // --- Products (Inventory) ---
+  static async getProducts() {
+    const { data, error } = await supabase.from('products').select('*').order('name');
+    if (error) throw error;
+    this.products = data || [];
+    return data;
+  }
+
+  static async addProduct(p: Partial<Product>) {
+    const { data, error } = await supabase.from('products').insert([p]).select();
+    if (error) throw error;
+    await this.log('إضافة صنف', `تمت إضافة صنف جديد: ${p.name}`);
+    return data[0];
+  }
+
   // --- Funding ---
   static async getFundingEntities() {
     const { data, error } = await supabase.from('funding_entities').select('*');
@@ -59,7 +74,6 @@ export class DB {
   }
 
   // --- Users ---
-  // Fix for: Property 'addUser' does not exist on type 'typeof DB'.
   static async addUser(user: User) {
     const { data, error } = await supabase.from('system_users').insert([user]).select();
     if (error) throw error;
@@ -68,7 +82,6 @@ export class DB {
     return data?.[0];
   }
 
-  // Fix for: Property 'deleteUser' does not exist on type 'typeof DB'.
   static async deleteUser(id: string) {
     const { error } = await supabase.from('system_users').delete().eq('id', id);
     if (error) throw error;
@@ -77,12 +90,10 @@ export class DB {
   }
 
   // --- Finance ---
-  // Fix for: Property 'addFinanceTx' does not exist on type 'typeof DB'.
   static async addFinanceTx(tx: Transaction) {
     const { data, error } = await supabase.from('transactions').insert([tx]).select();
     if (error) throw error;
     this.transactions.push(tx);
-    // Locally update balance if account exists
     const acc = this.accounts.find(a => a.id === tx.accountId);
     if (acc) {
       if (tx.type === 'INCOME') acc.balance += tx.amount;
@@ -93,12 +104,11 @@ export class DB {
   }
 
   // --- Payroll ---
-  // Fix for: Property 'resetShifts' does not exist on type 'typeof DB'.
   static async resetShifts() {
     const { error } = await supabase.from('shifts').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     if (error) throw error;
     this.shifts = [];
-    await this.log('تصفير الشفتات', 'تم حذف جميع سجلات الشفتات');
+    await this.log('تصفير الشفتات', 'تم حذف جميع سجلات الشفتات لتهيئة المرتبات');
   }
 
   // --- Audit Logs ---

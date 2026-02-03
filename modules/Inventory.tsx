@@ -1,12 +1,45 @@
-import React, { useState } from 'react';
-import { AR } from '../constants';
-import { DB } from '../store';
-import { Package, ArrowLeftRight, TrendingUp, TrendingDown, ClipboardList, Plus, FileText, ArrowRightLeft } from 'lucide-react';
+
+import React, { useState, useEffect } from 'react';
+import { AR } from '../constants.ts';
+import { DB } from '../store.ts';
+import { Product } from '../types.ts';
+import { Package, ArrowLeftRight, TrendingUp, TrendingDown, ClipboardList, Plus, Search, ArrowRightLeft, Loader2, X, Check } from 'lucide-react';
 
 const InventoryModule: React.FC = () => {
   const [activeSubTab, setActiveSubTab] = useState<'stock' | 'transfers' | 'stores'>('stock');
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [moveType, setMoveType] = useState<'ADD' | 'DEDUCT' | 'TRANSFER'>('ADD');
+  
+  // Search & Add logic
+  const [productSearch, setProductSearch] = useState('');
+  const [selectedProductId, setSelectedProductId] = useState('');
+  const [showAddProductInline, setShowAddProductInline] = useState(false);
+  const [isAdding, setIsAdding] = useState(false);
+
+  const filteredProducts = DB.products.filter(p => 
+    p.name.toLowerCase().includes(productSearch.toLowerCase())
+  );
+
+  const handleQuickAddProduct = async () => {
+    if (!productSearch.trim()) return;
+    setIsAdding(true);
+    try {
+      const newProd = await DB.addProduct({
+        name: productSearch,
+        unit: 'قطعة',
+        minStock: 10,
+        price: 0
+      });
+      // Refresh local products (simulated here since we don't have a global state listener)
+      await DB.getProducts();
+      setSelectedProductId(newProd.id);
+      setShowAddProductInline(false);
+    } catch (err) {
+      alert("خطأ أثناء إضافة الصنف");
+    } finally {
+      setIsAdding(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -27,19 +60,19 @@ const InventoryModule: React.FC = () => {
         </div>
         <div className="flex gap-2">
            <button 
-             onClick={() => { setMoveType('ADD'); setShowMoveModal(true); }}
+             onClick={() => { setMoveType('ADD'); setShowMoveModal(true); setProductSearch(''); }}
              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-green-700 shadow-sm"
            >
              <TrendingUp size={16} /> توريد
            </button>
            <button 
-             onClick={() => { setMoveType('DEDUCT'); setShowMoveModal(true); }}
+             onClick={() => { setMoveType('DEDUCT'); setShowMoveModal(true); setProductSearch(''); }}
              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-red-700 shadow-sm"
            >
              <TrendingDown size={16} /> صرف
            </button>
            <button 
-             onClick={() => { setMoveType('TRANSFER'); setShowMoveModal(true); }}
+             onClick={() => { setMoveType('TRANSFER'); setShowMoveModal(true); setProductSearch(''); }}
              className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-primary-700 shadow-sm"
            >
              <ArrowRightLeft size={16} /> تحويل
@@ -83,7 +116,7 @@ const InventoryModule: React.FC = () => {
             <h3 className="font-bold text-lg">قائمة الأرصدة الحالية</h3>
             <button className="text-primary-600 text-sm font-bold border-b border-primary-600 pb-0.5">طباعة جرد عام</button>
           </div>
-          <div className="overflow-x-auto max-h-[600px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300">
+          <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
             <table className="w-full text-right">
               <thead className="bg-gray-50 sticky top-0 z-10">
                 <tr>
@@ -144,51 +177,138 @@ const InventoryModule: React.FC = () => {
       )}
 
       {showMoveModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-2xl shadow-xl p-8 animate-in slide-in-from-bottom-4">
-            <h3 className="text-xl font-bold mb-6 text-gray-800 flex items-center gap-2">
-              {moveType === 'ADD' ? <TrendingUp className="text-green-600" /> : moveType === 'DEDUCT' ? <TrendingDown className="text-red-600" /> : <ArrowRightLeft className="text-primary-600" />}
-              {moveType === 'ADD' ? 'توريد أصناف للمخزن' : moveType === 'DEDUCT' ? 'صرف أصناف من المخزن' : 'تحويل بين المخازن'}
-            </h3>
-            <form className="space-y-4">
-              <div>
-                <label className="block text-sm font-bold text-gray-600 mb-1">المخزن</label>
-                <select className="w-full border rounded-lg p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none">
-                  {DB.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
-              </div>
-              {moveType === 'TRANSFER' && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300">
+            {/* Modal Header */}
+            <div className={`p-6 text-white flex justify-between items-center shrink-0 ${moveType === 'ADD' ? 'bg-green-600' : moveType === 'DEDUCT' ? 'bg-red-600' : 'bg-primary-600'}`}>
+              <h3 className="text-xl font-bold flex items-center gap-2">
+                {moveType === 'ADD' ? <TrendingUp size={24} /> : moveType === 'DEDUCT' ? <TrendingDown size={24} /> : <ArrowRightLeft size={24} />}
+                {moveType === 'ADD' ? 'توريد أصناف للمخزن' : moveType === 'DEDUCT' ? 'صرف أصناف من المخزن' : 'تحويل بين المخازن'}
+              </h3>
+              <button onClick={() => setShowMoveModal(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
+                <X size={24} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-8 overflow-y-auto custom-scrollbar">
+              <form className="space-y-6">
                 <div>
-                  <label className="block text-sm font-bold text-gray-600 mb-1">المخزن المحول إليه</label>
-                  <select className="w-full border rounded-lg p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none">
+                  <label className="block text-sm font-bold text-gray-600 mb-2">المخزن</label>
+                  <select className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none">
                     {DB.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
                   </select>
                 </div>
-              )}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="col-span-2">
-                  <label className="block text-sm font-bold text-gray-600 mb-1">الصنف</label>
-                  <select className="w-full border rounded-lg p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none">
-                    {DB.products.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
+
+                {moveType === 'TRANSFER' && (
+                  <div>
+                    <label className="block text-sm font-bold text-gray-600 mb-2">المخزن المحول إليه</label>
+                    <select className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none">
+                      {DB.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                <div className="space-y-4">
+                  <div className="relative">
+                    <label className="block text-sm font-bold text-gray-600 mb-2">البحث عن الصنف</label>
+                    <div className="relative">
+                      <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                      <input 
+                        type="text" 
+                        placeholder="ابحث بالاسم..." 
+                        className="w-full pr-10 pl-4 py-3 border rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all"
+                        value={productSearch}
+                        onChange={(e) => {
+                          setProductSearch(e.target.value);
+                          setSelectedProductId('');
+                        }}
+                      />
+                    </div>
+                    
+                    {/* Search Results Dropdown */}
+                    {productSearch && !selectedProductId && (
+                      <div className="absolute z-10 w-full mt-2 bg-white border rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
+                        {filteredProducts.map(p => (
+                          <button
+                            key={p.id}
+                            type="button"
+                            onClick={() => {
+                              setSelectedProductId(p.id);
+                              setProductSearch(p.name);
+                            }}
+                            className="w-full text-right px-4 py-3 hover:bg-primary-50 border-b last:border-0 flex items-center justify-between"
+                          >
+                            <span className="font-bold text-gray-700">{p.name}</span>
+                            <span className="text-xs text-gray-400">{p.unit}</span>
+                          </button>
+                        ))}
+                        {filteredProducts.length === 0 && (
+                          <div className="p-4 text-center">
+                            <p className="text-sm text-gray-500 mb-3 italic">الصنف غير موجود بالسيستم</p>
+                            <button 
+                              type="button"
+                              onClick={handleQuickAddProduct}
+                              disabled={isAdding}
+                              className="w-full py-2 bg-primary-100 text-primary-700 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary-200"
+                            >
+                              {isAdding ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
+                              إضافة صنف جديد: {productSearch}
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    
+                    {selectedProductId && (
+                      <div className="mt-2 flex items-center gap-2 text-green-600 bg-green-50 p-2 rounded-lg border border-green-100">
+                        <Check size={16} />
+                        <span className="text-xs font-bold">تم اختيار الصنف بنجاح</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-bold text-gray-600 mb-2">الكمية</label>
+                      <input type="number" required placeholder="0" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-600 mb-2">ملاحظات / رقم الإذن</label>
+                      <input type="text" placeholder="اختياري" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-bold text-gray-600 mb-1">الكمية</label>
-                  <input type="number" required className="w-full border rounded-lg p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-bold text-gray-600 mb-1">ملاحظات / رقم الإذن</label>
-                <textarea className="w-full border rounded-lg p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none h-20"></textarea>
-              </div>
-              <div className="flex gap-3 pt-4">
-                <button type="button" onClick={() => setShowMoveModal(false)} className="flex-1 py-3 bg-gray-100 rounded-lg font-bold text-gray-600">إلغاء</button>
-                <button type="submit" className={`flex-1 py-3 text-white rounded-lg font-bold shadow-md ${moveType === 'ADD' ? 'bg-green-600' : moveType === 'DEDUCT' ? 'bg-red-600' : 'bg-primary-600'}`}>حفظ الحركة</button>
-              </div>
-            </form>
+              </form>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-6 border-t bg-gray-50 flex gap-3 shrink-0">
+              <button type="button" onClick={() => setShowMoveModal(false)} className="flex-1 py-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">إلغاء</button>
+              <button 
+                type="submit" 
+                disabled={!selectedProductId}
+                className={`flex-1 py-4 text-white rounded-xl font-bold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${moveType === 'ADD' ? 'bg-green-600 hover:bg-green-700' : moveType === 'DEDUCT' ? 'bg-red-600 hover:bg-red-700' : 'bg-primary-600 hover:bg-primary-700'}`}
+              >
+                حفظ الحركة
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      <style>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: #f1f1f1;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: #0ea5e9;
+          border-radius: 10px;
+        }
+      `}</style>
     </div>
   );
 };

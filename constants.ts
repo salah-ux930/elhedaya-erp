@@ -1,3 +1,4 @@
+
 export const AR = {
   dashboard: "لوحة التحكم",
   reception: "الاستقبال",
@@ -57,6 +58,7 @@ export const AR = {
   cashAndBank: "الخزينة والبنك",
   reports: "التقارير",
   resetData: "تصفير البيانات",
+  preparePayroll: "تجهيز المرتبات",
   archive: "الأرشفة",
   mainCash: "الخزينة الرئيسية",
   subCash: "عهدة الموظف",
