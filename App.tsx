@@ -4,6 +4,7 @@ import Layout from './components/Layout.tsx';
 import DashboardModule from './modules/Dashboard.tsx';
 import ReceptionModule from './modules/Reception.tsx';
 import PatientModule from './modules/Patients.tsx';
+import LabModule from './modules/Lab.tsx';
 import BillingModule from './modules/Billing.tsx';
 import PayrollModule from './modules/Payroll.tsx';
 import InventoryModule from './modules/Inventory.tsx';
@@ -100,6 +101,7 @@ const App: React.FC = () => {
       case 'dashboard': return <DashboardModule />;
       case 'reception': return <ReceptionModule />;
       case 'patients': return <PatientModule />;
+      case 'lab': return <LabModule />;
       case 'billing': return <BillingModule />;
       case 'employees': return <PayrollModule />;
       case 'inventory': return <InventoryModule />;

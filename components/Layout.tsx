@@ -1,8 +1,9 @@
+
 import React, { useState } from 'react';
 import { AR } from '../constants';
 import { 
   LayoutDashboard, Users, CreditCard, Users2, Package, 
-  Wallet, Settings, LogOut, Menu, X, Bell, UserCheck, Stethoscope
+  Wallet, Settings, LogOut, Menu, X, Bell, UserCheck, Stethoscope, FlaskConical
 } from 'lucide-react';
 
 interface SidebarItemProps {
@@ -39,6 +40,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
     { id: 'dashboard', label: AR.dashboard, icon: <LayoutDashboard size={22} /> },
     { id: 'reception', label: AR.reception, icon: <Stethoscope size={22} /> },
     { id: 'patients', label: AR.patients, icon: <Users size={22} /> },
+    { id: 'lab', label: AR.lab, icon: <FlaskConical size={22} /> },
     { id: 'billing', label: AR.billing, icon: <CreditCard size={22} /> },
     { id: 'employees', label: AR.employees, icon: <Users2 size={22} /> },
     { id: 'inventory', label: AR.inventory, icon: <Package size={22} /> },

@@ -3,6 +3,7 @@ export const AR = {
   dashboard: "لوحة التحكم",
   reception: "الاستقبال",
   patients: "المرضى",
+  lab: "المعمل",
   billing: "الفواتير",
   employees: "الموظفين",
   payroll: "الرواتب",
@@ -74,7 +75,10 @@ export const AR = {
   inSession: "في الجلسة",
   completed: "مكتمل",
   weightBefore: "الوزن قبل",
-  bp: "ضغط الدم"
+  bp: "ضغط الدم",
+  testName: "اسم التحليل",
+  result: "النتيجة",
+  normalRange: "المعدل الطبيعي"
 };
 
 export const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
@@ -84,6 +88,7 @@ export const PERMISSIONS_MAP: Record<string, string> = {
   VIEW_DASHBOARD: "مشاهدة لوحة التحكم",
   MANAGE_RECEPTION: "إدارة الاستقبال",
   MANAGE_PATIENTS: "إدارة المرضى",
+  MANAGE_LAB: "إدارة المعمل",
   MANAGE_BILLING: "إدارة الفواتير",
   MANAGE_PAYROLL: "إدارة الموظفين والرواتب",
   MANAGE_INVENTORY: "إدارة المخازن",

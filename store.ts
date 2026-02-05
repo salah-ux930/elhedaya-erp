@@ -36,6 +36,22 @@ export class DB {
     return data[0];
   }
 
+  // --- Lab Tests ---
+  static async getLabTests(patientId?: string) {
+    let query = supabase.from('lab_tests').select('*, patients(name)');
+    if (patientId) query = query.eq('patient_id', patientId);
+    const { data, error } = await query.order('date', { ascending: false });
+    if (error) throw error;
+    return data;
+  }
+
+  static async addLabTest(test: Partial<LabTest>) {
+    const { data, error } = await supabase.from('lab_tests').insert([test]).select();
+    if (error) throw error;
+    await this.log('تسجيل تحليل', `إضافة نتيجة تحليل ${test.testName} لمريض ID: ${test.patientId}`);
+    return data[0];
+  }
+
   // --- Sessions ---
   static async getSessions() {
     const { data, error } = await supabase.from('dialysis_sessions').select('*, patients(name)').order('created_at', { ascending: false });
