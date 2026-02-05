@@ -1,7 +1,9 @@
+
 export type Permission = 
   | 'VIEW_DASHBOARD' 
   | 'MANAGE_RECEPTION'
   | 'MANAGE_PATIENTS' 
+  | 'MANAGE_LAB'
   | 'MANAGE_BILLING' 
   | 'MANAGE_PAYROLL' 
   | 'MANAGE_INVENTORY' 
@@ -32,12 +34,24 @@ export interface Patient {
   createdAt: string;
 }
 
+export interface LabTestDefinition {
+  id: string;
+  name: string;
+  category: string;
+  sampleType: string;
+  normalRangeMale: string;
+  normalRangeFemale: string;
+  normalRangeChild: string;
+}
+
 export interface LabTest {
   id: string;
   patientId: string;
-  testName: string;
-  result: string;
+  testDefinitionId: string;
+  result?: string;
+  status: 'PENDING' | 'COMPLETED';
   date: string;
+  testName?: string; // For legacy or display cache
 }
 
 export interface DialysisSession {
