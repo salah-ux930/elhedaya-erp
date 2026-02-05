@@ -10,13 +10,21 @@ const InventoryModule: React.FC = () => {
   const [showMoveModal, setShowMoveModal] = useState(false);
   const [moveType, setMoveType] = useState<'ADD' | 'DEDUCT' | 'TRANSFER'>('ADD');
   
-  // Search & Add logic
   const [productSearch, setProductSearch] = useState('');
   const [selectedProductId, setSelectedProductId] = useState('');
-  const [showAddProductInline, setShowAddProductInline] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
 
-  const filteredProducts = DB.products.filter(p => 
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  const loadProducts = async () => {
+    const data = await DB.getProducts();
+    setProducts(data || []);
+  };
+
+  const filteredProducts = products.filter(p => 
     p.name.toLowerCase().includes(productSearch.toLowerCase())
   );
 
@@ -30,10 +38,9 @@ const InventoryModule: React.FC = () => {
         minStock: 10,
         price: 0
       });
-      // Refresh local products (simulated here since we don't have a global state listener)
-      await DB.getProducts();
+      await loadProducts();
       setSelectedProductId(newProd.id);
-      setShowAddProductInline(false);
+      setProductSearch(newProd.name);
     } catch (err) {
       alert("خطأ أثناء إضافة الصنف");
     } finally {
@@ -60,19 +67,19 @@ const InventoryModule: React.FC = () => {
         </div>
         <div className="flex gap-2">
            <button 
-             onClick={() => { setMoveType('ADD'); setShowMoveModal(true); setProductSearch(''); }}
+             onClick={() => { setMoveType('ADD'); setShowMoveModal(true); setProductSearch(''); setSelectedProductId(''); }}
              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-green-700 shadow-sm"
            >
              <TrendingUp size={16} /> توريد
            </button>
            <button 
-             onClick={() => { setMoveType('DEDUCT'); setShowMoveModal(true); setProductSearch(''); }}
+             onClick={() => { setMoveType('DEDUCT'); setShowMoveModal(true); setProductSearch(''); setSelectedProductId(''); }}
              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-red-700 shadow-sm"
            >
              <TrendingDown size={16} /> صرف
            </button>
            <button 
-             onClick={() => { setMoveType('TRANSFER'); setShowMoveModal(true); setProductSearch(''); }}
+             onClick={() => { setMoveType('TRANSFER'); setShowMoveModal(true); setProductSearch(''); setSelectedProductId(''); }}
              className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-primary-700 shadow-sm"
            >
              <ArrowRightLeft size={16} /> تحويل
@@ -86,7 +93,7 @@ const InventoryModule: React.FC = () => {
             <div className="p-3 bg-primary-100 text-primary-600 rounded-xl"><Package /></div>
             <div>
               <div className="text-sm text-gray-500">إجمالي الأصناف</div>
-              <div className="text-2xl font-bold">{DB.products.length}</div>
+              <div className="text-2xl font-bold">{products.length}</div>
             </div>
           </div>
         </div>
@@ -111,34 +118,37 @@ const InventoryModule: React.FC = () => {
       </div>
 
       {activeSubTab === 'stock' ? (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="p-6 border-b flex justify-between items-center">
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden min-h-[400px]">
+          <div className="p-6 border-b flex justify-between items-center bg-gray-50/30">
             <h3 className="font-bold text-lg">قائمة الأرصدة الحالية</h3>
-            <button className="text-primary-600 text-sm font-bold border-b border-primary-600 pb-0.5">طباعة جرد عام</button>
+            <button className="text-primary-600 text-sm font-bold border-b border-primary-600 pb-0.5 hover:text-primary-700">طباعة جرد عام</button>
           </div>
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
             <table className="w-full text-right">
-              <thead className="bg-gray-50 sticky top-0 z-10">
+              <thead className="bg-gray-50 sticky top-0 z-10 border-b">
                 <tr>
-                  <th className="px-6 py-4 font-bold text-gray-600">اسم الصنف</th>
-                  <th className="px-6 py-4 font-bold text-gray-600">الوحدة</th>
-                  <th className="px-6 py-4 font-bold text-gray-600">الرصيد الكلي</th>
-                  <th className="px-6 py-4 font-bold text-gray-600">سعر الوحدة</th>
-                  <th className="px-6 py-4 font-bold text-gray-600">الحالة</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 uppercase tracking-wide text-xs">اسم الصنف</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 uppercase tracking-wide text-xs">الوحدة</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 uppercase tracking-wide text-xs">الرصيد الكلي</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 uppercase tracking-wide text-xs">سعر الوحدة</th>
+                  <th className="px-6 py-4 font-bold text-gray-600 uppercase tracking-wide text-xs">الحالة</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {DB.products.map(p => (
-                  <tr key={p.id} className="hover:bg-gray-50">
+                {products.map(p => (
+                  <tr key={p.id} className="hover:bg-primary-50/30 transition-colors">
                     <td className="px-6 py-4 font-bold text-gray-800">{p.name}</td>
                     <td className="px-6 py-4 text-gray-600">{p.unit}</td>
                     <td className="px-6 py-4 font-bold text-primary-600">1,240</td>
-                    <td className="px-6 py-4 text-gray-600">{p.price} ج.م</td>
+                    <td className="px-6 py-4 text-gray-600 font-mono">{p.price} ج.م</td>
                     <td className="px-6 py-4">
-                      <span className="px-3 py-1 bg-green-100 text-green-700 text-xs rounded-full font-bold">متوفر</span>
+                      <span className="px-3 py-1 bg-green-100 text-green-700 text-xs rounded-full font-bold border border-green-200">متوفر</span>
                     </td>
                   </tr>
                 ))}
+                {products.length === 0 && (
+                  <tr><td colSpan={5} className="py-20 text-center text-gray-400 italic">لا يوجد أصناف في المخزن</td></tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -146,7 +156,7 @@ const InventoryModule: React.FC = () => {
       ) : (
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
           <table className="w-full text-right">
-            <thead className="bg-gray-50">
+            <thead className="bg-gray-50 border-b">
               <tr>
                 <th className="px-6 py-4 font-bold text-gray-600">التاريخ</th>
                 <th className="px-6 py-4 font-bold text-gray-600">النوع</th>
@@ -159,9 +169,9 @@ const InventoryModule: React.FC = () => {
             <tbody className="divide-y divide-gray-100">
               {[1, 2, 3].map(i => (
                 <tr key={i} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-gray-500 text-sm">2024-05-15</td>
+                  <td className="px-6 py-4 text-gray-500 text-sm font-mono">2024-05-15</td>
                   <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-md text-xs font-bold ${i % 2 === 0 ? 'bg-blue-100 text-blue-700' : 'bg-orange-100 text-orange-700'}`}>
+                    <span className={`px-2 py-1 rounded-md text-xs font-bold ${i % 2 === 0 ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-orange-100 text-orange-700 border border-orange-200'}`}>
                       {i % 2 === 0 ? 'تحويل' : 'صرف'}
                     </span>
                   </td>
@@ -179,18 +189,14 @@ const InventoryModule: React.FC = () => {
       {showMoveModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300">
-            {/* Modal Header */}
             <div className={`p-6 text-white flex justify-between items-center shrink-0 ${moveType === 'ADD' ? 'bg-green-600' : moveType === 'DEDUCT' ? 'bg-red-600' : 'bg-primary-600'}`}>
               <h3 className="text-xl font-bold flex items-center gap-2">
                 {moveType === 'ADD' ? <TrendingUp size={24} /> : moveType === 'DEDUCT' ? <TrendingDown size={24} /> : <ArrowRightLeft size={24} />}
-                {moveType === 'ADD' ? 'توريد أصناف للمخزن' : moveType === 'DEDUCT' ? 'صرف أصناف من المخزن' : 'تحويل بين المخازن'}
+                {moveType === 'ADD' ? 'توريد أصناف' : moveType === 'DEDUCT' ? 'صرف أصناف' : 'تحويل مخزني'}
               </h3>
-              <button onClick={() => setShowMoveModal(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
-                <X size={24} />
-              </button>
+              <button onClick={() => setShowMoveModal(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors"><X size={24} /></button>
             </div>
 
-            {/* Modal Body */}
             <div className="p-8 overflow-y-auto custom-scrollbar">
               <form className="space-y-6">
                 <div>
@@ -200,23 +206,14 @@ const InventoryModule: React.FC = () => {
                   </select>
                 </div>
 
-                {moveType === 'TRANSFER' && (
-                  <div>
-                    <label className="block text-sm font-bold text-gray-600 mb-2">المخزن المحول إليه</label>
-                    <select className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none">
-                      {DB.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                    </select>
-                  </div>
-                )}
-
                 <div className="space-y-4">
                   <div className="relative">
-                    <label className="block text-sm font-bold text-gray-600 mb-2">البحث عن الصنف</label>
+                    <label className="block text-sm font-bold text-gray-600 mb-2">البحث عن الصنف / إضافة جديد</label>
                     <div className="relative">
                       <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
                       <input 
                         type="text" 
-                        placeholder="ابحث بالاسم..." 
+                        placeholder="اكتب اسم الصنف للبحث..." 
                         className="w-full pr-10 pl-4 py-3 border rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all"
                         value={productSearch}
                         onChange={(e) => {
@@ -226,7 +223,6 @@ const InventoryModule: React.FC = () => {
                       />
                     </div>
                     
-                    {/* Search Results Dropdown */}
                     {productSearch && !selectedProductId && (
                       <div className="absolute z-10 w-full mt-2 bg-white border rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
                         {filteredProducts.map(p => (
@@ -250,7 +246,7 @@ const InventoryModule: React.FC = () => {
                               type="button"
                               onClick={handleQuickAddProduct}
                               disabled={isAdding}
-                              className="w-full py-2 bg-primary-100 text-primary-700 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary-200"
+                              className="w-full py-3 bg-primary-600 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary-700 transition-all shadow-md"
                             >
                               {isAdding ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
                               إضافة صنف جديد: {productSearch}
@@ -263,7 +259,7 @@ const InventoryModule: React.FC = () => {
                     {selectedProductId && (
                       <div className="mt-2 flex items-center gap-2 text-green-600 bg-green-50 p-2 rounded-lg border border-green-100">
                         <Check size={16} />
-                        <span className="text-xs font-bold">تم اختيار الصنف بنجاح</span>
+                        <span className="text-xs font-bold">تم اختيار: {productSearch}</span>
                       </div>
                     )}
                   </div>
@@ -274,7 +270,7 @@ const InventoryModule: React.FC = () => {
                       <input type="number" required placeholder="0" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
                     </div>
                     <div>
-                      <label className="block text-sm font-bold text-gray-600 mb-2">ملاحظات / رقم الإذن</label>
+                      <label className="block text-sm font-bold text-gray-600 mb-2">ملاحظات</label>
                       <input type="text" placeholder="اختياري" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
                     </div>
                   </div>
@@ -282,7 +278,6 @@ const InventoryModule: React.FC = () => {
               </form>
             </div>
 
-            {/* Modal Footer */}
             <div className="p-6 border-t bg-gray-50 flex gap-3 shrink-0">
               <button type="button" onClick={() => setShowMoveModal(false)} className="flex-1 py-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">إلغاء</button>
               <button 
@@ -290,7 +285,7 @@ const InventoryModule: React.FC = () => {
                 disabled={!selectedProductId}
                 className={`flex-1 py-4 text-white rounded-xl font-bold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${moveType === 'ADD' ? 'bg-green-600 hover:bg-green-700' : moveType === 'DEDUCT' ? 'bg-red-600 hover:bg-red-700' : 'bg-primary-600 hover:bg-primary-700'}`}
               >
-                حفظ الحركة
+                تأكيد الحركة
               </button>
             </div>
           </div>
@@ -298,16 +293,9 @@ const InventoryModule: React.FC = () => {
       )}
 
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f1f1;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #0ea5e9;
-          border-radius: 10px;
-        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #0ea5e9; border-radius: 10px; }
       `}</style>
     </div>
   );

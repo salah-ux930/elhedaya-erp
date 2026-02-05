@@ -18,6 +18,18 @@ const PayrollModule: React.FC = () => {
 
   const totalMonthlyPayroll = DB.employees.reduce((acc, emp) => acc + calculateSalary(emp.id), 0);
 
+  const handlePreparePayroll = async () => {
+    const confirmed = confirm("هل أنت متأكد من رغبتك في تجهيز المرتبات؟ سيتم ترحيل سجلات هذا الشهر وتصفير العدادات لبدء شهر جديد.");
+    if (confirmed) {
+      try {
+        await DB.resetShifts();
+        alert("تم تجهيز المرتبات بنجاح.");
+      } catch (err) {
+        alert("حدث خطأ أثناء المعالجة.");
+      }
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex gap-2 p-1 bg-gray-200/50 rounded-xl w-fit">
@@ -71,17 +83,15 @@ const PayrollModule: React.FC = () => {
             <h3 className="font-bold text-lg">سجل الرواتب - {new Date().toLocaleDateString('ar-EG', { month: 'long', year: 'numeric' })}</h3>
             <div className="flex gap-2">
               <button 
-                onClick={() => {
-                  if(confirm("هل أنت متأكد من رغبتك في تجهيز المرتبات؟ سيتم تصفير سجلات الشفتات الحالية.")) DB.resetShifts();
-                }}
-                className="bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-red-100"
+                onClick={handlePreparePayroll}
+                className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-primary-700 shadow-md transition-all"
               >
                 <RotateCcw size={16} /> {AR.preparePayroll}
               </button>
               <button className="bg-gray-100 text-gray-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-200">
                 <Upload size={16} /> {AR.uploadData}
               </button>
-              <button className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-primary-700">
+              <button className="bg-white border border-gray-200 text-gray-600 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-gray-50">
                 <Download size={16} /> {AR.export}
               </button>
             </div>
@@ -99,7 +109,7 @@ const PayrollModule: React.FC = () => {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {DB.employees.map(emp => (
-                <tr key={emp.id} className="hover:bg-gray-50">
+                <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 font-mono text-xs">{emp.code}</td>
                   <td className="px-6 py-4 font-bold">{emp.name}</td>
                   <td className="px-6 py-4 text-xs text-gray-500">{emp.bankAccount}</td>
@@ -117,12 +127,12 @@ const PayrollModule: React.FC = () => {
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
           <div className="flex justify-between items-center mb-6">
             <h3 className="font-bold text-lg">بيانات الموظفين الدائمة</h3>
-            <button className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold">+ إضافة موظف</button>
+            <button className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md">+ إضافة موظف</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
              {DB.employees.map(emp => (
-               <div key={emp.id} className="p-4 border rounded-xl flex items-center gap-4 hover:border-primary-300 transition-colors">
-                 <div className="w-12 h-12 bg-primary-100 text-primary-600 rounded-full flex items-center justify-center font-bold">
+               <div key={emp.id} className="p-4 border rounded-xl flex items-center gap-4 hover:border-primary-300 transition-colors cursor-pointer group">
+                 <div className="w-12 h-12 bg-primary-50 text-primary-600 rounded-full flex items-center justify-center font-bold group-hover:bg-primary-600 group-hover:text-white transition-colors">
                    {emp.name[0]}
                  </div>
                  <div>
