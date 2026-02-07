@@ -96,3 +96,15 @@ export const PERMISSIONS_MAP: Record<string, string> = {
   MANAGE_USERS: "إدارة حسابات النظام",
   SYSTEM_SETUP: "إعدادات النظام"
 };
+
+export const calculateAge = (dob?: string) => {
+  if (!dob) return '---';
+  const birthDate = new Date(dob);
+  const today = new Date();
+  let age = today.getFullYear() - birthDate.getFullYear();
+  const m = today.getMonth() - birthDate.getMonth();
+  if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+    age--;
+  }
+  return age + ' سنة';
+};

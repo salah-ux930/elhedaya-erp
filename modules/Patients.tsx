@@ -1,9 +1,9 @@
 
 import React, { useState, useEffect } from 'react';
-import { AR, BLOOD_TYPES } from '../constants';
+import { AR, BLOOD_TYPES, calculateAge } from '../constants';
 import { DB } from '../store';
 import { Patient } from '../types';
-import { Plus, Search, UserPlus, History, Phone, FileText, Loader2 } from 'lucide-react';
+import { Plus, Search, UserPlus, History, Phone, FileText, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 
 const PatientModule: React.FC = () => {
   const [view, setView] = useState<'list' | 'add' | 'profile'>('list');
@@ -15,10 +15,10 @@ const PatientModule: React.FC = () => {
     nationalId: '',
     phone: '',
     bloodType: '',
+    dateOfBirth: '',
     emergencyContact: { name: '', phone: '', relation: '' }
   });
 
-  // جلب البيانات عند التحميل
   useEffect(() => {
     loadPatients();
   }, []);
@@ -48,6 +48,14 @@ const PatientModule: React.FC = () => {
       await DB.addPatient(formData);
       await loadPatients();
       setView('list');
+      setFormData({
+        name: '',
+        nationalId: '',
+        phone: '',
+        bloodType: '',
+        dateOfBirth: '',
+        emergencyContact: { name: '', phone: '', relation: '' }
+      });
     } catch (error) {
       alert("حدث خطأ أثناء حفظ البيانات");
       console.error(error);
@@ -77,6 +85,15 @@ const PatientModule: React.FC = () => {
             <label className="text-sm font-semibold text-gray-600">{AR.phone}</label>
             <input required placeholder="01xxxxxxxxx" className="w-full border rounded-lg p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all"
               onChange={e => setFormData({...formData, phone: e.target.value})} />
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-gray-600">تاريخ الميلاد</label>
+            <input 
+              type="date" 
+              required 
+              className="w-full border rounded-lg p-3 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all"
+              onChange={e => setFormData({...formData, dateOfBirth: e.target.value})} 
+            />
           </div>
           <div className="space-y-2">
             <label className="text-sm font-semibold text-gray-600">{AR.bloodType}</label>
@@ -152,6 +169,7 @@ const PatientModule: React.FC = () => {
             <thead className="bg-gray-50 border-b border-gray-100">
               <tr>
                 <th className="px-6 py-4 font-bold text-gray-600">{AR.name}</th>
+                <th className="px-6 py-4 font-bold text-gray-600">العمر</th>
                 <th className="px-6 py-4 font-bold text-gray-600">{AR.nationalId}</th>
                 <th className="px-6 py-4 font-bold text-gray-600">{AR.phone}</th>
                 <th className="px-6 py-4 font-bold text-gray-600">{AR.funding}</th>
@@ -164,6 +182,12 @@ const PatientModule: React.FC = () => {
                   <td className="px-6 py-4">
                     <div className="font-bold text-gray-800">{p.name}</div>
                     <div className="text-xs text-gray-400">فصيلة: {p.bloodType}</div>
+                  </td>
+                  <td className="px-6 py-4">
+                    <div className="flex items-center gap-2 text-primary-700 font-bold">
+                       <CalendarIcon size={14} className="text-primary-400" />
+                       {calculateAge(p.dateOfBirth)}
+                    </div>
                   </td>
                   <td className="px-6 py-4 text-gray-600 font-mono">{p.nationalId}</td>
                   <td className="px-6 py-4 text-gray-600">{p.phone}</td>
@@ -186,7 +210,7 @@ const PatientModule: React.FC = () => {
               ))}
               {filteredPatients.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="text-center py-20 text-gray-400 italic">
+                  <td colSpan={6} className="text-center py-20 text-gray-400 italic">
                     لا يوجد مرضى مطابقين للبحث
                   </td>
                 </tr>

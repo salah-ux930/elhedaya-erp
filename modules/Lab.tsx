@@ -91,6 +91,7 @@ const LabModule: React.FC = () => {
         nationalId: target.nationalId.value,
         phone: target.phone.value,
         bloodType: target.bloodType.value,
+        dateOfBirth: target.dateOfBirth.value
       });
       setPatients([...patients, newP]);
       setSelectedPatientId(newP.id);
@@ -110,6 +111,18 @@ const LabModule: React.FC = () => {
     } catch (err) {
       alert("خطأ أثناء تحديث النتيجة");
     }
+  };
+
+  const calculateAge = (dob?: string) => {
+    if (!dob) return '';
+    const birthDate = new Date(dob);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const m = today.getMonth() - birthDate.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < birthDate.getDate())) {
+      age--;
+    }
+    return `(${age} سنة)`;
   };
 
   const filteredTests = tests.filter(t => 
@@ -187,7 +200,10 @@ const LabModule: React.FC = () => {
                   {filteredTests.map(test => (
                     <tr key={test.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 text-gray-500 text-sm font-mono">{test.date}</td>
-                      <td className="px-6 py-4 font-bold">{test.patients?.name}</td>
+                      <td className="px-6 py-4">
+                        <div className="font-bold text-gray-800">{test.patients?.name}</div>
+                        <div className="text-[10px] text-primary-600">{calculateAge(test.patients?.dateOfBirth)}</div>
+                      </td>
                       <td className="px-6 py-4">
                         <div className="font-bold text-primary-700">{test.lab_test_definitions?.name}</div>
                         <div className="text-[10px] text-gray-400">عينة: {test.lab_test_definitions?.sampleType}</div>
@@ -274,7 +290,7 @@ const LabModule: React.FC = () => {
               <SearchableSelect 
                 label="المريض"
                 placeholder="ابحث عن مريض..."
-                options={patients.map(p => ({ id: p.id, label: p.name, subLabel: p.nationalId }))}
+                options={patients.map(p => ({ id: p.id, label: `${p.name} ${calculateAge(p.dateOfBirth)}`, subLabel: p.nationalId }))}
                 value={selectedPatientId}
                 onChange={setSelectedPatientId}
                 onAddNew={() => setShowPatientModal(true)}
@@ -312,6 +328,10 @@ const LabModule: React.FC = () => {
                 <input name="name" required placeholder="اسم المريض بالكامل" className="w-full border rounded-xl p-3 bg-gray-50" />
                 <input name="nationalId" required placeholder="الرقم القومي" className="w-full border rounded-xl p-3 bg-gray-50" />
                 <input name="phone" required placeholder="رقم الهاتف" className="w-full border rounded-xl p-3 bg-gray-50" />
+                <div className="space-y-1">
+                   <label className="text-xs font-bold text-gray-500 mr-2">تاريخ الميلاد</label>
+                   <input name="dateOfBirth" type="date" required className="w-full border rounded-xl p-3 bg-gray-50" />
+                </div>
                 <select name="bloodType" className="w-full border rounded-xl p-3 bg-gray-50">
                    {BLOOD_TYPES.map(bt => <option key={bt} value={bt}>{bt}</option>)}
                 </select>

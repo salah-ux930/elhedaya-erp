@@ -25,6 +25,7 @@ export interface Patient {
   phone: string;
   address: string;
   bloodType: string;
+  dateOfBirth?: string;
   fundingEntityId: string;
   emergencyContact: {
     name: string;

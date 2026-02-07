@@ -43,7 +43,7 @@ const LoginModule: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             <div className="w-20 h-20 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-4 backdrop-blur-md border border-white/20">
               <ShieldCheck size={40} className="text-white" />
             </div>
-            <h1 className="text-2xl font-bold text-white mb-2">ديالي كلينك ERP</h1>
+            <h1 className="text-2xl font-bold text-white mb-2">مركز الهدايه الطبى</h1>
             <p className="text-primary-100 text-sm">نظام إدارة وحدة غسيل الكلى المتكامل</p>
           </div>
 
@@ -95,7 +95,7 @@ const LoginModule: React.FC<LoginProps> = ({ onLoginSuccess }) => {
             </form>
 
             <div className="mt-8 text-center border-t pt-6">
-              <p className="text-xs text-gray-400">© 2024 جميع الحقوق محفوظة لمركز ديالي كلينك</p>
+              <p className="text-xs text-gray-400">© 2024 جميع الحقوق محفوظة لمركز الهدايه الطبى</p>
             </div>
           </div>
         </div>

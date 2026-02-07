@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { AR, ROOMS } from '../constants.ts';
+import { AR, ROOMS, calculateAge } from '../constants.ts';
 import { DB } from '../store.ts';
 import { DialysisSession, Patient } from '../types.ts';
 import { 
@@ -105,7 +105,10 @@ const ReceptionModule: React.FC = () => {
                     {session.patients?.name?.[0] || '?'}
                   </div>
                   <div>
-                    <h4 className="font-bold text-gray-800">{session.patients?.name}</h4>
+                    <h4 className="font-bold text-gray-800">
+                      {session.patients?.name}
+                      <span className="text-primary-600 text-xs mr-2 font-bold">{calculateAge(session.patients?.date_of_birth || session.patients?.dateOfBirth)}</span>
+                    </h4>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-xs text-gray-500 flex items-center gap-1"><MapPin size={12} /> {session.room || 'لم يحدد'}</span>
                       <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {session.startTime || '--:--'}</span>
@@ -151,7 +154,10 @@ const ReceptionModule: React.FC = () => {
                   className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-primary-50 border border-transparent hover:border-primary-100 transition-all group"
                 >
                   <div className="text-right">
-                    <div className="font-bold text-gray-700 group-hover:text-primary-700">{p.name}</div>
+                    <div className="font-bold text-gray-700 group-hover:text-primary-700">
+                      {p.name}
+                      <span className="text-primary-500 text-[10px] mr-1">({calculateAge(p.dateOfBirth)})</span>
+                    </div>
                     <div className="text-xs text-gray-400">{p.phone}</div>
                   </div>
                   <ArrowRight size={18} className="text-gray-300 group-hover:text-primary-500" />
@@ -170,11 +176,9 @@ const ReceptionModule: React.FC = () => {
             <div className="p-6 bg-primary-600 text-white flex justify-between items-center shrink-0">
               <div>
                 <h3 className="text-xl font-bold">تسجيل دخول للجلسة</h3>
-                <p className="text-sm opacity-80 mt-1">{selectedPatient.name}</p>
+                <p className="text-sm opacity-80 mt-1">{selectedPatient.name} - {calculateAge(selectedPatient.dateOfBirth)}</p>
               </div>
-              <button onClick={() => setShowCheckInModal(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors">
-                <X size={24} />
-              </button>
+              <button onClick={() => setShowCheckInModal(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors"><X size={24} /></button>
             </div>
             
             {/* Body */}
@@ -218,16 +222,9 @@ const ReceptionModule: React.FC = () => {
       )}
 
       <style>{`
-        .custom-scrollbar::-webkit-scrollbar {
-          width: 6px;
-        }
-        .custom-scrollbar::-webkit-scrollbar-track {
-          background: #f1f1f1;
-        }
-        .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: #0ea5e9;
-          border-radius: 10px;
-        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #0ea5e9; border-radius: 10px; }
       `}</style>
     </div>
   );

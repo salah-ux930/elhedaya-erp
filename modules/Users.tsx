@@ -1,14 +1,33 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AR, PERMISSIONS_MAP } from '../constants.ts';
 import { DB } from '../store.ts';
 import { User, Permission } from '../types.ts';
-import { UserCog, UserPlus, Search, Trash2, Key, UserCheck, Shield, Check, X } from 'lucide-react';
+import { UserCog, UserPlus, Search, Trash2, Key, UserCheck, Shield, Check, X, Loader2 } from 'lucide-react';
 
 const UsersModule: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
   const [newUser, setNewUser] = useState<Partial<User>>({ permissions: [] });
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const data = await DB.getUsers();
+      setUsers(data || []);
+    } catch (err) {
+      console.error("Error loading users:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const togglePermission = (perm: Permission) => {
     const current = newUser.permissions || [];
@@ -19,24 +38,43 @@ const UsersModule: React.FC = () => {
     }
   };
 
-  const handleAddUser = (e: React.FormEvent) => {
+  const handleAddUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUser.permissions?.length) {
       alert("يرجى اختيار صلاحية واحدة على الأقل");
       return;
     }
-    const user: User = {
-      id: Math.random().toString(36).substr(2, 9),
-      name: newUser.name || '',
-      username: newUser.username || '',
-      permissions: (newUser.permissions as Permission[]) || []
-    };
-    DB.addUser(user);
-    setShowAddModal(false);
-    setNewUser({ permissions: [] });
+    
+    setSubmitting(true);
+    try {
+      const userToSave = {
+        name: newUser.name || '',
+        username: newUser.username || '',
+        permissions: newUser.permissions
+      };
+      
+      await DB.addUser(userToSave);
+      await loadUsers();
+      setShowAddModal(false);
+      setNewUser({ permissions: [] });
+    } catch (err) {
+      alert("حدث خطأ أثناء إضافة المستخدم. ربما اسم المستخدم محجوز مسبقاً.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const filteredUsers = DB.users.filter(u => 
+  const handleDeleteUser = async (id: string) => {
+    if (!confirm(AR.confirmation)) return;
+    try {
+      await DB.deleteUser(id);
+      await loadUsers();
+    } catch (err) {
+      alert("خطأ أثناء حذف المستخدم");
+    }
+  };
+
+  const filteredUsers = users.filter(u => 
     u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
     u.username.toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -63,52 +101,63 @@ const UsersModule: React.FC = () => {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {filteredUsers.map(user => (
-          <div key={user.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-all group">
-            <div className="flex flex-col md:flex-row justify-between items-start gap-4">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 bg-primary-100 text-primary-600 rounded-2xl flex items-center justify-center font-bold text-2xl border border-primary-50">
-                  {user.name[0]}
+      {loading ? (
+        <div className="flex flex-col items-center justify-center py-20 gap-4 text-gray-400">
+          <Loader2 className="animate-spin text-primary-600" size={40} />
+          <p className="font-bold">جاري تحميل المستخدمين...</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {filteredUsers.map(user => (
+            <div key={user.id} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 hover:shadow-md transition-all group">
+              <div className="flex flex-col md:flex-row justify-between items-start gap-4">
+                <div className="flex items-center gap-4">
+                  <div className="w-16 h-16 bg-primary-100 text-primary-600 rounded-2xl flex items-center justify-center font-bold text-2xl border border-primary-50">
+                    {user.name[0]}
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-gray-800 text-lg">{user.name}</h4>
+                    <p className="text-gray-400 text-sm flex items-center gap-1">
+                      <UserCog size={14} /> @{user.username}
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h4 className="font-bold text-gray-800 text-lg">{user.name}</h4>
-                  <p className="text-gray-400 text-sm flex items-center gap-1">
-                    <UserCog size={14} /> @{user.username}
-                  </p>
+                <div className="flex gap-2">
+                   <button className="p-2 bg-gray-50 text-gray-500 rounded-lg hover:bg-primary-50 hover:text-primary-600 transition-colors">
+                     <Key size={18} />
+                   </button>
+                   <button 
+                     onClick={() => handleDeleteUser(user.id)}
+                     className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"
+                   >
+                     <Trash2 size={18} />
+                   </button>
                 </div>
               </div>
-              <div className="flex gap-2">
-                 <button className="p-2 bg-gray-50 text-gray-500 rounded-lg hover:bg-primary-50 hover:text-primary-600 transition-colors">
-                   <Key size={18} />
-                 </button>
-                 <button 
-                   onClick={() => { if(confirm(AR.confirmation)) DB.deleteUser(user.id); }}
-                   className="p-2 bg-red-50 text-red-500 rounded-lg hover:bg-red-100 transition-colors"
-                 >
-                   <Trash2 size={18} />
-                 </button>
+              
+              <div className="mt-6">
+                <h5 className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">{AR.permissions}</h5>
+                <div className="flex flex-wrap gap-2">
+                  {user.permissions && user.permissions.map(perm => (
+                    <span key={perm} className="px-3 py-1 bg-primary-50 text-primary-700 text-xs font-bold rounded-lg border border-primary-100 flex items-center gap-1">
+                      <Shield size={10} /> {PERMISSIONS_MAP[perm] || perm}
+                    </span>
+                  ))}
+                </div>
               </div>
             </div>
-            
-            <div className="mt-6">
-              <h5 className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">{AR.permissions}</h5>
-              <div className="flex flex-wrap gap-2">
-                {user.permissions.map(perm => (
-                  <span key={perm} className="px-3 py-1 bg-primary-50 text-primary-700 text-xs font-bold rounded-lg border border-primary-100 flex items-center gap-1">
-                    <Shield size={10} /> {PERMISSIONS_MAP[perm]}
-                  </span>
-                ))}
-              </div>
+          ))}
+          {filteredUsers.length === 0 && (
+            <div className="lg:col-span-2 text-center py-20 text-gray-400 italic">
+              لا توجد نتائج لمطابقة بحثك
             </div>
-          </div>
-        ))}
-      </div>
+          )}
+        </div>
+      )}
 
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-300">
-            {/* Header - Fixed */}
             <div className="p-6 bg-primary-600 text-white flex justify-between items-center shrink-0">
               <h3 className="text-xl font-bold flex items-center gap-2">
                 <UserCheck size={22} /> {AR.newUser}
@@ -118,7 +167,6 @@ const UsersModule: React.FC = () => {
               </button>
             </div>
 
-            {/* Scrollable Body */}
             <div className="p-8 overflow-y-auto custom-scrollbar">
               <form id="addUserForm" onSubmit={handleAddUser} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -127,6 +175,7 @@ const UsersModule: React.FC = () => {
                     <input 
                       required 
                       type="text" 
+                      placeholder="الاسم الثلاثي للموظف"
                       className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none"
                       onChange={e => setNewUser({...newUser, name: e.target.value})}
                     />
@@ -136,8 +185,9 @@ const UsersModule: React.FC = () => {
                     <input 
                       required 
                       type="text" 
+                      placeholder="اسم الدخول (بالإنجليزي)"
                       className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none"
-                      onChange={e => setNewUser({...newUser, username: e.target.value})}
+                      onChange={e => setNewUser({...newUser, username: e.target.value.toLowerCase().replace(/\s/g, '')})}
                     />
                   </div>
                 </div>
@@ -165,19 +215,26 @@ const UsersModule: React.FC = () => {
 
                 <div>
                   <label className="block text-sm font-bold text-gray-600 mb-1">{AR.password}</label>
-                  <input 
-                    required 
-                    type="password" 
-                    className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none"
-                  />
+                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start gap-3">
+                    <Shield className="text-blue-600 mt-1" size={20} />
+                    <p className="text-xs text-blue-700 leading-relaxed">
+                      يتم تعيين كلمة مرور افتراضية للمستخدم الجديد. يمكن للمستخدم تغييرها عند أول تسجيل دخول له بعد تفعيل ميزة الأمان.
+                    </p>
+                  </div>
                 </div>
               </form>
             </div>
 
-            {/* Footer - Fixed */}
             <div className="p-6 border-t bg-gray-50 flex gap-3 shrink-0">
               <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-3 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">إلغاء</button>
-              <button form="addUserForm" type="submit" className="flex-1 py-3 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors">حفظ الحساب</button>
+              <button 
+                form="addUserForm" 
+                type="submit" 
+                disabled={submitting}
+                className="flex-1 py-3 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors disabled:opacity-50"
+              >
+                {submitting ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'حفظ الحساب'}
+              </button>
             </div>
           </div>
         </div>

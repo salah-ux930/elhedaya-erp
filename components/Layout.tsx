@@ -54,8 +54,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
       {/* Sidebar - Desktop */}
       <aside className="hidden lg:flex flex-col w-72 bg-white border-l border-gray-200 shadow-sm fixed h-full z-20">
         <div className="p-8 border-b border-gray-100 flex items-center gap-2">
-          <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">D</div>
-          <h1 className="text-xl font-bold text-primary-900 tracking-tight">ديالي كلينك</h1>
+          <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">هـ</div>
+          <h1 className="text-xl font-bold text-primary-900 tracking-tight">مركز الهدايه الطبى</h1>
         </div>
         <nav className="flex-1 mt-4 overflow-y-auto">
           {menuItems.map((item) => (
@@ -117,7 +117,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
             onClick={e => e.stopPropagation()}
           >
             <div className="p-6 border-b flex justify-between items-center">
-              <h1 className="text-xl font-bold">ديالي كلينك</h1>
+              <h1 className="text-xl font-bold">مركز الهدايه الطبى</h1>
               <button onClick={() => setIsMobileMenuOpen(false)}>
                 <X size={24} className="text-gray-500" />
               </button>

@@ -2,55 +2,91 @@
 import React, { useState, useEffect } from 'react';
 import { AR } from '../constants.ts';
 import { DB } from '../store.ts';
-import { Product } from '../types.ts';
+import { Product, Store, StockTransaction } from '../types.ts';
 import { Package, ArrowLeftRight, TrendingUp, TrendingDown, ClipboardList, Plus, Search, ArrowRightLeft, Loader2, X, Check } from 'lucide-react';
 
 const InventoryModule: React.FC = () => {
-  const [activeSubTab, setActiveSubTab] = useState<'stock' | 'transfers' | 'stores'>('stock');
+  const [activeSubTab, setActiveSubTab] = useState<'stock' | 'transfers'>('stock');
   const [showMoveModal, setShowMoveModal] = useState(false);
+  const [showAddProductModal, setShowAddProductModal] = useState(false);
   const [moveType, setMoveType] = useState<'ADD' | 'DEDUCT' | 'TRANSFER'>('ADD');
   
-  const [productSearch, setProductSearch] = useState('');
-  const [selectedProductId, setSelectedProductId] = useState('');
-  const [isAdding, setIsAdding] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
+  const [stores, setStores] = useState<Store[]>([]);
 
   useEffect(() => {
-    loadProducts();
+    loadData();
   }, []);
 
-  const loadProducts = async () => {
-    const data = await DB.getProducts();
-    setProducts(data || []);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const p = await DB.getProducts();
+      const s = await DB.getStores();
+      setProducts(p || []);
+      setStores(s || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(productSearch.toLowerCase())
-  );
-
-  const handleQuickAddProduct = async () => {
-    if (!productSearch.trim()) return;
-    setIsAdding(true);
+  const handleAddNewProduct = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = e.target as any;
+    setLoading(true);
     try {
-      const newProd = await DB.addProduct({
-        name: productSearch,
-        unit: 'قطعة',
-        minStock: 10,
-        price: 0
+      await DB.addProduct({
+        name: target.name.value,
+        unit: target.unit.value,
+        minStock: parseInt(target.minStock.value) || 0,
+        price: parseFloat(target.price.value) || 0
       });
-      await loadProducts();
-      setSelectedProductId(newProd.id);
-      setProductSearch(newProd.name);
+      setShowAddProductModal(false);
+      loadData();
     } catch (err) {
       alert("خطأ أثناء إضافة الصنف");
     } finally {
-      setIsAdding(false);
+      setLoading(false);
+    }
+  };
+
+  const handleStockAction = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = e.target as any;
+    
+    if (moveType === 'TRANSFER' && target.storeId.value === target.targetStoreId.value) {
+      alert("لا يمكن التحويل لنفس المخزن!");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      await DB.addStockTransaction({
+        productId: target.productId.value,
+        storeId: target.storeId.value,
+        targetStoreId: moveType === 'TRANSFER' ? target.targetStoreId.value : undefined,
+        type: moveType,
+        quantity: parseFloat(target.quantity.value),
+        date: new Date().toISOString().split('T')[0],
+        note: target.note.value
+      });
+      setShowMoveModal(false);
+      alert("تمت العملية بنجاح");
+      loadData();
+    } catch (err) {
+      alert("حدث خطأ أثناء تنفيذ العملية");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* Header Actions */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print">
         <div className="flex gap-2 p-1 bg-gray-200/50 rounded-xl w-fit">
           <button 
             onClick={() => setActiveSubTab('stock')}
@@ -65,28 +101,36 @@ const InventoryModule: React.FC = () => {
             حركات المخزن
           </button>
         </div>
+
         <div className="flex gap-2">
            <button 
-             onClick={() => { setMoveType('ADD'); setShowMoveModal(true); setProductSearch(''); setSelectedProductId(''); }}
+             onClick={() => setShowAddProductModal(true)}
+             className="bg-primary-100 text-primary-700 px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-primary-200 transition-all border border-primary-200"
+           >
+             <Plus size={16} /> صنف جديد
+           </button>
+           <button 
+             onClick={() => { setMoveType('TRANSFER'); setShowMoveModal(true); }}
+             className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 shadow-sm"
+           >
+             <ArrowRightLeft size={16} /> تحويل داخلي
+           </button>
+           <button 
+             onClick={() => { setMoveType('ADD'); setShowMoveModal(true); }}
              className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-green-700 shadow-sm"
            >
              <TrendingUp size={16} /> توريد
            </button>
            <button 
-             onClick={() => { setMoveType('DEDUCT'); setShowMoveModal(true); setProductSearch(''); setSelectedProductId(''); }}
+             onClick={() => { setMoveType('DEDUCT'); setShowMoveModal(true); }}
              className="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-red-700 shadow-sm"
            >
              <TrendingDown size={16} /> صرف
            </button>
-           <button 
-             onClick={() => { setMoveType('TRANSFER'); setShowMoveModal(true); setProductSearch(''); setSelectedProductId(''); }}
-             className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-primary-700 shadow-sm"
-           >
-             <ArrowRightLeft size={16} /> تحويل
-           </button>
         </div>
       </div>
 
+      {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-primary-500">
           <div className="flex items-center gap-4">
@@ -99,204 +143,169 @@ const InventoryModule: React.FC = () => {
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-yellow-500">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-yellow-100 text-yellow-600 rounded-xl"><TrendingDown /></div>
+            <div className="p-3 bg-yellow-100 text-yellow-600 rounded-xl"><ClipboardList /></div>
             <div>
-              <div className="text-sm text-gray-500">أصناف تحت حد الطلب</div>
-              <div className="text-2xl font-bold">2</div>
+              <div className="text-sm text-gray-500">تحت حد الطلب</div>
+              <div className="text-2xl font-bold">0</div>
             </div>
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-green-500">
           <div className="flex items-center gap-4">
-            <div className="p-3 bg-green-100 text-green-600 rounded-xl"><ClipboardList /></div>
+            <div className="p-3 bg-green-100 text-green-600 rounded-xl"><TrendingUp /></div>
             <div>
               <div className="text-sm text-gray-500">حركات اليوم</div>
-              <div className="text-2xl font-bold">12</div>
+              <div className="text-2xl font-bold">0</div>
             </div>
           </div>
         </div>
       </div>
 
-      {activeSubTab === 'stock' ? (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden min-h-[400px]">
-          <div className="p-6 border-b flex justify-between items-center bg-gray-50/30">
-            <h3 className="font-bold text-lg">قائمة الأرصدة الحالية</h3>
-            <button className="text-primary-600 text-sm font-bold border-b border-primary-600 pb-0.5 hover:text-primary-700">طباعة جرد عام</button>
+      {/* Main Content */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden min-h-[400px]">
+        {activeSubTab === 'stock' ? (
+          <>
+            <div className="p-6 border-b flex justify-between items-center bg-gray-50/30">
+              <h3 className="font-bold text-lg">الأرصدة الحالية في كافة المخازن</h3>
+            </div>
+            <div className="overflow-x-auto">
+              {loading ? (
+                <div className="flex justify-center py-20"><Loader2 className="animate-spin text-primary-600" size={40} /></div>
+              ) : (
+                <table className="w-full text-right">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-6 py-4 font-bold text-gray-600 uppercase text-xs">اسم الصنف</th>
+                      <th className="px-6 py-4 font-bold text-gray-600 uppercase text-xs">الوحدة</th>
+                      <th className="px-6 py-4 font-bold text-gray-600 uppercase text-xs">الرصيد المتاح</th>
+                      <th className="px-6 py-4 font-bold text-gray-600 uppercase text-xs">سعر الوحدة</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {products.map(p => (
+                      <tr key={p.id} className="hover:bg-primary-50/30 transition-colors">
+                        <td className="px-6 py-4 font-bold text-gray-800">{p.name}</td>
+                        <td className="px-6 py-4 text-gray-600">{p.unit}</td>
+                        <td className="px-6 py-4 font-bold text-primary-600">0</td>
+                        <td className="px-6 py-4 text-gray-600 font-mono">{p.price} ج.م</td>
+                      </tr>
+                    ))}
+                    {products.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="py-20 text-center text-gray-400 italic">لا توجد أصناف مسجلة حالياً</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="p-20 text-center text-gray-400 italic">سجل حركات المخازن سيظهر هنا بمجرد إجراء عمليات توريد أو صرف</div>
+        )}
+      </div>
+
+      {/* Modal: Add New Product */}
+      {showAddProductModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl animate-in zoom-in-95">
+            <div className="p-6 bg-primary-600 text-white flex justify-between items-center rounded-t-2xl">
+              <h3 className="text-xl font-bold flex items-center gap-2"><Plus size={22} /> إضافة صنف جديد</h3>
+              <button onClick={() => setShowAddProductModal(false)}><X size={24} /></button>
+            </div>
+            <form onSubmit={handleAddNewProduct} className="p-8 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-600 mb-1">اسم الصنف</label>
+                <input name="name" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-bold text-gray-600 mb-1">الوحدة</label>
+                  <input name="unit" required placeholder="قطعة/كرتونة" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
+                </div>
+                <div>
+                  <label className="block text-sm font-bold text-gray-600 mb-1">حد الطلب</label>
+                  <input name="minStock" type="number" defaultValue={10} required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-600 mb-1">سعر الوحدة</label>
+                <input name="price" type="number" step="0.01" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
+              </div>
+              <div className="flex gap-3 pt-6">
+                <button type="button" onClick={() => setShowAddProductModal(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold">إلغاء</button>
+                <button type="submit" disabled={loading} className="flex-1 py-3 bg-primary-600 text-white rounded-xl font-bold shadow-lg">
+                  {loading ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'حفظ الصنف'}
+                </button>
+              </div>
+            </form>
           </div>
-          <div className="overflow-x-auto max-h-[600px] overflow-y-auto custom-scrollbar">
-            <table className="w-full text-right">
-              <thead className="bg-gray-50 sticky top-0 z-10 border-b">
-                <tr>
-                  <th className="px-6 py-4 font-bold text-gray-600 uppercase tracking-wide text-xs">اسم الصنف</th>
-                  <th className="px-6 py-4 font-bold text-gray-600 uppercase tracking-wide text-xs">الوحدة</th>
-                  <th className="px-6 py-4 font-bold text-gray-600 uppercase tracking-wide text-xs">الرصيد الكلي</th>
-                  <th className="px-6 py-4 font-bold text-gray-600 uppercase tracking-wide text-xs">سعر الوحدة</th>
-                  <th className="px-6 py-4 font-bold text-gray-600 uppercase tracking-wide text-xs">الحالة</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {products.map(p => (
-                  <tr key={p.id} className="hover:bg-primary-50/30 transition-colors">
-                    <td className="px-6 py-4 font-bold text-gray-800">{p.name}</td>
-                    <td className="px-6 py-4 text-gray-600">{p.unit}</td>
-                    <td className="px-6 py-4 font-bold text-primary-600">1,240</td>
-                    <td className="px-6 py-4 text-gray-600 font-mono">{p.price} ج.م</td>
-                    <td className="px-6 py-4">
-                      <span className="px-3 py-1 bg-green-100 text-green-700 text-xs rounded-full font-bold border border-green-200">متوفر</span>
-                    </td>
-                  </tr>
-                ))}
-                {products.length === 0 && (
-                  <tr><td colSpan={5} className="py-20 text-center text-gray-400 italic">لا يوجد أصناف في المخزن</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <table className="w-full text-right">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-6 py-4 font-bold text-gray-600">التاريخ</th>
-                <th className="px-6 py-4 font-bold text-gray-600">النوع</th>
-                <th className="px-6 py-4 font-bold text-gray-600">الصنف</th>
-                <th className="px-6 py-4 font-bold text-gray-600">المخزن</th>
-                <th className="px-6 py-4 font-bold text-gray-600">الكمية</th>
-                <th className="px-6 py-4 font-bold text-gray-600">البيان</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {[1, 2, 3].map(i => (
-                <tr key={i} className="hover:bg-gray-50">
-                  <td className="px-6 py-4 text-gray-500 text-sm font-mono">2024-05-15</td>
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded-md text-xs font-bold ${i % 2 === 0 ? 'bg-blue-100 text-blue-700 border border-blue-200' : 'bg-orange-100 text-orange-700 border border-orange-200'}`}>
-                      {i % 2 === 0 ? 'تحويل' : 'صرف'}
-                    </span>
-                  </td>
-                  <td className="px-6 py-4 font-bold">فلتر 1.4 ديالي</td>
-                  <td className="px-6 py-4 text-gray-600">المخزن الرئيسي</td>
-                  <td className="px-6 py-4 font-bold">50</td>
-                  <td className="px-6 py-4 text-gray-400 text-xs">صرف لجلسات الدور الأول</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
 
+      {/* Modal: Inventory Move (Tawreed/Sarf/Transfer) */}
       {showMoveModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300">
-            <div className={`p-6 text-white flex justify-between items-center shrink-0 ${moveType === 'ADD' ? 'bg-green-600' : moveType === 'DEDUCT' ? 'bg-red-600' : 'bg-primary-600'}`}>
+          <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl animate-in zoom-in-95">
+            <div className={`p-6 text-white flex justify-between items-center rounded-t-2xl ${moveType === 'ADD' ? 'bg-green-600' : moveType === 'DEDUCT' ? 'bg-red-600' : 'bg-indigo-600'}`}>
               <h3 className="text-xl font-bold flex items-center gap-2">
-                {moveType === 'ADD' ? <TrendingUp size={24} /> : moveType === 'DEDUCT' ? <TrendingDown size={24} /> : <ArrowRightLeft size={24} />}
-                {moveType === 'ADD' ? 'توريد أصناف' : moveType === 'DEDUCT' ? 'صرف أصناف' : 'تحويل مخزني'}
+                {moveType === 'ADD' ? <TrendingUp size={22} /> : moveType === 'DEDUCT' ? <TrendingDown size={22} /> : <ArrowRightLeft size={22} />}
+                {moveType === 'ADD' ? 'توريد كمية للمخزن' : moveType === 'DEDUCT' ? 'صرف كمية من المخزن' : 'تحويل مخزني داخلي'}
               </h3>
-              <button onClick={() => setShowMoveModal(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors"><X size={24} /></button>
+              <button onClick={() => setShowMoveModal(false)}><X size={24} /></button>
             </div>
+            
+            <form onSubmit={handleStockAction} className="p-8 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-600 mb-1">الصنف</label>
+                <select name="productId" required className="w-full border rounded-xl p-3 bg-gray-50 outline-none focus:ring-2 focus:ring-primary-500">
+                  <option value="">اختر الصنف...</option>
+                  {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.unit})</option>)}
+                </select>
+              </div>
 
-            <div className="p-8 overflow-y-auto custom-scrollbar">
-              <form className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-bold text-gray-600 mb-2">المخزن</label>
-                  <select className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none">
-                    {DB.stores.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  <label className="block text-sm font-bold text-gray-600 mb-1">
+                    {moveType === 'TRANSFER' ? 'من مخزن' : 'المخزن'}
+                  </label>
+                  <select name="storeId" required className="w-full border rounded-xl p-3 bg-gray-50 outline-none">
+                    <option value="">اختر المخزن...</option>
+                    {stores.map(s => <option key={s.id} value={s.id}>{s.name} {s.isMain ? '(رئيسي)' : ''}</option>)}
                   </select>
                 </div>
-
-                <div className="space-y-4">
-                  <div className="relative">
-                    <label className="block text-sm font-bold text-gray-600 mb-2">البحث عن الصنف / إضافة جديد</label>
-                    <div className="relative">
-                      <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                      <input 
-                        type="text" 
-                        placeholder="اكتب اسم الصنف للبحث..." 
-                        className="w-full pr-10 pl-4 py-3 border rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all"
-                        value={productSearch}
-                        onChange={(e) => {
-                          setProductSearch(e.target.value);
-                          setSelectedProductId('');
-                        }}
-                      />
-                    </div>
-                    
-                    {productSearch && !selectedProductId && (
-                      <div className="absolute z-10 w-full mt-2 bg-white border rounded-xl shadow-xl overflow-hidden max-h-60 overflow-y-auto">
-                        {filteredProducts.map(p => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              setSelectedProductId(p.id);
-                              setProductSearch(p.name);
-                            }}
-                            className="w-full text-right px-4 py-3 hover:bg-primary-50 border-b last:border-0 flex items-center justify-between"
-                          >
-                            <span className="font-bold text-gray-700">{p.name}</span>
-                            <span className="text-xs text-gray-400">{p.unit}</span>
-                          </button>
-                        ))}
-                        {filteredProducts.length === 0 && (
-                          <div className="p-4 text-center">
-                            <p className="text-sm text-gray-500 mb-3 italic">الصنف غير موجود بالسيستم</p>
-                            <button 
-                              type="button"
-                              onClick={handleQuickAddProduct}
-                              disabled={isAdding}
-                              className="w-full py-3 bg-primary-600 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-primary-700 transition-all shadow-md"
-                            >
-                              {isAdding ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />}
-                              إضافة صنف جديد: {productSearch}
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    
-                    {selectedProductId && (
-                      <div className="mt-2 flex items-center gap-2 text-green-600 bg-green-50 p-2 rounded-lg border border-green-100">
-                        <Check size={16} />
-                        <span className="text-xs font-bold">تم اختيار: {productSearch}</span>
-                      </div>
-                    )}
+                
+                {moveType === 'TRANSFER' && (
+                  <div>
+                    <label className="block text-sm font-bold text-gray-600 mb-1">إلى مخزن</label>
+                    <select name="targetStoreId" required className="w-full border rounded-xl p-3 bg-gray-50 outline-none">
+                      <option value="">اختر المخزن...</option>
+                      {stores.map(s => <option key={s.id} value={s.id}>{s.name} {s.isMain ? '(رئيسي)' : ''}</option>)}
+                    </select>
                   </div>
+                )}
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-bold text-gray-600 mb-2">الكمية</label>
-                      <input type="number" required placeholder="0" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-gray-600 mb-2">ملاحظات</label>
-                      <input type="text" placeholder="اختياري" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" />
-                    </div>
-                  </div>
+                <div className={moveType === 'TRANSFER' ? 'col-span-2' : ''}>
+                  <label className="block text-sm font-bold text-gray-600 mb-1">الكمية</label>
+                  <input name="quantity" type="number" step="0.01" required className="w-full border rounded-xl p-3 bg-gray-50 outline-none" placeholder="0.00" />
                 </div>
-              </form>
-            </div>
+              </div>
 
-            <div className="p-6 border-t bg-gray-50 flex gap-3 shrink-0">
-              <button type="button" onClick={() => setShowMoveModal(false)} className="flex-1 py-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">إلغاء</button>
-              <button 
-                type="submit" 
-                disabled={!selectedProductId}
-                className={`flex-1 py-4 text-white rounded-xl font-bold shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed ${moveType === 'ADD' ? 'bg-green-600 hover:bg-green-700' : moveType === 'DEDUCT' ? 'bg-red-600 hover:bg-red-700' : 'bg-primary-600 hover:bg-primary-700'}`}
-              >
-                تأكيد الحركة
-              </button>
-            </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-600 mb-1">ملاحظات</label>
+                <textarea name="note" className="w-full border rounded-xl p-3 bg-gray-50 outline-none h-20" placeholder="اكتب ملاحظاتك هنا..."></textarea>
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowMoveModal(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold">إلغاء</button>
+                <button type="submit" disabled={loading} className={`flex-1 py-3 text-white rounded-xl font-bold shadow-lg ${moveType === 'ADD' ? 'bg-green-600' : moveType === 'DEDUCT' ? 'bg-red-600' : 'bg-indigo-600'}`}>
+                  {loading ? <Loader2 className="animate-spin mx-auto" size={20} /> : 'تأكيد العملية'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
-
-      <style>{`
-        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #0ea5e9; border-radius: 10px; }
-      `}</style>
     </div>
   );
 };
