@@ -172,11 +172,9 @@ export class DB {
   }
 
   static async addFinanceTx(tx: Partial<Transaction>) {
-    // 1. تسجيل المعاملة
     const { data, error } = await supabase.from('transactions').insert([tx]).select();
     if (error) return handleError(error, "فشل تسجيل المعاملة");
 
-    // 2. تحديث رصيد الحساب
     const { data: acc } = await supabase.from('financial_accounts').select('balance').eq('id', tx.account_id).single();
     if (acc) {
         const newBalance = tx.type === 'INCOME' 
@@ -255,16 +253,41 @@ export class DB {
     return data?.[0];
   }
 
+  // --- دوال الموظفين ---
   static async getEmployees() {
-    const { data, error } = await supabase.from('employees').select('*');
+    const { data, error } = await supabase.from('employees').select('*').order('name');
     if (error) return handleError(error, "فشل جلب الموظفين");
     return data || [];
+  }
+
+  static async addEmployee(e: Partial<Employee>) {
+    const { data, error } = await supabase.from('employees').insert([e]).select();
+    if (error) return handleError(error, "فشل إضافة الموظف");
+    await this.log('إضافة موظف', `تمت إضافة الموظف ${e.name}`);
+    return data?.[0];
+  }
+
+  static async updateEmployee(id: string, e: Partial<Employee>) {
+    const { data, error } = await supabase.from('employees').update(e).eq('id', id).select();
+    if (error) return handleError(error, "فشل تحديث بيانات الموظف");
+    return data?.[0];
+  }
+
+  static async deleteEmployee(id: string) {
+    const { error } = await supabase.from('employees').delete().eq('id', id);
+    if (error) return handleError(error, "فشل حذف الموظف");
   }
 
   static async getShifts() {
     const { data, error } = await supabase.from('shift_records').select('*');
     if (error) return handleError(error, "فشل جلب سجلات الشفتات");
     return data || [];
+  }
+
+  static async addShift(s: Partial<ShiftRecord>) {
+    const { data, error } = await supabase.from('shift_records').insert([s]).select();
+    if (error) return handleError(error, "فشل تسجيل الشفت");
+    return data?.[0];
   }
 
   static async resetShifts() {
