@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { AR, PERMISSIONS_MAP } from '../constants.ts';
 import { DB } from '../store.ts';
 import { User, Permission, Store, FinancialAccount } from '../types.ts';
-import { UserPlus, Search, Trash2, UserCheck, Shield, Check, X, Loader2, Package, Wallet, Edit } from 'lucide-react';
+import { UserPlus, Search, Trash2, UserCheck, Shield, Check, X, Loader2, Package, Wallet, Edit, AlertCircle } from 'lucide-react';
 
 const UsersModule: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -29,11 +29,19 @@ const UsersModule: React.FC = () => {
         DB.getStores(),
         DB.getAccounts()
       ]);
-      setUsers(u || []);
+
+      // ضمان أن u مصفوفة حتى لو كانت null
+      const userList = u || [];
+      const sanitizedUsers = userList.map(user => ({
+        ...user,
+        permissions: Array.isArray(user.permissions) ? user.permissions : []
+      }));
+      
+      setUsers(sanitizedUsers);
       setAvailableStores(s || []);
       setAvailableAccounts(a || []);
     } catch (err) {
-      console.error(err);
+      console.error("Error fetching data in UsersModule:", err);
     } finally {
       setLoading(false);
     }
@@ -60,7 +68,7 @@ const UsersModule: React.FC = () => {
       name: user.name, 
       username: user.username, 
       permissions: user.permissions,
-      password: '' // لا نظهر كلمة المرور القديمة
+      password: '' 
     });
     setShowModal(true);
   };
@@ -83,7 +91,7 @@ const UsersModule: React.FC = () => {
       await loadData();
       setShowModal(false);
     } catch (err) {
-      alert("حدث خطأ أثناء حفظ بيانات المستخدم.");
+      alert("حدث خطأ أثناء حفظ بيانات المستخدم. تأكد من إعداد جدول system_users بشكل صحيح.");
     } finally {
       setSubmitting(false);
     }
@@ -100,8 +108,8 @@ const UsersModule: React.FC = () => {
   };
 
   const filteredUsers = users.filter(u => 
-    u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
-    u.username.toLowerCase().includes(searchTerm.toLowerCase())
+    (u.name && u.name.toLowerCase().includes(searchTerm.toLowerCase())) || 
+    (u.username && u.username.toLowerCase().includes(searchTerm.toLowerCase()))
   );
 
   return (
@@ -121,7 +129,16 @@ const UsersModule: React.FC = () => {
       </div>
 
       {loading ? (
-        <div className="flex justify-center py-20"><Loader2 className="animate-spin text-primary-600" size={40} /></div>
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <Loader2 className="animate-spin text-primary-600" size={40} />
+          <p className="text-gray-400 font-bold">جاري جلب قائمة المستخدمين...</p>
+        </div>
+      ) : filteredUsers.length === 0 ? (
+        <div className="bg-white p-20 rounded-3xl border border-dashed flex flex-col items-center justify-center text-gray-400">
+          <AlertCircle size={48} className="mb-4 opacity-20" />
+          <p className="font-bold">لم يتم العثور على أي مستخدمين</p>
+          <button onClick={handleOpenAdd} className="mt-4 text-primary-600 font-bold hover:underline">أضف أول مستخدم الآن</button>
+        </div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {filteredUsers.map(user => (
@@ -129,7 +146,7 @@ const UsersModule: React.FC = () => {
               <div className="flex justify-between items-start mb-6">
                 <div className="flex items-center gap-4">
                   <div className="w-14 h-14 bg-primary-600 text-white rounded-xl flex items-center justify-center font-bold text-xl uppercase shadow-sm">
-                    {user.name[0]}
+                    {user.name ? user.name[0] : '?'}
                   </div>
                   <div>
                     <h4 className="font-bold text-lg text-gray-800">{user.name}</h4>
@@ -155,6 +172,9 @@ const UsersModule: React.FC = () => {
                       perm)}
                   </span>
                 ))}
+                {(!user.permissions || user.permissions.length === 0) && (
+                  <span className="text-[10px] text-gray-400 italic">لا توجد صلاحيات مسندة</span>
+                )}
               </div>
             </div>
           ))}

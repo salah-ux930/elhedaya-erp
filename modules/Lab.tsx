@@ -201,7 +201,8 @@ const LabModule: React.FC = () => {
                       <td className="px-6 py-4 text-gray-500 text-sm font-mono">{test.date}</td>
                       <td className="px-6 py-4">
                         <div className="font-bold text-gray-800">{test.patients?.name}</div>
-                        <div className="text-[10px] text-primary-600">{calculateAgeStr(test.patients?.date_of_birth || test.patients?.dateOfBirth)}</div>
+                        {/* Fix: Access the dateOfBirth property defined in the Patient interface */}
+                        <div className="text-[10px] text-primary-600">{calculateAgeStr(test.patients?.dateOfBirth)}</div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="font-bold text-primary-700">{test.lab_test_definitions?.name}</div>
@@ -292,7 +293,8 @@ const LabModule: React.FC = () => {
                        <SearchableSelect 
                          label="اسم المريض"
                          placeholder="ابحث عن مريض..."
-                         options={patients.map(p => ({ id: p.id, label: `${p.name} ${calculateAgeStr(p.date_of_birth || p.dateOfBirth)}`, subLabel: p.nationalId }))}
+                         /* Fix: Use dateOfBirth instead of date_of_birth on line 295 to match the Patient interface */
+                         options={patients.map(p => ({ id: p.id, label: `${p.name} ${calculateAgeStr(p.dateOfBirth)}`, subLabel: p.nationalId }))}
                          value={selectedPatientId}
                          onChange={setSelectedPatientId}
                          onAddNew={() => setShowPatientModal(true)}

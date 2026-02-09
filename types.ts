@@ -73,22 +73,23 @@ export interface DialysisSession {
   notes: string;
 }
 
+// Added Invoice interface to resolve import errors
+export interface Invoice {
+  id: string;
+  patientId?: string;
+  patientName: string;
+  date: string;
+  amount: number;
+  status: 'PAID' | 'DEFERRED' | 'FREE';
+  room: string;
+  dob: string;
+}
+
 export interface Service {
   id: string;
   name: string;
   price: number;
   category: 'DIALYSIS' | 'LAB' | 'PHARMACY' | 'OTHER';
-}
-
-export interface Invoice {
-  id: string;
-  patientId: string;
-  date: string;
-  items: { serviceId: string; quantity: number; price: number }[];
-  totalAmount: number;
-  status: 'PAID' | 'DEFERRED' | 'FREE';
-  fundingEntityId: string;
-  room?: string;
 }
 
 export interface Product {
@@ -97,6 +98,9 @@ export interface Product {
   unit: string;
   minStock: number;
   price: number;
+  category?: string;
+  barcode?: string;
+  description?: string;
 }
 
 export interface Store {
