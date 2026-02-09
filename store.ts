@@ -1,45 +1,25 @@
 
 import { 
-  Patient, DialysisSession, Service, Invoice, Product, 
-  Store, StockTransaction, Employee, FinancialAccount, 
-  Transaction, FundingEntity, ShiftRecord, LabTest, LabTestDefinition, AuditLog,
-  User, Permission, TransferRequest
+  Patient, Service, Product, Store, StockTransaction, 
+  Employee, FinancialAccount, Transaction, ShiftRecord, User,
+  FundingEntity, TransferRequest, LabTest, LabTestDefinition
 } from './types.ts';
 import { supabase } from './supabase.ts';
 
 const handleError = (error: any, fallbackMessage: string) => {
-  console.error("Database Error Details:", error);
-  const msg = error.message?.toLowerCase() || "";
+  console.error("Database Error:", error);
   const code = error.code;
-  
-  if (
-    code === '42P01' || 
-    code === '42703' || 
-    code === 'PGRST107' ||
-    msg.includes('not found') || 
-    msg.includes('schema cache') || 
-    msg.includes('column') ||
-    msg.includes('relation')
-  ) {
-    throw new Error(`SCHEMA_ERROR: خطأ في بنية قاعدة البيانات. يرجى التوجه لصفحة الإعدادات وتشغيل كود SQL المحدث لإعادة بناء الجداول.`);
+  if (['42P01', '42703', 'PGRST107'].includes(code)) {
+    throw new Error(`SCHEMA_ERROR: خطأ في بنية قاعدة البيانات. يرجى التوجه لصفحة الإعدادات وتشغيل كود SQL المحدث.`);
   }
-  
   throw new Error(error.message || fallbackMessage);
 };
 
 export class DB {
   static async login(username: string, password: string): Promise<User | null> {
-    try {
-      const { data, error } = await supabase
-        .from('system_users')
-        .select('*')
-        .eq('username', username)
-        .eq('password', password)
-        .single();
-      if (error || !data) return null;
-      await this.log('تسجيل دخول', `دخل المستخدم ${data.name} إلى النظام`);
-      return data as User;
-    } catch (e) { return null; }
+    const { data, error } = await supabase.from('system_users').select('*').eq('username', username).eq('password', password).single();
+    if (error || !data) return null;
+    return data as User;
   }
 
   static async getPatients() {
@@ -51,25 +31,21 @@ export class DB {
   static async addPatient(p: Partial<Patient>) {
     const { data, error } = await supabase.from('patients').insert([p]).select();
     if (error) return handleError(error, "فشل إضافة المريض");
-    await this.log('إضافة مريض', `تمت إضافة المريض ${p.name}`);
     return data?.[0];
   }
 
-  static async getAccounts() {
-    const { data, error } = await supabase.from('financial_accounts').select('*').order('name');
-    if (error) return handleError(error, "فشل جلب الحسابات");
+  // Add missing getFundingEntities method
+  static async getFundingEntities(): Promise<FundingEntity[]> {
+    const { data, error } = await supabase.from('funding_entities').select('*').order('name');
+    if (error) return handleError(error, "فشل جلب جهات التعاقد") as any;
+    return (data || []) as FundingEntity[];
+  }
+
+  // --- إدارة المخزون والصلاحيات ---
+  static async getStores() {
+    const { data, error } = await supabase.from('stores').select('*').order('name');
+    if (error) return handleError(error, "فشل جلب المخازن");
     return data || [];
-  }
-
-  static async addAccount(a: Partial<FinancialAccount>) {
-    const { data, error } = await supabase.from('financial_accounts').insert([a]).select();
-    if (error) return handleError(error, "فشل إضافة الحساب");
-    return data?.[0];
-  }
-
-  static async deleteAccount(id: string) {
-    const { error } = await supabase.from('financial_accounts').delete().eq('id', id);
-    if (error) return handleError(error, "فشل حذف الحساب");
   }
 
   static async getProducts() {
@@ -78,59 +54,26 @@ export class DB {
     return data || [];
   }
 
-  static async addProduct(p: Partial<Product>) {
-    const { data, error } = await supabase.from('products').insert([p]).select();
-    if (error) return handleError(error, "فشل إضافة الصنف");
-    return data?.[0];
-  }
-
-  static async deleteProduct(id: string) {
-    const { error } = await supabase.from('products').delete().eq('id', id);
-    if (error) return handleError(error, "فشل حذف الصنف");
-  }
-
-  static async getStores() {
-    const { data, error } = await supabase.from('stores').select('*').order('name');
-    if (error) return handleError(error, "فشل جلب المخازن");
+  static async getStockTransactions() {
+    const { data, error } = await supabase.from('stock_transactions').select('*');
+    if (error) return handleError(error, "فشل جلب الحركات");
     return data || [];
   }
 
-  static async addStore(s: Partial<Store>) {
-    const { data, error } = await supabase.from('stores').insert([s]).select();
-    if (error) return handleError(error, "فشل إضافة المخزن");
+  static async addStockTransaction(tx: Partial<StockTransaction>) {
+    const { data, error } = await supabase.from('stock_transactions').insert([tx]).select();
+    if (error) return handleError(error, "فشل تسجيل الحركة");
     return data?.[0];
   }
 
-  static async deleteStore(id: string) {
-    const { error } = await supabase.from('stores').delete().eq('id', id);
-    if (error) return handleError(error, "فشل حذف المخزن");
+  // Add missing getTransferRequests method
+  static async getTransferRequests(): Promise<TransferRequest[]> {
+    const { data, error } = await supabase.from('transfer_requests').select('*').order('date', { ascending: false });
+    if (error) return handleError(error, "فشل جلب طلبات التحويل") as any;
+    return (data || []) as TransferRequest[];
   }
 
-  static async getUsers() {
-    const { data, error } = await supabase.from('system_users').select('*');
-    if (error) return handleError(error, "فشل جلب المستخدمين");
-    return data || [];
-  }
-
-  static async addUser(u: Partial<User>) {
-    const { data, error } = await supabase.from('system_users').insert([u]).select();
-    if (error) return handleError(error, "فشل إضافة المستخدم");
-    return data?.[0];
-  }
-
-  static async updateUser(id: string, u: Partial<User>) {
-    const updateData = { ...u };
-    if (!updateData.password) delete updateData.password;
-    const { data, error } = await supabase.from('system_users').update(updateData).eq('id', id).select();
-    if (error) return handleError(error, "فشل تحديث المستخدم");
-    return data?.[0];
-  }
-
-  static async deleteUser(id: string) {
-    const { error } = await supabase.from('system_users').delete().eq('id', id);
-    if (error) return handleError(error, "فشل حذف المستخدم");
-  }
-
+  // --- إدارة الخدمات والخصم التلقائي ---
   static async getServices() {
     const { data, error } = await supabase.from('services').select('*').order('name');
     if (error) return handleError(error, "فشل جلب الخدمات");
@@ -148,112 +91,44 @@ export class DB {
     if (error) return handleError(error, "فشل حذف الخدمة");
   }
 
-  static async getFundingEntities() {
-    const { data, error } = await supabase.from('funding_entities').select('*').order('name');
-    if (error) return handleError(error, "فشل جلب جهات التمويل");
-    return data || [];
-  }
+  static async addSession(s: any, storeId?: string) {
+    // 1. تسجيل الجلسة
+    const { data: session, error } = await supabase.from('dialysis_sessions').insert([s]).select();
+    if (error) return handleError(error, "فشل تسجيل الجلسة");
 
-  static async addFundingEntity(name: string) {
-    const { data, error } = await supabase.from('funding_entities').insert([{ name }]).select();
-    if (error) return handleError(error, "فشل إضافة جهة التعاقد");
-    return data?.[0];
-  }
-
-  static async deleteFundingEntity(id: string) {
-    const { error } = await supabase.from('funding_entities').delete().eq('id', id);
-    if (error) return handleError(error, "فشل حذف جهة التعاقد");
-  }
-
-  static async getTransactions() {
-    const { data, error } = await supabase.from('transactions').select('*').order('date', { ascending: false });
-    if (error) return handleError(error, "فشل جلب المعاملات");
-    return data || [];
-  }
-
-  static async addFinanceTx(tx: Partial<Transaction>) {
-    const { data, error } = await supabase.from('transactions').insert([tx]).select();
-    if (error) return handleError(error, "فشل تسجيل المعاملة");
-
-    const { data: acc } = await supabase.from('financial_accounts').select('balance').eq('id', tx.account_id).single();
-    if (acc) {
-        const newBalance = tx.type === 'INCOME' 
-            ? Number(acc.balance) + Number(tx.amount) 
-            : Number(acc.balance) - Number(tx.amount);
-        
-        await supabase.from('financial_accounts').update({ balance: newBalance }).eq('id', tx.account_id);
+    // 2. الخصم التلقائي إذا كانت الخدمة مرتبطة بأصناف
+    if (s.service_id && storeId) {
+      const { data: service } = await supabase.from('services').select('config').eq('id', s.service_id).single();
+      if (service?.config?.consumables) {
+        for (const item of service.config.consumables) {
+          await this.addStockTransaction({
+            product_id: item.product_id,
+            store_id: storeId,
+            type: 'DEDUCT',
+            quantity: item.quantity,
+            date: new Date().toISOString().split('T')[0],
+            note: `خصم تلقائي: جلسة مريض (رقم ${session?.[0].id})`
+          });
+        }
+      }
     }
-    
-    await this.log('معاملة مالية', `تم تسجيل ${tx.type === 'INCOME' ? 'إيراد' : 'مصروف'} بمبلغ ${tx.amount}`);
-    return data?.[0];
-  }
-
-  static async log(action: string, details: string) {
-    try {
-      const userStr = localStorage.getItem('dialysis_user');
-      const user = userStr ? JSON.parse(userStr) : { name: 'Unknown' };
-      await supabase.from('audit_logs').insert([{
-        user_id: user.name,
-        action,
-        details,
-        timestamp: new Date().toISOString()
-      }]);
-    } catch (e) {}
+    return session?.[0];
   }
 
   static async getSessions() {
-    const { data, error } = await supabase.from('dialysis_sessions').select('*, patients(name)');
+    const { data, error } = await supabase.from('dialysis_sessions').select('*, patients(name, date_of_birth)');
     if (error) return handleError(error, "فشل جلب الجلسات");
     return data || [];
   }
 
+  // Add missing getPatientSessions method
   static async getPatientSessions(patientId: string) {
-    const { data, error } = await supabase
-      .from('dialysis_sessions')
-      .select('*')
-      .eq('patient_id', patientId)
-      .order('date', { ascending: false });
+    const { data, error } = await supabase.from('dialysis_sessions').select('*').eq('patient_id', patientId).order('date', { ascending: false });
     if (error) return handleError(error, "فشل جلب جلسات المريض");
     return data || [];
   }
 
-  static async addSession(s: any) {
-    const { data, error } = await supabase.from('dialysis_sessions').insert([s]).select();
-    if (error) return handleError(error, "فشل تسجيل الجلسة");
-    return data?.[0];
-  }
-
-  static async getLabDefinitions() {
-    const { data, error } = await supabase.from('lab_test_definitions').select('*');
-    if (error) return handleError(error, "فشل جلب تعاريف المعمل");
-    return data || [];
-  }
-
-  static async addLabDefinition(d: Partial<LabTestDefinition>) {
-    const { data, error } = await supabase.from('lab_test_definitions').insert([d]).select();
-    if (error) return handleError(error, "فشل إضافة تعريف التحليل");
-    return data?.[0];
-  }
-
-  static async getLabTests() {
-    const { data, error } = await supabase.from('lab_tests').select('*, patients(name), lab_test_definitions(name)');
-    if (error) return handleError(error, "فشل جلب فحوصات المعمل");
-    return data || [];
-  }
-
-  static async addLabTest(t: Partial<LabTest>) {
-    const { data, error } = await supabase.from('lab_tests').insert([t]).select();
-    if (error) return handleError(error, "فشل حجز التحليل");
-    return data?.[0];
-  }
-
-  static async updateLabResult(id: string, result: string) {
-    const { data, error } = await supabase.from('lab_tests').update({ result, status: 'COMPLETED' }).eq('id', id).select();
-    if (error) return handleError(error, "فشل تحديث نتيجة التحليل");
-    return data?.[0];
-  }
-
-  // --- دوال الموظفين ---
+  // --- الرواتب والموظفين ---
   static async getEmployees() {
     const { data, error } = await supabase.from('employees').select('*').order('name');
     if (error) return handleError(error, "فشل جلب الموظفين");
@@ -263,13 +138,12 @@ export class DB {
   static async addEmployee(e: Partial<Employee>) {
     const { data, error } = await supabase.from('employees').insert([e]).select();
     if (error) return handleError(error, "فشل إضافة الموظف");
-    await this.log('إضافة موظف', `تمت إضافة الموظف ${e.name}`);
     return data?.[0];
   }
 
   static async updateEmployee(id: string, e: Partial<Employee>) {
     const { data, error } = await supabase.from('employees').update(e).eq('id', id).select();
-    if (error) return handleError(error, "فشل تحديث بيانات الموظف");
+    if (error) return handleError(error, "فشل تحديث الموظف");
     return data?.[0];
   }
 
@@ -280,42 +154,110 @@ export class DB {
 
   static async getShifts() {
     const { data, error } = await supabase.from('shift_records').select('*');
-    if (error) return handleError(error, "فشل جلب سجلات الشفتات");
+    if (error) return handleError(error, "فشل جلب الشفتات");
     return data || [];
   }
 
-  static async addShift(s: Partial<ShiftRecord>) {
-    const { data, error } = await supabase.from('shift_records').insert([s]).select();
-    if (error) return handleError(error, "فشل تسجيل الشفت");
-    return data?.[0];
+  static async bulkUpdateShifts(shifts: { employee_code: string, count: number }[]) {
+    for (const shift of shifts) {
+      const { data: emp } = await supabase.from('employees').select('id').eq('code', shift.employee_code).single();
+      if (emp) {
+        await supabase.from('shift_records').insert([{
+          employee_id: emp.id,
+          count: shift.count,
+          date: new Date().toISOString().split('T')[0]
+        }]);
+      }
+    }
   }
 
   static async resetShifts() {
-    const { error } = await supabase.from('shift_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    if (error) return handleError(error, "فشل تصفير سجلات الشفتات");
+    await supabase.from('shift_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
   }
 
-  static async getTransferRequests() {
-    const { data, error } = await supabase.from('transfer_requests').select('*');
-    if (error) return handleError(error, "فشل جلب طلبات التحويل");
+  // --- الحسابات والمالية ---
+  static async getAccounts() {
+    const { data, error } = await supabase.from('financial_accounts').select('*').order('name');
+    if (error) return handleError(error, "فشل جلب الحسابات");
     return data || [];
   }
 
-  static async createTransferRequest(req: Partial<TransferRequest>) {
-    const { data, error } = await supabase.from('transfer_requests').insert([req]).select();
-    if (error) return handleError(error, "فشل إنشاء طلب التحويل");
+  static async addFinanceTx(tx: Partial<Transaction>) {
+    const { data, error } = await supabase.from('transactions').insert([tx]).select();
+    if (error) return handleError(error, "فشل تسجيل المعاملة");
+    const { data: acc } = await supabase.from('financial_accounts').select('balance').eq('id', tx.account_id).single();
+    if (acc) {
+        const newBalance = tx.type === 'INCOME' ? Number(acc.balance) + Number(tx.amount) : Number(acc.balance) - Number(tx.amount);
+        await supabase.from('financial_accounts').update({ balance: newBalance }).eq('id', tx.account_id);
+    }
     return data?.[0];
   }
 
-  static async getStockTransactions() {
-    const { data, error } = await supabase.from('stock_transactions').select('*');
-    if (error) return handleError(error, "فشل جلب الحركات المخزنية");
+  static async getTransactions() {
+    const { data, error } = await supabase.from('transactions').select('*').order('date', { ascending: false });
+    if (error) return handleError(error, "فشل جلب المعاملات");
     return data || [];
   }
 
-  static async addStockTransaction(tx: Partial<StockTransaction>) {
-    const { data, error } = await supabase.from('stock_transactions').insert([tx]).select();
-    if (error) return handleError(error, "فشل تسجيل العملية المخزنية");
+  static async getUsers() {
+    const { data, error } = await supabase.from('system_users').select('*');
+    if (error) return handleError(error, "فشل جلب المستخدمين");
+    return data || [];
+  }
+
+  static async addUser(u: Partial<User>) {
+    const { data, error } = await supabase.from('system_users').insert([u]).select();
+    if (error) return handleError(error, "فشل إضافة المستخدم");
     return data?.[0];
+  }
+
+  // Add missing updateUser method
+  static async updateUser(id: string, u: Partial<User>) {
+    const { data, error } = await supabase.from('system_users').update(u).eq('id', id).select();
+    if (error) return handleError(error, "فشل تحديث المستخدم");
+    return data?.[0];
+  }
+
+  // Add missing deleteUser method
+  static async deleteUser(id: string) {
+    const { error } = await supabase.from('system_users').delete().eq('id', id);
+    if (error) return handleError(error, "فشل حذف المستخدم");
+  }
+
+  // --- Lab Methods ---
+  
+  // Add missing getLabDefinitions method
+  static async getLabDefinitions(): Promise<LabTestDefinition[]> {
+    const { data, error } = await supabase.from('lab_test_definitions').select('*').order('name');
+    if (error) return handleError(error, "فشل جلب تعاريف التحاليل") as any;
+    return (data || []) as LabTestDefinition[];
+  }
+
+  // Add missing getLabTests method
+  static async getLabTests(): Promise<LabTest[]> {
+    const { data, error } = await supabase.from('lab_tests').select('*, patients(name, date_of_birth), lab_test_definitions(name, category, sample_type)').order('date', { ascending: false });
+    if (error) return handleError(error, "فشل جلب نتائج التحاليل") as any;
+    return (data || []) as LabTest[];
+  }
+
+  // Add missing addLabTest method
+  static async addLabTest(t: Partial<LabTest>): Promise<LabTest> {
+    const { data, error } = await supabase.from('lab_tests').insert([t]).select();
+    if (error) return handleError(error, "فشل حجز التحليل") as any;
+    return data?.[0] as LabTest;
+  }
+
+  // Add missing addLabDefinition method
+  static async addLabDefinition(d: Partial<LabTestDefinition>): Promise<LabTestDefinition> {
+    const { data, error } = await supabase.from('lab_test_definitions').insert([d]).select();
+    if (error) return handleError(error, "فشل إضافة تعريف التحليل") as any;
+    return data?.[0] as LabTestDefinition;
+  }
+
+  // Add missing updateLabResult method
+  static async updateLabResult(id: string, result: string): Promise<LabTest> {
+    const { data, error } = await supabase.from('lab_tests').update({ result, status: 'COMPLETED' }).eq('id', id).select();
+    if (error) return handleError(error, "فشل تحديث النتيجة") as any;
+    return data?.[0] as LabTest;
   }
 }

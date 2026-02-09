@@ -5,6 +5,7 @@ import DashboardModule from './modules/Dashboard.tsx';
 import NotificationsModule from './modules/Notifications.tsx';
 import ReceptionModule from './modules/Reception.tsx';
 import PatientModule from './modules/Patients.tsx';
+import ActivePatients from './modules/ActivePatients.tsx';
 import LabModule from './modules/Lab.tsx';
 import BillingModule from './modules/Billing.tsx';
 import PayrollModule from './modules/Payroll.tsx';
@@ -67,6 +68,7 @@ const App: React.FC = () => {
   const tabPermissions: Record<string, Permission> = {
     dashboard: 'VIEW_DASHBOARD',
     notifications: 'VIEW_NOTIFICATIONS',
+    activePatients: 'MANAGE_RECEPTION',
     reception: 'MANAGE_RECEPTION',
     patients: 'MANAGE_PATIENTS',
     lab: 'MANAGE_LAB',
@@ -94,6 +96,7 @@ const App: React.FC = () => {
     switch (activeTab) {
       case 'dashboard': return <DashboardModule />;
       case 'notifications': return <NotificationsModule />;
+      case 'activePatients': return <ActivePatients />;
       case 'reception': return <ReceptionModule />;
       case 'patients': return <PatientModule setTab={setActiveTab} />;
       case 'lab': return <LabModule />;

@@ -40,57 +40,15 @@ export interface Patient {
   created_at: string;
 }
 
-export interface LabTestDefinition {
-  id: string;
-  name: string;
-  category: string;
-  sample_type: string;
-  normal_range_male: string;
-  normal_range_female: string;
-  normal_range_child: string;
-}
-
-export interface LabTest {
-  id: string;
-  patient_id: string;
-  test_definition_id: string;
-  result?: string;
-  status: 'PENDING' | 'COMPLETED';
-  date: string;
-  test_name?: string;
-}
-
-export interface DialysisSession {
-  id: string;
-  patient_id: string;
-  date: string;
-  start_time: string;
-  end_time: string;
-  weight_before: number;
-  weight_after: number;
-  blood_pressure: string;
-  room: string;
-  machine_id: string;
-  status: 'WAITING' | 'ACTIVE' | 'FINISHED';
-  notes: string;
-}
-
-export interface Invoice {
-  id: string;
-  patient_id?: string;
-  patient_name: string;
-  date: string;
-  amount: number;
-  status: 'PAID' | 'DEFERRED' | 'FREE';
-  room: string;
-  dob: string;
-}
-
 export interface Service {
   id: string;
   name: string;
   price: number;
   category: 'DIALYSIS' | 'LAB' | 'PHARMACY' | 'OTHER';
+  config?: {
+    required_fields?: string[];
+    consumables?: { product_id: string; quantity: number }[];
+  };
 }
 
 export interface Product {
@@ -119,19 +77,6 @@ export interface StockTransaction {
   target_store_id?: string;
   date: string;
   note?: string;
-  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
-  request_id?: string;
-}
-
-export interface TransferRequest {
-  id: string;
-  from_store_id: string;
-  to_store_id: string;
-  items: { product_id: string; quantity: number }[];
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  requested_by: string;
-  note?: string;
-  date: string;
 }
 
 export interface Employee {
@@ -155,7 +100,6 @@ export interface FinancialAccount {
   name: string;
   type: 'CASH' | 'BANK';
   balance: number;
-  linked_employee_id?: string;
 }
 
 export interface Transaction {
@@ -168,15 +112,69 @@ export interface Transaction {
   note: string;
 }
 
-export interface AuditLog {
+export interface DialysisSession {
   id: string;
-  user_id: string;
-  action: string;
-  timestamp: string;
-  details: string;
+  patient_id: string;
+  service_id?: string;
+  date: string;
+  start_time: string;
+  end_time?: string;
+  weight_before: number;
+  weight_after?: number;
+  blood_pressure: string;
+  room: string;
+  status: 'WAITING' | 'ACTIVE' | 'FINISHED';
+  notes: string;
+  custom_data?: Record<string, string>;
+  machine_id?: string;
 }
 
+// Add missing FundingEntity type
 export interface FundingEntity {
   id: string;
   name: string;
+  created_at: string;
+}
+
+// Add missing TransferRequest type
+export interface TransferRequest {
+  id: string;
+  from_store_id: string;
+  to_store_id: string;
+  items: { product_id: string; quantity: number }[];
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  requested_by?: string;
+  note?: string;
+  date: string;
+}
+
+// Add missing Invoice type
+export interface Invoice {
+  id: string;
+  patient_id: string;
+  date: string;
+  amount: number;
+  status: 'PAID' | 'DEFERRED' | 'FREE';
+  room?: string;
+}
+
+// Add missing LabTestDefinition type
+export interface LabTestDefinition {
+  id: string;
+  name: string;
+  category?: string;
+  sample_type?: string;
+  normal_range_male?: string;
+  normal_range_female?: string;
+  normal_range_child?: string;
+}
+
+// Add missing LabTest type
+export interface LabTest {
+  id: string;
+  patient_id: string;
+  test_definition_id: string;
+  result?: string;
+  status: 'PENDING' | 'COMPLETED';
+  date: string;
 }

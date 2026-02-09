@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { AR } from '../constants';
 import { 
   LayoutDashboard, Users, CreditCard, Users2, Package, 
-  Wallet, Settings, LogOut, Menu, X, Bell, UserCheck, Stethoscope, FlaskConical
+  Wallet, Settings, LogOut, Menu, X, Bell, UserCheck, Stethoscope, FlaskConical, UserRoundCheck
 } from 'lucide-react';
 import { Permission } from '../types';
 
@@ -42,9 +42,9 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
   // القائمة الأساسية
   const menuItems = [
     { id: 'dashboard', label: AR.dashboard, icon: <LayoutDashboard size={22} />, permission: 'VIEW_DASHBOARD' },
-    { id: 'notifications', label: AR.notifications, icon: <Bell size={22} />, permission: 'VIEW_NOTIFICATIONS' },
-    { id: 'reception', label: AR.reception, icon: <Stethoscope size={22} />, permission: 'MANAGE_RECEPTION' },
+    { id: 'activePatients', label: AR.activePatients, icon: <UserRoundCheck size={22} />, permission: 'MANAGE_RECEPTION' },
     { id: 'patients', label: AR.patients, icon: <Users size={22} />, permission: 'MANAGE_PATIENTS' },
+    { id: 'reception', label: AR.reception, icon: <Stethoscope size={22} />, permission: 'MANAGE_RECEPTION' },
     { id: 'lab', label: AR.lab, icon: <FlaskConical size={22} />, permission: 'MANAGE_LAB' },
     { id: 'billing', label: AR.billing, icon: <CreditCard size={22} />, permission: 'MANAGE_BILLING' },
     { id: 'employees', label: AR.employees, icon: <Users2 size={22} />, permission: 'MANAGE_PAYROLL' },

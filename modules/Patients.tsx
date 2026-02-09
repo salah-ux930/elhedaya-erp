@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
-import { AR, BLOOD_TYPES, calculateAge } from '../constants';
+import { AR, BLOOD_TYPES, calculateAge, ROOMS } from '../constants';
 import { DB } from '../store';
 import { Patient, FundingEntity, DialysisSession } from '../types';
 import { 
   Plus, Search, UserPlus, History, Phone, FileText, Loader2, 
   Calendar as CalendarIcon, X, User, Activity, MapPin, 
-  Droplets, CreditCard, ShieldCheck, HeartPulse, Clock
+  Droplets, CreditCard, ShieldCheck, HeartPulse, Clock, FilePlus, Scale, CheckCircle
 } from 'lucide-react';
 
 interface PatientModuleProps {
@@ -23,6 +23,9 @@ const PatientModule: React.FC<PatientModuleProps> = ({ setTab }) => {
   const [patientSessions, setPatientSessions] = useState<DialysisSession[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(false);
   
+  // New Record Modal state
+  const [showAddRecordModal, setShowAddRecordModal] = useState<Patient | null>(null);
+
   const [formData, setFormData] = useState<Partial<Patient>>({
     name: '',
     national_id: '',
@@ -79,6 +82,27 @@ const PatientModule: React.FC<PatientModuleProps> = ({ setTab }) => {
       });
     } catch (error) {
       alert("حدث خطأ أثناء حفظ البيانات");
+    }
+  };
+
+  const handleCreateNewRecord = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showAddRecordModal) return;
+    const target = e.target as any;
+    try {
+      await DB.addSession({
+        patient_id: showAddRecordModal.id,
+        status: 'WAITING',
+        date: new Date().toISOString().split('T')[0],
+        room: target.room.value,
+        notes: target.notes.value,
+        weight_before: parseFloat(target.weightBefore.value) || 0,
+        blood_pressure: target.bp.value,
+      });
+      alert("تم إضافة السجل الطبي بنجاح.");
+      setShowAddRecordModal(null);
+    } catch (e) {
+      alert("فشل إضافة السجل.");
     }
   };
 
@@ -235,16 +259,16 @@ const PatientModule: React.FC<PatientModuleProps> = ({ setTab }) => {
                     <td className="px-8 py-6">
                       <div className="flex justify-center gap-2">
                         <button 
-                          onClick={() => handleOpenProfile(p)}
+                          onClick={() => setShowAddRecordModal(p)}
                           className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-600 rounded-xl font-bold text-xs hover:bg-indigo-600 hover:text-white transition-all border border-indigo-100"
                         >
-                          <History size={16} /> السجل
+                          <FilePlus size={16} /> إضافة سجل
                         </button>
                         <button 
                           onClick={() => handleOpenProfile(p)}
                           className="flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-600 rounded-xl font-bold text-xs hover:bg-emerald-600 hover:text-white transition-all border border-emerald-100"
                         >
-                          <FileText size={16} /> الملف
+                          <FileText size={16} /> ملف المريض
                         </button>
                       </div>
                     </td>
@@ -260,6 +284,46 @@ const PatientModule: React.FC<PatientModuleProps> = ({ setTab }) => {
           </div>
         )}
       </div>
+
+      {/* Add New Record Modal */}
+      {showAddRecordModal && (
+        <div className="fixed inset-0 z-[60] bg-black/70 backdrop-blur-md flex items-center justify-center p-4">
+           <div className="bg-white w-full max-w-xl rounded-[2.5rem] shadow-2xl flex flex-col animate-in zoom-in-95">
+              <div className="p-8 bg-indigo-600 text-white flex justify-between items-center rounded-t-[2.5rem]">
+                 <div>
+                    <h3 className="text-xl font-black">إضافة سجل طبي جديد</h3>
+                    <p className="text-xs opacity-80 mt-1">{showAddRecordModal.name}</p>
+                 </div>
+                 <button onClick={() => setShowAddRecordModal(null)}><X size={28} /></button>
+              </div>
+              <form onSubmit={handleCreateNewRecord} className="p-10 space-y-6">
+                 <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1">
+                       <label className="text-xs font-bold text-gray-500 mr-1">الغرفة</label>
+                       <select name="room" className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 font-bold outline-none focus:border-indigo-500">
+                          {ROOMS.map(r => <option key={r} value={r}>{r}</option>)}
+                       </select>
+                    </div>
+                    <div className="space-y-1">
+                       <label className="text-xs font-bold text-gray-500 mr-1">الوزن الحالي (كجم)</label>
+                       <input name="weightBefore" type="number" step="0.1" required className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 font-black outline-none focus:border-indigo-500" placeholder="00.0" />
+                    </div>
+                 </div>
+                 <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-1">ضغط الدم</label>
+                    <input name="bp" required className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 font-bold outline-none focus:border-indigo-500" placeholder="120/80" />
+                 </div>
+                 <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-1">ملاحظات طبية / تشخيص</label>
+                    <textarea name="notes" className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 h-24 outline-none resize-none focus:border-indigo-500"></textarea>
+                 </div>
+                 <button type="submit" className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black shadow-xl shadow-indigo-600/30 hover:bg-indigo-700 transition-all flex items-center justify-center gap-2">
+                    <CheckCircle size={20} /> حفظ السجل الطبي
+                 </button>
+              </form>
+           </div>
+        </div>
+      )}
 
       {/* Patient Profile & History Modal */}
       {selectedPatient && (
