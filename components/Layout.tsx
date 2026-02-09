@@ -5,6 +5,7 @@ import {
   LayoutDashboard, Users, CreditCard, Users2, Package, 
   Wallet, Settings, LogOut, Menu, X, Bell, UserCheck, Stethoscope, FlaskConical
 } from 'lucide-react';
+import { Permission } from '../types';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
@@ -31,23 +32,32 @@ interface LayoutProps {
   children: React.ReactNode;
   activeTab: string;
   setActiveTab: (tab: string) => void;
+  user: { name: string; permissions: Permission[] };
+  onLogout: () => void;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) => {
+const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user, onLogout }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  const menuItems = [
-    { id: 'dashboard', label: AR.dashboard, icon: <LayoutDashboard size={22} /> },
-    { id: 'reception', label: AR.reception, icon: <Stethoscope size={22} /> },
-    { id: 'patients', label: AR.patients, icon: <Users size={22} /> },
-    { id: 'lab', label: AR.lab, icon: <FlaskConical size={22} /> },
-    { id: 'billing', label: AR.billing, icon: <CreditCard size={22} /> },
-    { id: 'employees', label: AR.employees, icon: <Users2 size={22} /> },
-    { id: 'inventory', label: AR.inventory, icon: <Package size={22} /> },
-    { id: 'finance', label: AR.finance, icon: <Wallet size={22} /> },
-    { id: 'users', label: AR.users, icon: <UserCheck size={22} /> },
-    { id: 'setup', label: AR.setup, icon: <Settings size={22} /> },
+  // القائمة الأساسية التي تظهر للجميع
+  const baseItems = [
+    { id: 'dashboard', label: AR.dashboard, icon: <LayoutDashboard size={22} />, alwaysShow: true },
   ];
+
+  // القائمة المشروطة بالصلاحيات
+  const restrictedItems = [
+    { id: 'reception', label: AR.reception, icon: <Stethoscope size={22} />, permission: 'MANAGE_RECEPTION' },
+    { id: 'patients', label: AR.patients, icon: <Users size={22} />, permission: 'MANAGE_PATIENTS' },
+    { id: 'lab', label: AR.lab, icon: <FlaskConical size={22} />, permission: 'MANAGE_LAB' },
+    { id: 'billing', label: AR.billing, icon: <CreditCard size={22} />, permission: 'MANAGE_BILLING' },
+    { id: 'employees', label: AR.employees, icon: <Users2 size={22} />, permission: 'MANAGE_PAYROLL' },
+    { id: 'inventory', label: AR.inventory, icon: <Package size={22} />, permission: 'MANAGE_INVENTORY' },
+    { id: 'finance', label: AR.finance, icon: <Wallet size={22} />, permission: 'MANAGE_FINANCE' },
+    { id: 'users', label: AR.users, icon: <UserCheck size={22} />, permission: 'MANAGE_USERS' },
+    { id: 'setup', label: AR.setup, icon: <Settings size={22} />, permission: 'SYSTEM_SETUP' },
+  ].filter(item => user.permissions.includes(item.permission as Permission));
+
+  const allVisibleItems = [...baseItems, ...restrictedItems];
 
   return (
     <div className="flex min-h-screen bg-gray-50 font-cairo" dir="rtl">
@@ -58,7 +68,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
           <h1 className="text-xl font-bold text-primary-900 tracking-tight">مركز الهدايه الطبى</h1>
         </div>
         <nav className="flex-1 mt-4 overflow-y-auto">
-          {menuItems.map((item) => (
+          {allVisibleItems.map((item) => (
             <SidebarItem
               key={item.id}
               icon={item.icon}
@@ -69,7 +79,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
           ))}
         </nav>
         <div className="p-4 border-t border-gray-100">
-          <button className="flex items-center gap-3 px-6 py-4 text-red-600 hover:bg-red-50 rounded-lg w-full transition-colors">
+          <button 
+            onClick={onLogout}
+            className="flex items-center gap-3 px-6 py-4 text-red-600 hover:bg-red-50 rounded-lg w-full transition-colors font-bold"
+          >
             <LogOut size={22} />
             <span className="font-medium">{AR.logout}</span>
           </button>
@@ -88,7 +101,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
               <Menu size={24} />
             </button>
             <h2 className="text-xl font-bold text-gray-800">
-              {menuItems.find(i => i.id === activeTab)?.label}
+              {allVisibleItems.find(i => i.id === activeTab)?.label}
             </h2>
           </div>
 
@@ -97,8 +110,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
               <Bell size={24} />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
             </div>
-            <div className="h-10 w-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-bold border border-primary-200">
-              أ
+            <div className="flex items-center gap-3">
+               <div className="text-left hidden md:block">
+                  <p className="text-xs text-gray-400 font-bold uppercase tracking-widest leading-none mb-1">المستخدم الحالي</p>
+                  <p className="text-sm font-bold text-gray-800 leading-none">{user.name}</p>
+               </div>
+               <div className="h-10 w-10 rounded-full bg-primary-600 flex items-center justify-center text-white font-bold border-2 border-white shadow-sm uppercase">
+                {user.name[0]}
+               </div>
             </div>
           </div>
         </header>
@@ -123,7 +142,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
               </button>
             </div>
             <nav className="p-4">
-              {menuItems.map((item) => (
+              {allVisibleItems.map((item) => (
                 <SidebarItem
                   key={item.id}
                   icon={item.icon}
@@ -135,6 +154,14 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab }) =>
                   }}
                 />
               ))}
+              <div className="mt-8 pt-8 border-t">
+                 <SidebarItem 
+                   icon={<LogOut size={22} />} 
+                   label={AR.logout} 
+                   active={false} 
+                   onClick={onLogout} 
+                 />
+              </div>
             </nav>
           </div>
         </div>
