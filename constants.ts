@@ -92,8 +92,10 @@ export const PERMISSIONS_MAP: Record<string, string> = {
   MANAGE_LAB: "إدارة المعمل",
   MANAGE_BILLING: "إدارة الفواتير",
   MANAGE_PAYROLL: "إدارة الموظفين والرواتب",
-  MANAGE_INVENTORY: "إدارة المخازن (كاملة)",
-  MANAGE_FINANCE: "إدارة الحسابات والمالية (كاملة)",
+  MANAGE_INVENTORY: "إدارة المخزون (صرف وتوريد)",
+  MANAGE_STORES: "تعريف وإدارة المخازن",
+  MANAGE_FINANCE: "إدارة الحسابات والمالية (إيرادات ومصروفات)",
+  MANAGE_ACCOUNTS: "تعريف وإدارة الخزن والحسابات البنكية",
   MANAGE_USERS: "إدارة حسابات النظام",
   SYSTEM_SETUP: "إعدادات النظام"
 };

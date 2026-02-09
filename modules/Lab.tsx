@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AR, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
@@ -49,8 +50,9 @@ const LabModule: React.FC = () => {
     if (!selectedPatientId || !selectedTestDefId) return alert("يرجى اختيار المريض ونوع التحليل");
     try {
       await DB.addLabTest({
-        patientId: selectedPatientId,
-        testDefinitionId: selectedTestDefId,
+        // Use snake_case to match LabTest interface
+        patient_id: selectedPatientId,
+        test_definition_id: selectedTestDefId,
         date: new Date().toISOString().split('T')[0]
       });
       setShowAddModal(false);
@@ -69,10 +71,11 @@ const LabModule: React.FC = () => {
       await DB.addLabDefinition({
         name: target.name.value,
         category: target.category.value,
-        sampleType: target.sampleType.value,
-        normalRangeMale: target.rangeMale.value,
-        normalRangeFemale: target.rangeFemale.value,
-        normalRangeChild: target.rangeChild.value
+        // Use snake_case to match LabTestDefinition interface
+        sample_type: target.sampleType.value,
+        normal_range_male: target.rangeMale.value,
+        normal_range_female: target.rangeFemale.value,
+        normal_range_child: target.rangeChild.value
       });
       setShowDefModal(false);
       loadData();
@@ -87,10 +90,13 @@ const LabModule: React.FC = () => {
     try {
       const newP = await DB.addPatient({
         name: target.name.value,
-        nationalId: target.nationalId.value,
+        // Use national_id to match Patient interface
+        national_id: target.national_id.value,
         phone: target.phone.value,
-        bloodType: target.bloodType.value,
-        dateOfBirth: target.dateOfBirth.value
+        // Use blood_type to match Patient interface
+        blood_type: target.blood_type.value,
+        // Use date_of_birth to match Patient interface
+        date_of_birth: target.date_of_birth.value
       });
       setPatients([...patients, newP]);
       setSelectedPatientId(newP.id);
@@ -201,12 +207,13 @@ const LabModule: React.FC = () => {
                       <td className="px-6 py-4 text-gray-500 text-sm font-mono">{test.date}</td>
                       <td className="px-6 py-4">
                         <div className="font-bold text-gray-800">{test.patients?.name}</div>
-                        {/* Fix: Access the dateOfBirth property defined in the Patient interface */}
-                        <div className="text-[10px] text-primary-600">{calculateAgeStr(test.patients?.dateOfBirth)}</div>
+                        {/* Use date_of_birth to match Patient interface */}
+                        <div className="text-[10px] text-primary-600">{calculateAgeStr(test.patients?.date_of_birth)}</div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="font-bold text-primary-700">{test.lab_test_definitions?.name}</div>
-                        <div className="text-[10px] text-gray-400">عينة: {test.lab_test_definitions?.sampleType}</div>
+                        {/* Use sample_type to match LabTestDefinition interface */}
+                        <div className="text-[10px] text-gray-400">عينة: {test.lab_test_definitions?.sample_type}</div>
                       </td>
                       <td className="px-6 py-4">
                         {test.status === 'PENDING' ? (
@@ -257,20 +264,24 @@ const LabModule: React.FC = () => {
                 <span className="text-[10px] font-bold bg-gray-100 px-2 py-1 rounded text-gray-500 uppercase">{def.category}</span>
               </div>
               <h4 className="font-bold text-lg mb-1">{def.name}</h4>
-              <p className="text-xs text-gray-400 mb-4">نوع العينة: {def.sampleType}</p>
+              {/* Use sample_type to match LabTestDefinition interface */}
+              <p className="text-xs text-gray-400 mb-4">نوع العينة: {def.sample_type}</p>
               
               <div className="space-y-2 border-t pt-4">
                 <div className="flex justify-between text-xs">
                   <span className="text-gray-500">للذكور:</span>
-                  <span className="font-bold text-indigo-600">{def.normalRangeMale || '---'}</span>
+                  {/* Use normal_range_male to match LabTestDefinition interface */}
+                  <span className="font-bold text-indigo-600">{def.normal_range_male || '---'}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-gray-500">للإناث:</span>
-                  <span className="font-bold text-pink-600">{def.normalRangeFemale || '---'}</span>
+                  {/* Use normal_range_female to match LabTestDefinition interface */}
+                  <span className="font-bold text-pink-600">{def.normal_range_female || '---'}</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-gray-500">للأطفال:</span>
-                  <span className="font-bold text-green-600">{def.normalRangeChild || '---'}</span>
+                  {/* Use normal_range_child to match LabTestDefinition interface */}
+                  <span className="font-bold text-green-600">{def.normal_range_child || '---'}</span>
                 </div>
               </div>
             </div>
@@ -293,8 +304,8 @@ const LabModule: React.FC = () => {
                        <SearchableSelect 
                          label="اسم المريض"
                          placeholder="ابحث عن مريض..."
-                         /* Fix: Use dateOfBirth instead of date_of_birth on line 295 to match the Patient interface */
-                         options={patients.map(p => ({ id: p.id, label: `${p.name} ${calculateAgeStr(p.dateOfBirth)}`, subLabel: p.nationalId }))}
+                         // Use date_of_birth and national_id to match Patient interface
+                         options={patients.map(p => ({ id: p.id, label: `${p.name} ${calculateAgeStr(p.date_of_birth)}`, subLabel: p.national_id }))}
                          value={selectedPatientId}
                          onChange={setSelectedPatientId}
                          onAddNew={() => setShowPatientModal(true)}
@@ -341,13 +352,16 @@ const LabModule: React.FC = () => {
              </div>
              <form onSubmit={handleAddPatient} className="p-8 space-y-4">
                 <input name="name" required placeholder="اسم المريض بالكامل" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
-                <input name="nationalId" required placeholder="الرقم القومي" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                {/* Use national_id to match Patient interface */}
+                <input name="national_id" required placeholder="الرقم القومي" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <input name="phone" required placeholder="رقم الهاتف" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <div className="space-y-1">
                    <label className="text-xs font-bold text-gray-500 mr-2">تاريخ الميلاد</label>
-                   <input name="dateOfBirth" type="date" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                   {/* Use date_of_birth to match Patient interface */}
+                   <input name="date_of_birth" type="date" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 </div>
-                <select name="bloodType" className="w-full border rounded-xl p-3 bg-gray-50">
+                {/* Use blood_type to match Patient interface */}
+                <select name="blood_type" className="w-full border rounded-xl p-3 bg-gray-50">
                    {BLOOD_TYPES.map(bt => <option key={bt} value={bt}>{bt}</option>)}
                 </select>
                 <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700">حفظ المريض والمتابعة</button>

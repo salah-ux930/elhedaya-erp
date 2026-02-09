@@ -48,12 +48,12 @@ const ReceptionModule: React.FC = () => {
     const target = e.target as any;
     try {
       await DB.addSession({
-        patientId: selectedPatient?.id,
+        patient_id: selectedPatient?.id,
         status: 'ACTIVE',
-        weightBefore: parseFloat(target.weightBefore.value),
-        bloodPressure: target.bp.value,
+        weight_before: parseFloat(target.weightBefore.value),
+        blood_pressure: target.bp.value,
         room: target.room.value,
-        startTime: new Date().toTimeString().split(' ')[0]
+        start_time: new Date().toTimeString().split(' ')[0]
       });
       setShowCheckInModal(false);
       loadData();
@@ -107,11 +107,11 @@ const ReceptionModule: React.FC = () => {
                   <div>
                     <h4 className="font-bold text-gray-800">
                       {session.patients?.name}
-                      <span className="text-primary-600 text-xs mr-2 font-bold">{calculateAge(session.patients?.date_of_birth || session.patients?.dateOfBirth)}</span>
+                      <span className="text-primary-600 text-xs mr-2 font-bold">{calculateAge(session.patients?.date_of_birth)}</span>
                     </h4>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-xs text-gray-500 flex items-center gap-1"><MapPin size={12} /> {session.room || 'لم يحدد'}</span>
-                      <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {session.startTime || '--:--'}</span>
+                      <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {session.start_time || '--:--'}</span>
                     </div>
                   </div>
                 </div>
@@ -156,7 +156,7 @@ const ReceptionModule: React.FC = () => {
                   <div className="text-right">
                     <div className="font-bold text-gray-700 group-hover:text-primary-700">
                       {p.name}
-                      <span className="text-primary-500 text-[10px] mr-1">({calculateAge(p.dateOfBirth)})</span>
+                      <span className="text-primary-500 text-[10px] mr-1">({calculateAge(p.date_of_birth)})</span>
                     </div>
                     <div className="text-xs text-gray-400">{p.phone}</div>
                   </div>
@@ -172,16 +172,14 @@ const ReceptionModule: React.FC = () => {
       {showCheckInModal && selectedPatient && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-300">
-            {/* Header */}
             <div className="p-6 bg-primary-600 text-white flex justify-between items-center shrink-0">
               <div>
                 <h3 className="text-xl font-bold">تسجيل دخول للجلسة</h3>
-                <p className="text-sm opacity-80 mt-1">{selectedPatient.name} - {calculateAge(selectedPatient.dateOfBirth)}</p>
+                <p className="text-sm opacity-80 mt-1">{selectedPatient.name} - {calculateAge(selectedPatient.date_of_birth)}</p>
               </div>
               <button onClick={() => setShowCheckInModal(false)} className="p-1 hover:bg-white/20 rounded-lg transition-colors"><X size={24} /></button>
             </div>
             
-            {/* Body */}
             <div className="p-8 overflow-y-auto custom-scrollbar">
               <form id="checkInForm" onSubmit={confirmCheckIn} className="space-y-6">
                 <div className="grid grid-cols-2 gap-6">
@@ -210,7 +208,6 @@ const ReceptionModule: React.FC = () => {
               </form>
             </div>
 
-            {/* Footer */}
             <div className="p-6 border-t bg-gray-50 flex gap-3 shrink-0">
               <button type="button" onClick={() => setShowCheckInModal(false)} className="flex-1 py-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">إلغاء</button>
               <button form="checkInForm" type="submit" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors">

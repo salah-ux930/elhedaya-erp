@@ -32,10 +32,13 @@ const BillingModule: React.FC = () => {
     try {
       const newP = await DB.addPatient({
         name: target.name.value,
-        nationalId: target.nationalId.value,
+        // Use national_id to match Patient interface
+        national_id: target.national_id.value,
         phone: target.phone.value,
-        bloodType: target.bloodType.value,
-        dateOfBirth: target.dateOfBirth.value
+        // Use blood_type to match Patient interface
+        blood_type: target.blood_type.value,
+        // Use date_of_birth to match Patient interface
+        date_of_birth: target.date_of_birth.value
       });
       setPatients([...patients, newP]);
       setSelectedPatientId(newP.id);
@@ -166,7 +169,8 @@ const BillingModule: React.FC = () => {
                   <SearchableSelect 
                     label="اختيار المريض"
                     placeholder="ابحث عن مريض..."
-                    options={patients.map(p => ({ id: p.id, label: `${p.name} (${calculateAge(p.dateOfBirth)})`, subLabel: p.nationalId }))}
+                    // Use date_of_birth and national_id from Patient interface
+                    options={patients.map(p => ({ id: p.id, label: `${p.name} (${calculateAge(p.date_of_birth)})`, subLabel: p.national_id }))}
                     value={selectedPatientId}
                     onChange={setSelectedPatientId}
                     onAddNew={() => setShowPatientModal(true)}
@@ -225,13 +229,16 @@ const BillingModule: React.FC = () => {
              </div>
              <form onSubmit={handleAddPatient} className="p-8 space-y-4">
                 <input name="name" required placeholder="اسم المريض بالكامل" className="w-full border rounded-xl p-3 bg-gray-50" />
-                <input name="nationalId" required placeholder="الرقم القومي" className="w-full border rounded-xl p-3 bg-gray-50" />
+                {/* Use national_id to match Patient interface */}
+                <input name="national_id" required placeholder="الرقم القومي" className="w-full border rounded-xl p-3 bg-gray-50" />
                 <input name="phone" required placeholder="رقم الهاتف" className="w-full border rounded-xl p-3 bg-gray-50" />
                 <div className="space-y-1">
                    <label className="text-xs font-bold text-gray-500 mr-2">تاريخ الميلاد</label>
-                   <input name="dateOfBirth" type="date" required className="w-full border rounded-xl p-3 bg-gray-50" />
+                   {/* Use date_of_birth to match Patient interface */}
+                   <input name="date_of_birth" type="date" required className="w-full border rounded-xl p-3 bg-gray-50" />
                 </div>
-                <select name="bloodType" className="w-full border rounded-xl p-3 bg-gray-50">
+                {/* Use blood_type to match Patient interface */}
+                <select name="blood_type" className="w-full border rounded-xl p-3 bg-gray-50">
                    {BLOOD_TYPES.map(bt => <option key={bt} value={bt}>{bt}</option>)}
                 </select>
                 <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg">حفظ المريض والمتابعة</button>

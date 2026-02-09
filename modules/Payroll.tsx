@@ -32,9 +32,9 @@ const PayrollModule: React.FC = () => {
     const emp = employees.find(e => e.id === empId);
     if (!emp) return 0;
     const shiftCount = shifts
-      .filter(s => s.employeeId === empId)
+      .filter(s => s.employee_id === empId) // Use employee_id to match ShiftRecord interface
       .reduce((acc, curr) => acc + curr.count, 0);
-    return shiftCount * emp.shiftPrice;
+    return shiftCount * emp.shift_price; // Use shift_price to match Employee interface
   };
 
   const totalMonthlyPayroll = employees.reduce((acc, emp) => acc + calculateSalary(emp.id), 0);
@@ -140,10 +140,13 @@ const PayrollModule: React.FC = () => {
                 <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 font-mono text-xs">{emp.code}</td>
                   <td className="px-6 py-4 font-bold">{emp.name}</td>
-                  <td className="px-6 py-4 text-xs text-gray-500">{emp.bankAccount}</td>
-                  <td className="px-6 py-4">{emp.shiftPrice}</td>
+                  {/* Use bank_account to match Employee interface */}
+                  <td className="px-6 py-4 text-xs text-gray-500">{emp.bank_account}</td>
+                  {/* Use shift_price to match Employee interface */}
+                  <td className="px-6 py-4">{emp.shift_price}</td>
                   <td className="px-6 py-4 font-bold text-primary-600">
-                    {shifts.filter(s => s.employeeId === emp.id).reduce((a, b) => a + b.count, 0)}
+                    {/* Use employee_id to match ShiftRecord interface */}
+                    {shifts.filter(s => s.employee_id === emp.id).reduce((a, b) => a + b.count, 0)}
                   </td>
                   <td className="px-6 py-4 font-bold">{calculateSalary(emp.id).toLocaleString()} ج.م</td>
                 </tr>
@@ -165,7 +168,8 @@ const PayrollModule: React.FC = () => {
                  </div>
                  <div>
                    <div className="font-bold">{emp.name}</div>
-                   <div className="text-xs text-gray-500">سعر الشفت: {emp.shiftPrice} ج.م</div>
+                   {/* Use shift_price to match Employee interface */}
+                   <div className="text-xs text-gray-500">سعر الشفت: {emp.shift_price} ج.م</div>
                  </div>
                </div>
              ))}

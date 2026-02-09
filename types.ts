@@ -11,7 +11,9 @@ export type Permission =
   | 'MANAGE_FINANCE' 
   | 'MANAGE_USERS' 
   | 'SYSTEM_SETUP'
-  | string; // للسماح بصلاحيات ديناميكية مثل STORE_ACCESS_ID
+  | 'MANAGE_STORES'
+  | 'MANAGE_ACCOUNTS'
+  | string;
 
 export interface User {
   id: string;
@@ -24,60 +26,59 @@ export interface User {
 export interface Patient {
   id: string;
   name: string;
-  nationalId: string;
+  national_id: string;
   phone: string;
   address: string;
-  bloodType: string;
-  dateOfBirth?: string;
-  fundingEntityId: string;
-  emergencyContact: {
+  blood_type: string;
+  date_of_birth?: string;
+  funding_entity_id: string;
+  emergency_contact: {
     name: string;
     phone: string;
     relation: string;
   };
-  createdAt: string;
+  created_at: string;
 }
 
 export interface LabTestDefinition {
   id: string;
   name: string;
   category: string;
-  sampleType: string;
-  normalRangeMale: string;
-  normalRangeFemale: string;
-  normalRangeChild: string;
+  sample_type: string;
+  normal_range_male: string;
+  normal_range_female: string;
+  normal_range_child: string;
 }
 
 export interface LabTest {
   id: string;
-  patientId: string;
-  testDefinitionId: string;
+  patient_id: string;
+  test_definition_id: string;
   result?: string;
   status: 'PENDING' | 'COMPLETED';
   date: string;
-  testName?: string;
+  test_name?: string;
 }
 
 export interface DialysisSession {
   id: string;
-  patientId: string;
+  patient_id: string;
   date: string;
-  startTime: string;
-  endTime: string;
-  weightBefore: number;
-  weightAfter: number;
-  bloodPressure: string;
+  start_time: string;
+  end_time: string;
+  weight_before: number;
+  weight_after: number;
+  blood_pressure: string;
   room: string;
-  machineId: string;
+  machine_id: string;
   status: 'WAITING' | 'ACTIVE' | 'FINISHED';
   notes: string;
 }
 
-// Added Invoice interface to resolve import errors
 export interface Invoice {
   id: string;
-  patientId?: string;
-  patientName: string;
+  patient_id?: string;
+  patient_name: string;
   date: string;
   amount: number;
   status: 'PAID' | 'DEFERRED' | 'FREE';
@@ -96,7 +97,7 @@ export interface Product {
   id: string;
   name: string;
   unit: string;
-  minStock: number;
+  min_stock: number;
   price: number;
   category?: string;
   barcode?: string;
@@ -106,29 +107,29 @@ export interface Product {
 export interface Store {
   id: string;
   name: string;
-  isMain: boolean;
+  is_main: boolean;
 }
 
 export interface StockTransaction {
   id: string;
-  productId: string;
-  storeId: string;
+  product_id: string;
+  store_id: string;
   type: 'ADD' | 'DEDUCT' | 'TRANSFER';
   quantity: number;
-  targetStoreId?: string;
+  target_store_id?: string;
   date: string;
   note?: string;
   status?: 'PENDING' | 'APPROVED' | 'REJECTED';
-  requestId?: string;
+  request_id?: string;
 }
 
 export interface TransferRequest {
   id: string;
-  fromStoreId: string;
-  toStoreId: string;
-  items: { productId: string; quantity: number }[];
+  from_store_id: string;
+  to_store_id: string;
+  items: { product_id: string; quantity: number }[];
   status: 'PENDING' | 'APPROVED' | 'REJECTED';
-  requestedBy: string;
+  requested_by: string;
   note?: string;
   date: string;
 }
@@ -137,14 +138,14 @@ export interface Employee {
   id: string;
   code: string;
   name: string;
-  bankAccount: string;
-  shiftPrice: number;
+  bank_account: string;
+  shift_price: number;
   type: 'PERMANENT' | 'TEMPORARY';
 }
 
 export interface ShiftRecord {
   id: string;
-  employeeId: string;
+  employee_id: string;
   date: string;
   count: number;
 }
@@ -154,12 +155,12 @@ export interface FinancialAccount {
   name: string;
   type: 'CASH' | 'BANK';
   balance: number;
-  linkedEmployeeId?: string;
+  linked_employee_id?: string;
 }
 
 export interface Transaction {
   id: string;
-  accountId: string;
+  account_id: string;
   amount: number;
   type: 'INCOME' | 'EXPENSE';
   date: string;
@@ -169,7 +170,7 @@ export interface Transaction {
 
 export interface AuditLog {
   id: string;
-  userId: string;
+  user_id: string;
   action: string;
   timestamp: string;
   details: string;

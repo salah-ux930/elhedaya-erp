@@ -95,7 +95,7 @@ const App: React.FC = () => {
       case 'dashboard': return <DashboardModule />;
       case 'notifications': return <NotificationsModule />;
       case 'reception': return <ReceptionModule />;
-      case 'patients': return <PatientModule />;
+      case 'patients': return <PatientModule setTab={setActiveTab} />;
       case 'lab': return <LabModule />;
       case 'billing': return <BillingModule />;
       case 'employees': return <PayrollModule />;

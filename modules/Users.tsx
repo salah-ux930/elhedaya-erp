@@ -3,7 +3,11 @@ import React, { useState, useEffect } from 'react';
 import { AR, PERMISSIONS_MAP } from '../constants.ts';
 import { DB } from '../store.ts';
 import { User, Permission, Store, FinancialAccount } from '../types.ts';
-import { UserPlus, Search, Trash2, UserCheck, Shield, Check, X, Loader2, Package, Wallet, Edit, AlertCircle } from 'lucide-react';
+import { 
+  UserPlus, Search, Trash2, UserCheck, Shield, Check, X, 
+  Loader2, Package, Wallet, Edit, AlertCircle, RefreshCw, 
+  Fingerprint, Database, Eye, Settings2
+} from 'lucide-react';
 
 const UsersModule: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -16,6 +20,7 @@ const UsersModule: React.FC = () => {
   
   const [availableStores, setAvailableStores] = useState<Store[]>([]);
   const [availableAccounts, setAvailableAccounts] = useState<FinancialAccount[]>([]);
+  const [isSchemaError, setIsSchemaError] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -23,6 +28,7 @@ const UsersModule: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setIsSchemaError(false);
     try {
       const [u, s, a] = await Promise.all([
         DB.getUsers(),
@@ -30,24 +36,20 @@ const UsersModule: React.FC = () => {
         DB.getAccounts()
       ]);
 
-      // ضمان أن u مصفوفة حتى لو كانت null
-      const userList = u || [];
-      const sanitizedUsers = userList.map(user => ({
-        ...user,
-        permissions: Array.isArray(user.permissions) ? user.permissions : []
-      }));
-      
-      setUsers(sanitizedUsers);
+      setUsers(Array.isArray(u) ? u : []);
       setAvailableStores(s || []);
       setAvailableAccounts(a || []);
-    } catch (err) {
-      console.error("Error fetching data in UsersModule:", err);
+    } catch (err: any) {
+      console.error("UsersModule Error:", err);
+      if (err.message?.includes('SCHEMA_ERROR')) {
+        setIsSchemaError(true);
+      }
     } finally {
       setLoading(false);
     }
   };
 
-  const togglePermission = (perm: Permission) => {
+  const togglePermission = (perm: string) => {
     const current = userData.permissions || [];
     if (current.includes(perm)) {
       setUserData({ ...userData, permissions: current.filter(p => p !== perm) });
@@ -56,220 +58,219 @@ const UsersModule: React.FC = () => {
     }
   };
 
-  const handleOpenAdd = () => {
-    setEditingUserId(null);
-    setUserData({ permissions: [], name: '', username: '', password: '' });
-    setShowModal(true);
-  };
-
-  const handleOpenEdit = (user: User) => {
-    setEditingUserId(user.id);
-    setUserData({ 
-      name: user.name, 
-      username: user.username, 
-      permissions: user.permissions,
-      password: '' 
-    });
-    setShowModal(true);
-  };
-
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userData.permissions?.length) return alert("يرجى اختيار صلاحية واحدة على الأقل");
+    if (!userData.name || !userData.username) {
+        alert("يرجى إكمال البيانات الأساسية");
+        return;
+    }
+    if (!editingUserId && !userData.password) {
+        alert("يرجى إدخال كلمة المرور للحساب الجديد");
+        return;
+    }
+
     setSubmitting(true);
     try {
       if (editingUserId) {
         await DB.updateUser(editingUserId, userData);
       } else {
-        await DB.addUser({
-          name: userData.name || '',
-          username: userData.username || '',
-          password: userData.password,
-          permissions: userData.permissions
-        });
+        await DB.addUser(userData);
       }
       await loadData();
       setShowModal(false);
-    } catch (err) {
-      alert("حدث خطأ أثناء حفظ بيانات المستخدم. تأكد من إعداد جدول system_users بشكل صحيح.");
+      setUserData({ permissions: [] });
+      setEditingUserId(null);
+    } catch (err: any) {
+      alert(err.message || "حدث خطأ أثناء حفظ بيانات المستخدم.");
     } finally {
       setSubmitting(false);
     }
   };
 
-  const handleDeleteUser = async (id: string) => {
-    if (!confirm("هل أنت متأكد من حذف هذا المستخدم؟")) return;
-    try {
-      await DB.deleteUser(id);
-      await loadData();
-    } catch (err) {
-      alert("خطأ أثناء الحذف");
-    }
-  };
-
-  const filteredUsers = users.filter(u => 
-    (u.name && u.name.toLowerCase().includes(searchTerm.toLowerCase())) || 
-    (u.username && u.username.toLowerCase().includes(searchTerm.toLowerCase()))
-  );
+  const filteredUsers = users.filter(u => u.name.includes(searchTerm) || u.username.includes(searchTerm));
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="flex justify-between items-center gap-4">
-        <div className="relative w-96">
-          <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div className="relative w-full md:w-96">
+          <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
           <input 
-            type="text" placeholder="بحث عن مستخدم..." 
-            className="w-full pr-10 pl-4 py-3 border rounded-xl outline-none focus:ring-2 focus:ring-primary-500"
+            type="text" placeholder="بحث باسم المستخدم..." 
+            className="w-full pr-12 pl-4 py-4 border rounded-2xl outline-none focus:ring-2 focus:ring-primary-500 shadow-sm font-bold"
             value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
           />
         </div>
-        <button onClick={handleOpenAdd} className="bg-primary-600 text-white px-6 py-3 rounded-xl flex items-center gap-2 font-bold shadow-md hover:bg-primary-700 transition-all">
-          <UserPlus size={20} /> {AR.newUser}
+        <button onClick={() => { setEditingUserId(null); setUserData({ permissions: [] }); setShowModal(true); }} className="bg-primary-600 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-black shadow-lg hover:bg-primary-700 transition-all">
+          <UserPlus size={20} /> حساب جديد
         </button>
       </div>
 
-      {loading ? (
-        <div className="flex flex-col items-center justify-center py-20 gap-4">
-          <Loader2 className="animate-spin text-primary-600" size={40} />
-          <p className="text-gray-400 font-bold">جاري جلب قائمة المستخدمين...</p>
-        </div>
-      ) : filteredUsers.length === 0 ? (
-        <div className="bg-white p-20 rounded-3xl border border-dashed flex flex-col items-center justify-center text-gray-400">
-          <AlertCircle size={48} className="mb-4 opacity-20" />
-          <p className="font-bold">لم يتم العثور على أي مستخدمين</p>
-          <button onClick={handleOpenAdd} className="mt-4 text-primary-600 font-bold hover:underline">أضف أول مستخدم الآن</button>
-        </div>
-      ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {filteredUsers.map(user => (
-            <div key={user.id} className="bg-white rounded-2xl shadow-sm border p-6 hover:shadow-md transition-all group">
-              <div className="flex justify-between items-start mb-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {loading ? (
+          <div className="col-span-full py-20 flex justify-center"><Loader2 className="animate-spin text-primary-600" size={48} /></div>
+        ) : filteredUsers.map(user => (
+          <div key={user.id} className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-8 hover:shadow-xl transition-all group">
+             <div className="flex justify-between items-start mb-6">
                 <div className="flex items-center gap-4">
-                  <div className="w-14 h-14 bg-primary-600 text-white rounded-xl flex items-center justify-center font-bold text-xl uppercase shadow-sm">
-                    {user.name ? user.name[0] : '?'}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-lg text-gray-800">{user.name}</h4>
-                    <p className="text-gray-400 text-sm font-mono">@{user.username}</p>
-                  </div>
+                   <div className="w-16 h-16 bg-primary-600 text-white rounded-2xl flex items-center justify-center font-black text-2xl uppercase">
+                      {user.name ? user.name[0] : '?'}
+                   </div>
+                   <div>
+                      <h4 className="font-black text-xl text-gray-800">{user.name}</h4>
+                      <div className="text-xs text-gray-400 mt-1 flex items-center gap-1 font-mono tracking-tighter">
+                        <Fingerprint size={12} /> @{user.username}
+                      </div>
+                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => handleOpenEdit(user)} className="text-gray-400 hover:text-primary-600 p-2 transition-colors">
-                    <Edit size={18} />
-                  </button>
-                  <button onClick={() => handleDeleteUser(user.id)} className="text-gray-400 hover:text-red-600 p-2 transition-colors">
-                    <Trash2 size={18} />
-                  </button>
+                   <button onClick={() => { setEditingUserId(user.id); setUserData(user); setShowModal(true); }} className="p-3 bg-primary-50 text-primary-600 rounded-xl hover:bg-primary-600 hover:text-white transition-all"><Edit size={18} /></button>
+                   <button onClick={async () => { if(confirm('هل أنت متأكد من حذف هذا الحساب؟')) { await DB.deleteUser(user.id); loadData(); } }} className="p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all"><Trash2 size={18} /></button>
                 </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {user.permissions?.map(perm => (
-                  <span key={perm} className="px-3 py-1 bg-gray-50 text-gray-600 text-[10px] font-bold rounded-lg border flex items-center gap-1">
-                    <Shield size={10} /> 
-                    {PERMISSIONS_MAP[perm] || 
-                     (perm.startsWith('STORE_ACCESS_') ? `مخزن: ${availableStores.find(s => `STORE_ACCESS_${s.id}` === perm)?.name || 'مخزن خاص'}` : 
-                      perm.startsWith('ACC_ACCESS_') ? `خزينة: ${availableAccounts.find(a => `ACC_ACCESS_${a.id}` === perm)?.name || 'حساب مالي'}` : 
-                      perm)}
-                  </span>
+             </div>
+             <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-50">
+                {user.permissions?.filter(p => !p.includes(':')).map(p => (
+                   <span key={p} className="px-3 py-1 bg-gray-50 text-gray-500 rounded-lg text-[10px] font-bold border border-gray-100">
+                     {PERMISSIONS_MAP[p] || p}
+                   </span>
                 ))}
-                {(!user.permissions || user.permissions.length === 0) && (
-                  <span className="text-[10px] text-gray-400 italic">لا توجد صلاحيات مسندة</span>
+                {(user.permissions?.filter(p => p.includes(':')).length || 0) > 0 && (
+                  <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[10px] font-bold border border-indigo-100">
+                    +{user.permissions?.filter(p => p.includes(':')).length} صلاحية مخصصة
+                  </span>
                 )}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+             </div>
+          </div>
+        ))}
+      </div>
 
       {showModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95">
-            <div className="p-6 bg-primary-600 text-white flex justify-between items-center">
-              <h3 className="text-xl font-bold flex items-center gap-2">
-                <UserCheck size={22} /> {editingUserId ? "تعديل حساب مستخدم" : "إنشاء حساب مستخدم جديد"}
-              </h3>
-              <button onClick={() => setShowModal(false)}><X size={24} /></button>
-            </div>
-            
-            <div className="p-8 overflow-y-auto custom-scrollbar space-y-8">
-              <form id="userForm" onSubmit={handleSaveUser} className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-500 mr-2">الاسم بالكامل</label>
-                    <input required placeholder="الاسم" className="w-full border rounded-xl p-3 bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-primary-500" value={userData.name} onChange={e => setUserData({...userData, name: e.target.value})} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-500 mr-2">اسم الدخول</label>
-                    <input required placeholder="اسم المستخدم" className="w-full border rounded-xl p-3 bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-primary-500 font-mono" value={userData.username} onChange={e => setUserData({...userData, username: e.target.value})} />
-                  </div>
-                  <div className="space-y-1 md:col-span-2">
-                    <label className="text-xs font-bold text-gray-500 mr-2">كلمة المرور {editingUserId && "(اتركها فارغة لعدم التغيير)"}</label>
-                    <input type="password" placeholder="••••••••" className="w-full border rounded-xl p-3 bg-gray-50 focus:bg-white outline-none focus:ring-2 focus:ring-primary-500" value={userData.password} onChange={e => setUserData({...userData, password: e.target.value})} />
-                  </div>
+          <div className="bg-white w-full max-w-5xl rounded-[3rem] shadow-2xl flex flex-col max-h-[95vh] overflow-hidden animate-in zoom-in-95">
+             <div className="p-8 bg-primary-600 text-white flex justify-between items-center shrink-0">
+                <h3 className="text-2xl font-black">{editingUserId ? 'تعديل الصلاحيات' : 'إضافة مستخدم نظام'}</h3>
+                <button onClick={() => { setShowModal(false); setEditingUserId(null); }}><X size={32} /></button>
+             </div>
+             <form id="userForm" onSubmit={handleSaveUser} className="p-10 overflow-y-auto space-y-10 flex-1 custom-scrollbar">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                   <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-500 mr-2">اسم الموظف</label>
+                      <input required className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 focus:bg-white focus:border-primary-500 outline-none transition-all font-bold" value={userData.name || ''} onChange={e => setUserData({...userData, name: e.target.value})} />
+                   </div>
+                   <div className="space-y-2">
+                      <label className="text-xs font-bold text-gray-500 mr-2">اسم الدخول</label>
+                      <input required className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 focus:bg-white focus:border-primary-500 outline-none transition-all font-mono" value={userData.username || ''} onChange={e => setUserData({...userData, username: e.target.value})} />
+                   </div>
+                   <div className="space-y-2 md:col-span-2">
+                      <label className="text-xs font-bold text-gray-500 mr-2">كلمة المرور {editingUserId && '(اتركها فارغة لعدم التغيير)'}</label>
+                      <input type="password" placeholder="••••••••" className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 focus:bg-white focus:border-primary-500 outline-none transition-all" value={userData.password || ''} onChange={e => setUserData({...userData, password: e.target.value})} />
+                   </div>
                 </div>
 
+                {/* General Permissions */}
                 <div className="space-y-4">
-                  <h4 className="font-black text-gray-800 border-r-4 border-primary-600 pr-3">الصلاحيات الإدارية العامة</h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {Object.entries(PERMISSIONS_MAP).map(([key, val]) => (
-                      <button key={key} type="button" onClick={() => togglePermission(key as Permission)} className={`p-3 rounded-xl border text-xs font-bold transition-all text-right ${userData.permissions?.includes(key as Permission) ? 'bg-primary-600 text-white border-primary-600 shadow-md' : 'bg-white hover:bg-primary-50 border-gray-100'}`}>
-                        {val}
-                      </button>
-                    ))}
-                  </div>
+                   <h4 className="font-black text-gray-800 flex items-center gap-2 border-b pb-2"><Shield size={20} className="text-primary-600"/> الصلاحيات العامة</h4>
+                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                      {Object.entries(PERMISSIONS_MAP).map(([key, val]) => (
+                         <button key={key} type="button" onClick={() => togglePermission(key)} className={`p-4 rounded-2xl border-2 text-right flex justify-between items-center transition-all ${userData.permissions?.includes(key) ? 'bg-primary-600 text-white border-primary-600 shadow-md' : 'bg-white border-gray-100 text-gray-500 hover:bg-gray-50'}`}>
+                            <span className="text-xs font-black">{val}</span>
+                            {userData.permissions?.includes(key) && <Check size={18} />}
+                         </button>
+                      ))}
+                   </div>
                 </div>
 
+                {/* Store Permissions */}
                 <div className="space-y-4">
-                  <h4 className="font-black text-gray-800 border-r-4 border-amber-600 pr-3 flex items-center gap-2">
-                    <Package size={18} className="text-amber-600" /> صلاحيات المخازن المحددة
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {availableStores.map(store => {
-                      const perm = `STORE_ACCESS_${store.id}`;
-                      return (
-                        <button key={store.id} type="button" onClick={() => togglePermission(perm)} className={`p-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-between ${userData.permissions?.includes(perm) ? 'bg-amber-600 text-white border-amber-600 shadow-md' : 'bg-white hover:bg-amber-50 border-gray-100'}`}>
-                          <span>{store.name}</span>
-                          {userData.permissions?.includes(perm) && <Check size={14} />}
-                        </button>
-                      );
-                    })}
-                  </div>
+                   <h4 className="font-black text-gray-800 flex items-center gap-2 border-b pb-2"><Package size={20} className="text-indigo-600"/> صلاحيات المخازن المخصصة</h4>
+                   <div className="overflow-hidden border border-gray-100 rounded-2xl">
+                      <table className="w-full text-right text-sm">
+                         <thead className="bg-gray-50">
+                            <tr>
+                               <th className="p-4 font-bold text-gray-500">اسم المخزن</th>
+                               <th className="p-4 font-bold text-center text-gray-500">مشاهدة الأرصدة</th>
+                               <th className="p-4 font-bold text-center text-gray-500">إدارة (صرف وتوريد)</th>
+                            </tr>
+                         </thead>
+                         <tbody className="divide-y">
+                            {availableStores.map(store => {
+                               const viewKey = `STORE_VIEW:${store.id}`;
+                               const manageKey = `STORE_MANAGE:${store.id}`;
+                               return (
+                                  <tr key={store.id} className="hover:bg-indigo-50/30">
+                                     <td className="p-4 font-bold text-gray-700">{store.name}</td>
+                                     <td className="p-4 text-center">
+                                        <button type="button" onClick={() => togglePermission(viewKey)} className={`p-2 rounded-lg transition-all ${userData.permissions?.includes(viewKey) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                                           <Eye size={18} />
+                                        </button>
+                                     </td>
+                                     <td className="p-4 text-center">
+                                        <button type="button" onClick={() => togglePermission(manageKey)} className={`p-2 rounded-lg transition-all ${userData.permissions?.includes(manageKey) ? 'bg-indigo-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                                           <Settings2 size={18} />
+                                        </button>
+                                     </td>
+                                  </tr>
+                               );
+                            })}
+                         </tbody>
+                      </table>
+                   </div>
                 </div>
 
+                {/* Account Permissions */}
                 <div className="space-y-4">
-                  <h4 className="font-black text-gray-800 border-r-4 border-emerald-600 pr-3 flex items-center gap-2">
-                    <Wallet size={18} className="text-emerald-600" /> صلاحيات الخزائن المحددة
-                  </h4>
-                  <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                    {availableAccounts.map(acc => {
-                      const perm = `ACC_ACCESS_${acc.id}`;
-                      return (
-                        <button key={acc.id} type="button" onClick={() => togglePermission(perm)} className={`p-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-between ${userData.permissions?.includes(perm) ? 'bg-emerald-600 text-white border-emerald-600 shadow-md' : 'bg-white hover:bg-emerald-50 border-gray-100'}`}>
-                          <span>{acc.name}</span>
-                          {userData.permissions?.includes(perm) && <Check size={14} />}
-                        </button>
-                      );
-                    })}
-                  </div>
+                   <h4 className="font-black text-gray-800 flex items-center gap-2 border-b pb-2"><Wallet size={20} className="text-emerald-600"/> صلاحيات الخزن والحسابات</h4>
+                   <div className="overflow-hidden border border-gray-100 rounded-2xl">
+                      <table className="w-full text-right text-sm">
+                         <thead className="bg-gray-50">
+                            <tr>
+                               <th className="p-4 font-bold text-gray-500">اسم الحساب</th>
+                               <th className="p-4 font-bold text-center text-gray-500">مشاهدة الرصيد</th>
+                               <th className="p-4 font-bold text-center text-gray-500">إدارة (قبض وصرف)</th>
+                            </tr>
+                         </thead>
+                         <tbody className="divide-y">
+                            {availableAccounts.map(acc => {
+                               const viewKey = `ACCOUNT_VIEW:${acc.id}`;
+                               const manageKey = `ACCOUNT_MANAGE:${acc.id}`;
+                               return (
+                                  <tr key={acc.id} className="hover:bg-emerald-50/30">
+                                     <td className="p-4 font-bold text-gray-700">{acc.name}</td>
+                                     <td className="p-4 text-center">
+                                        <button type="button" onClick={() => togglePermission(viewKey)} className={`p-2 rounded-lg transition-all ${userData.permissions?.includes(viewKey) ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                                           <Eye size={18} />
+                                        </button>
+                                     </td>
+                                     <td className="p-4 text-center">
+                                        <button type="button" onClick={() => togglePermission(manageKey)} className={`p-2 rounded-lg transition-all ${userData.permissions?.includes(manageKey) ? 'bg-emerald-600 text-white' : 'bg-gray-100 text-gray-400'}`}>
+                                           <Settings2 size={18} />
+                                        </button>
+                                     </td>
+                                  </tr>
+                               );
+                            })}
+                         </tbody>
+                      </table>
+                   </div>
                 </div>
-              </form>
-            </div>
-            
-            <div className="p-6 border-t bg-gray-50 flex gap-3">
-              <button type="button" onClick={() => setShowModal(false)} className="flex-1 py-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">إلغاء</button>
-              <button form="userForm" type="submit" disabled={submitting} className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 disabled:opacity-70 flex items-center justify-center gap-2">
-                 {submitting ? <Loader2 className="animate-spin" size={20} /> : <Check size={20} />}
-                 {editingUserId ? "تحديث الحساب" : "إنشاء الحساب"}
-              </button>
-            </div>
+             </form>
+             <div className="p-8 border-t bg-gray-50 flex gap-4 shrink-0">
+                <button type="button" onClick={() => { setShowModal(false); setEditingUserId(null); }} className="flex-1 py-5 bg-white border-2 rounded-2xl font-black text-gray-500">إلغاء</button>
+                <button 
+                  type="submit" 
+                  form="userForm" 
+                  disabled={submitting} 
+                  className="flex-[2] py-5 bg-primary-600 text-white rounded-2xl font-black shadow-xl shadow-primary-600/30 hover:bg-primary-700 disabled:opacity-70 transition-all active:scale-95"
+                >
+                   {submitting ? 'جاري الحفظ...' : 'حفظ بيانات الحساب'}
+                </button>
+             </div>
           </div>
         </div>
       )}
-      
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: #0284c7; border-radius: 10px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 10px; }
       `}</style>
     </div>
   );
