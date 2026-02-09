@@ -20,16 +20,17 @@ const LoginModule: React.FC<LoginProps> = ({ onLoginSuccess }) => {
     setError('');
 
     try {
-      // محاكاة تسجيل الدخول أو الربط مع جدول نظام المستخدمين
-      // في حالة الإنتاج الفعلية نستخدم supabase.auth.signInWithPassword
-      if (username === 'admin' && password === 'admin') {
-        const user = { name: 'مدير النظام', role: 'ADMIN' };
+      // محاولة تسجيل الدخول من قاعدة البيانات
+      const user = await DB.login(username, password);
+      
+      if (user) {
         onLoginSuccess(user);
       } else {
         setError('خطأ في اسم المستخدم أو كلمة المرور');
       }
     } catch (err) {
-      setError('حدث خطأ أثناء الاتصال بالسيرفر');
+      setError('حدث خطأ أثناء الاتصال بقاعدة البيانات');
+      console.error(err);
     } finally {
       setLoading(false);
     }

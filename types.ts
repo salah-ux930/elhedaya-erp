@@ -15,6 +15,7 @@ export interface User {
   id: string;
   name: string;
   username: string;
+  password?: string;
   permissions: Permission[];
 }
 
@@ -52,7 +53,7 @@ export interface LabTest {
   result?: string;
   status: 'PENDING' | 'COMPLETED';
   date: string;
-  testName?: string; // For legacy or display cache
+  testName?: string;
 }
 
 export interface DialysisSession {
@@ -111,6 +112,19 @@ export interface StockTransaction {
   targetStoreId?: string;
   date: string;
   note?: string;
+  status?: 'PENDING' | 'APPROVED' | 'REJECTED';
+  requestId?: string; // رابط لمجموعة تحويل واحدة
+}
+
+export interface TransferRequest {
+  id: string;
+  fromStoreId: string;
+  toStoreId: string;
+  items: { productId: string; quantity: number }[];
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  requestedBy: string;
+  note?: string;
+  date: string;
 }
 
 export interface Employee {

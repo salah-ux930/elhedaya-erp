@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AR, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
@@ -113,7 +112,7 @@ const LabModule: React.FC = () => {
     }
   };
 
-  const calculateAge = (dob?: string) => {
+  const calculateAgeStr = (dob?: string) => {
     if (!dob) return '';
     const birthDate = new Date(dob);
     const today = new Date();
@@ -202,7 +201,7 @@ const LabModule: React.FC = () => {
                       <td className="px-6 py-4 text-gray-500 text-sm font-mono">{test.date}</td>
                       <td className="px-6 py-4">
                         <div className="font-bold text-gray-800">{test.patients?.name}</div>
-                        <div className="text-[10px] text-primary-600">{calculateAge(test.patients?.dateOfBirth)}</div>
+                        <div className="text-[10px] text-primary-600">{calculateAgeStr(test.patients?.date_of_birth || test.patients?.dateOfBirth)}</div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="font-bold text-primary-700">{test.lab_test_definitions?.name}</div>
@@ -287,15 +286,29 @@ const LabModule: React.FC = () => {
               <button onClick={() => setShowAddModal(false)}><X size={24} /></button>
             </div>
             <form onSubmit={handleAddTestRequest} className="p-8 space-y-6">
-              <SearchableSelect 
-                label="المريض"
-                placeholder="ابحث عن مريض..."
-                options={patients.map(p => ({ id: p.id, label: `${p.name} ${calculateAge(p.dateOfBirth)}`, subLabel: p.nationalId }))}
-                value={selectedPatientId}
-                onChange={setSelectedPatientId}
-                onAddNew={() => setShowPatientModal(true)}
-                addNewText="إضافة مريض جديد"
-              />
+              <div className="relative group">
+                 <div className="flex items-end gap-2">
+                    <div className="flex-1">
+                       <SearchableSelect 
+                         label="اسم المريض"
+                         placeholder="ابحث عن مريض..."
+                         options={patients.map(p => ({ id: p.id, label: `${p.name} ${calculateAgeStr(p.date_of_birth || p.dateOfBirth)}`, subLabel: p.nationalId }))}
+                         value={selectedPatientId}
+                         onChange={setSelectedPatientId}
+                         onAddNew={() => setShowPatientModal(true)}
+                         addNewText="إضافة مريض جديد"
+                       />
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => setShowPatientModal(true)}
+                      title="مريض جديد"
+                      className="mb-2 p-3 bg-indigo-50 text-indigo-600 rounded-xl hover:bg-indigo-600 hover:text-white transition-all border border-indigo-100"
+                    >
+                      <UserPlus size={22} />
+                    </button>
+                 </div>
+              </div>
 
               <SearchableSelect 
                 label="نوع التحليل المطلوب"
@@ -309,7 +322,7 @@ const LabModule: React.FC = () => {
 
               <div className="flex gap-3 pt-4">
                 <button type="button" onClick={() => setShowAddModal(false)} className="flex-1 py-4 bg-gray-100 rounded-xl font-bold">إلغاء</button>
-                <button type="submit" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold">تأكيد الحجز</button>
+                <button type="submit" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700">تأكيد الحجز</button>
               </div>
             </form>
           </div>
@@ -325,17 +338,17 @@ const LabModule: React.FC = () => {
                 <button onClick={() => setShowPatientModal(false)}><X size={24} /></button>
              </div>
              <form onSubmit={handleAddPatient} className="p-8 space-y-4">
-                <input name="name" required placeholder="اسم المريض بالكامل" className="w-full border rounded-xl p-3 bg-gray-50" />
-                <input name="nationalId" required placeholder="الرقم القومي" className="w-full border rounded-xl p-3 bg-gray-50" />
-                <input name="phone" required placeholder="رقم الهاتف" className="w-full border rounded-xl p-3 bg-gray-50" />
+                <input name="name" required placeholder="اسم المريض بالكامل" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <input name="nationalId" required placeholder="الرقم القومي" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                <input name="phone" required placeholder="رقم الهاتف" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 <div className="space-y-1">
                    <label className="text-xs font-bold text-gray-500 mr-2">تاريخ الميلاد</label>
-                   <input name="dateOfBirth" type="date" required className="w-full border rounded-xl p-3 bg-gray-50" />
+                   <input name="dateOfBirth" type="date" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
                 </div>
                 <select name="bloodType" className="w-full border rounded-xl p-3 bg-gray-50">
                    {BLOOD_TYPES.map(bt => <option key={bt} value={bt}>{bt}</option>)}
                 </select>
-                <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg">حفظ المريض والمتابعة</button>
+                <button type="submit" className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700">حفظ المريض والمتابعة</button>
              </form>
           </div>
         </div>
@@ -385,7 +398,7 @@ const LabModule: React.FC = () => {
 
               <div className="md:col-span-2 flex gap-3 pt-6 border-t">
                 <button type="button" onClick={() => setShowDefModal(false)} className="flex-1 py-3 bg-gray-100 rounded-xl font-bold">إلغاء</button>
-                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold">حفظ التعريف</button>
+                <button type="submit" className="flex-1 py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg">حفظ التعريف</button>
               </div>
             </form>
           </div>
@@ -414,7 +427,7 @@ const LabModule: React.FC = () => {
 
               <div className="flex gap-3">
                 <button type="button" onClick={() => setShowResultModal(null)} className="flex-1 py-4 bg-gray-100 rounded-xl font-bold">إلغاء</button>
-                <button type="submit" className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold">حفظ وإغلاق</button>
+                <button type="submit" className="flex-1 py-4 bg-green-600 text-white rounded-xl font-bold shadow-lg">حفظ وإغلاق</button>
               </div>
               <p className="text-[10px] text-red-500 text-center font-bold">تنبيه: لا يمكن تعديل النتيجة بعد الحفظ لضمان أمان البيانات الطبية.</p>
             </form>

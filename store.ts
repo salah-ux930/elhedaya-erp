@@ -3,7 +3,7 @@ import {
   Patient, DialysisSession, Service, Invoice, Product, 
   Store, StockTransaction, Employee, FinancialAccount, 
   Transaction, FundingEntity, ShiftRecord, LabTest, LabTestDefinition, AuditLog,
-  User, Permission
+  User, Permission, TransferRequest
 } from './types.ts';
 import { supabase } from './supabase.ts';
 
@@ -21,6 +21,21 @@ export class DB {
   static shifts: ShiftRecord[] = [];
   static sessions: DialysisSession[] = [];
 
+  // --- Auth ---
+  static async login(username: string, password: string): Promise<User | null> {
+    const { data, error } = await supabase
+      .from('system_users')
+      .select('*')
+      .eq('username', username)
+      .eq('password', password) // في الإنتاج الحقيقي، يجب استخدام تشفير bcrypt
+      .single();
+
+    if (error || !data) return null;
+    
+    await this.log('تسجيل دخول', `دخل المستخدم ${data.name} إلى النظام`);
+    return data as User;
+  }
+
   // --- Patients ---
   static async getPatients() {
     const { data, error } = await supabase.from('patients').select('*').order('created_at', { ascending: false });
@@ -34,6 +49,25 @@ export class DB {
     if (error) throw error;
     await this.log('إضافة مريض', `تمت إضافة المريض ${p.name}`);
     return data[0];
+  }
+
+  // --- Funding Entities ---
+  static async getFundingEntities() {
+    const { data, error } = await supabase.from('funding_entities').select('*').order('name');
+    if (error) throw error;
+    this.funding = data || [];
+    return data;
+  }
+
+  static async addFundingEntity(name: string) {
+    const { data, error } = await supabase.from('funding_entities').insert([{ name }]).select();
+    if (error) throw error;
+    return data[0];
+  }
+
+  static async deleteFundingEntity(id: string) {
+    const { error } = await supabase.from('funding_entities').delete().eq('id', id);
+    if (error) throw error;
   }
 
   // --- Lab ---
@@ -125,22 +159,41 @@ export class DB {
     return data[0];
   }
 
-  // --- Funding Entities ---
-  static async getFundingEntities() {
-    const { data, error } = await supabase.from('funding_entities').select('*').order('name');
+  static async createTransferRequest(req: Partial<TransferRequest>) {
+    const { data, error } = await supabase.from('transfer_requests').insert([req]).select();
     if (error) throw error;
-    this.funding = data || [];
+    await this.log('طلب تحويل', `طلب جديد من مخزن ${req.fromStoreId} إلى ${req.toStoreId}`);
+    return data[0];
+  }
+
+  static async getTransferRequests() {
+    const { data, error } = await supabase.from('transfer_requests').select('*').order('date', { ascending: false });
+    if (error) throw error;
     return data;
   }
 
-  static async addFundingEntity(name: string) {
-    const { data, error } = await supabase.from('funding_entities').insert([{ name }]).select();
+  static async updateTransferRequestStatus(id: string, status: 'APPROVED' | 'REJECTED', items?: any[]) {
+    const { data, error } = await supabase.from('transfer_requests').update({ status, items }).eq('id', id).select();
     if (error) throw error;
     return data[0];
   }
 
-  static async deleteFundingEntity(id: string) {
-    const { error } = await supabase.from('funding_entities').delete().eq('id', id);
+  // --- System Users ---
+  static async getUsers() {
+    const { data, error } = await supabase.from('system_users').select('*').order('created_at', { ascending: false });
+    if (error) throw error;
+    this.users = data || [];
+    return data;
+  }
+
+  static async addUser(u: Partial<User>) {
+    const { data, error } = await supabase.from('system_users').insert([u]).select();
+    if (error) throw error;
+    return data[0];
+  }
+
+  static async deleteUser(id: string) {
+    const { error } = await supabase.from('system_users').delete().eq('id', id);
     if (error) throw error;
   }
 
@@ -163,25 +216,7 @@ export class DB {
     if (error) throw error;
   }
 
-  // --- System Users ---
-  static async getUsers() {
-    const { data, error } = await supabase.from('system_users').select('*').order('created_at', { ascending: false });
-    if (error) throw error;
-    this.users = data || [];
-    return data;
-  }
-
-  static async addUser(u: Partial<User>) {
-    const { data, error } = await supabase.from('system_users').insert([u]).select();
-    if (error) throw error;
-    return data[0];
-  }
-
-  static async deleteUser(id: string) {
-    const { error } = await supabase.from('system_users').delete().eq('id', id);
-    if (error) throw error;
-  }
-
+  // --- Other ---
   static async addFinanceTx(tx: Partial<Transaction>) {
     const { data, error } = await supabase.from('transactions').insert([tx]).select();
     if (error) throw error;

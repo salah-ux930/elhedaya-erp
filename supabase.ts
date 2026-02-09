@@ -22,12 +22,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
  *   name TEXT NOT NULL,
  *   national_id TEXT UNIQUE NOT NULL,
- *   phone TEXT, -- تم التغيير لـ TEXT لضمان حفظ الأصفار في البداية
+ *   phone TEXT,
  *   address TEXT,
  *   blood_type TEXT,
- *   date_of_birth DATE, -- تاريخ الميلاد المطلوب
+ *   date_of_birth DATE,
  *   funding_entity_id UUID REFERENCES funding_entities(id),
- *   emergency_contact JSONB, -- حفظ كائن الطوارئ (الاسم، الهاتف، الصلة)
+ *   emergency_contact JSONB,
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
@@ -86,7 +86,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *   patient_id UUID REFERENCES patients(id),
  *   date DATE DEFAULT CURRENT_DATE,
  *   total_amount NUMERIC(10,2) DEFAULT 0,
- *   status TEXT, -- PAID, DEFERRED, FREE
+ *   status TEXT,
  *   funding_entity_id UUID REFERENCES funding_entities(id),
  *   room TEXT,
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -109,7 +109,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *   name TEXT NOT NULL,
  *   bank_account TEXT,
  *   shift_price NUMERIC(10,2) DEFAULT 0,
- *   type TEXT, -- PERMANENT, TEMPORARY
+ *   type TEXT,
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
@@ -127,7 +127,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
  *   name TEXT NOT NULL,
  *   username TEXT UNIQUE NOT NULL,
- *   permissions TEXT[], -- مصفوفة الصلاحيات
+ *   password TEXT NOT NULL, -- تمت إضافة عمود كلمة المرور هنا
+ *   permissions TEXT[],
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 

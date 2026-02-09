@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { AR, PERMISSIONS_MAP } from '../constants.ts';
 import { DB } from '../store.ts';
 import { User, Permission } from '../types.ts';
-import { UserCog, UserPlus, Search, Trash2, Key, UserCheck, Shield, Check, X, Loader2 } from 'lucide-react';
+import { UserCog, UserPlus, Search, Trash2, Key, UserCheck, Shield, Check, X, Loader2, Lock } from 'lucide-react';
 
 const UsersModule: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -44,12 +44,18 @@ const UsersModule: React.FC = () => {
       alert("يرجى اختيار صلاحية واحدة على الأقل");
       return;
     }
+
+    if (!newUser.password || newUser.password.length < 4) {
+      alert("يجب أن تكون كلمة المرور 4 أحرف على الأقل");
+      return;
+    }
     
     setSubmitting(true);
     try {
       const userToSave = {
         name: newUser.name || '',
         username: newUser.username || '',
+        password: newUser.password,
         permissions: newUser.permissions
       };
       
@@ -193,6 +199,20 @@ const UsersModule: React.FC = () => {
                 </div>
 
                 <div>
+                   <label className="block text-sm font-bold text-gray-600 mb-1">{AR.password}</label>
+                   <div className="relative">
+                      <Lock className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                      <input 
+                        required 
+                        type="password" 
+                        placeholder="تعيين كلمة مرور الحساب"
+                        className="w-full border rounded-xl pr-10 pl-3 py-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none"
+                        onChange={e => setNewUser({...newUser, password: e.target.value})}
+                      />
+                   </div>
+                </div>
+
+                <div>
                   <label className="block text-sm font-bold text-gray-600 mb-3">{AR.permissions}</label>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 border rounded-xl bg-gray-50/50">
                     {Object.entries(PERMISSIONS_MAP).map(([key, val]) => (
@@ -210,16 +230,6 @@ const UsersModule: React.FC = () => {
                         {newUser.permissions?.includes(key as Permission) && <Check size={16} />}
                       </button>
                     ))}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-bold text-gray-600 mb-1">{AR.password}</label>
-                  <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex items-start gap-3">
-                    <Shield className="text-blue-600 mt-1" size={20} />
-                    <p className="text-xs text-blue-700 leading-relaxed">
-                      يتم تعيين كلمة مرور افتراضية للمستخدم الجديد. يمكن للمستخدم تغييرها عند أول تسجيل دخول له بعد تفعيل ميزة الأمان.
-                    </p>
                   </div>
                 </div>
               </form>
