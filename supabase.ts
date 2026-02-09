@@ -1,141 +1,138 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// إعدادات المشروع المقدمة من المستخدم
 const supabaseUrl = 'https://aojoauthvinrdqgakilf.supabase.co';
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFvam9hdXRodmlucmRxZ2FraWxmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk4Nzc5OTMsImV4cCI6MjA4NTQ1Mzk5M30.bB1Ni9EbrvCIwAqhTEZwuj-SneTVMCtbAWOvpa97lcA';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
- * SQL Schema Corrected (Run this in Supabase SQL Editor):
+ * SQL Schema (قم بنسخ هذا الكود وتشغيله في SQL Editor في Supabase):
  * 
- * -- 1. جهات التمويل (Funding Entities)
+ * -- 1. جهات التمويل
  * CREATE TABLE funding_entities (
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
  *   name TEXT NOT NULL,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
- * -- 2. المرضى (Patients)
+ * -- 2. الحسابات المالية (الخزائن والبنك)
+ * CREATE TABLE financial_accounts (
+ *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+ *   name TEXT NOT NULL,
+ *   type TEXT NOT NULL, -- 'CASH' or 'BANK'
+ *   balance NUMERIC DEFAULT 0,
+ *   linkedEmployeeId UUID,
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * -- 3. المخازن
+ * CREATE TABLE stores (
+ *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+ *   name TEXT NOT NULL,
+ *   isMain BOOLEAN DEFAULT false,
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * -- 4. الأصناف
+ * CREATE TABLE products (
+ *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+ *   name TEXT NOT NULL,
+ *   unit TEXT,
+ *   minStock NUMERIC DEFAULT 0,
+ *   price NUMERIC(10,2) DEFAULT 0,
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * -- 5. المرضى
  * CREATE TABLE patients (
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
  *   name TEXT NOT NULL,
- *   national_id TEXT UNIQUE NOT NULL,
+ *   nationalId TEXT UNIQUE NOT NULL,
  *   phone TEXT,
- *   address TEXT,
- *   blood_type TEXT,
- *   date_of_birth DATE,
- *   funding_entity_id UUID REFERENCES funding_entities(id),
- *   emergency_contact JSONB,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ *   bloodType TEXT,
+ *   dateOfBirth DATE,
+ *   fundingEntityId UUID REFERENCES funding_entities(id),
+ *   emergencyContact JSONB,
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
- * -- 3. جلسات الغسيل (Dialysis Sessions)
+ * -- 6. جلسات الغسيل
  * CREATE TABLE dialysis_sessions (
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   patient_id UUID REFERENCES patients(id),
+ *   patientId UUID REFERENCES patients(id),
  *   date DATE DEFAULT CURRENT_DATE,
- *   start_time TIME,
- *   end_time TIME,
- *   weight_before NUMERIC(5,2),
- *   weight_after NUMERIC(5,2),
- *   blood_pressure TEXT,
+ *   startTime TIME,
+ *   endTime TIME,
+ *   weightBefore NUMERIC(5,2),
+ *   weightAfter NUMERIC(5,2),
+ *   bloodPressure TEXT,
  *   room TEXT,
- *   machine_id TEXT,
+ *   machineId TEXT,
  *   status TEXT DEFAULT 'WAITING',
  *   notes TEXT,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
- * -- 4. قاموس التحاليل (Lab Test Definitions)
- * CREATE TABLE lab_test_definitions (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   name TEXT NOT NULL,
- *   category TEXT,
- *   sample_type TEXT,
- *   normal_range_male TEXT,
- *   normal_range_female TEXT,
- *   normal_range_child TEXT,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
- * );
- * 
- * -- 5. سجل نتائج التحاليل (Lab Tests)
- * CREATE TABLE lab_tests (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   patient_id UUID REFERENCES patients(id),
- *   test_definition_id UUID REFERENCES lab_test_definitions(id),
- *   result TEXT,
- *   status TEXT DEFAULT 'PENDING',
- *   date DATE DEFAULT CURRENT_DATE,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
- * );
- * 
- * -- 6. الخدمات والأسعار (Services)
+ * -- 7. الخدمات
  * CREATE TABLE services (
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
  *   name TEXT NOT NULL,
  *   price NUMERIC(10,2) DEFAULT 0,
  *   category TEXT,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
- * -- 7. الفواتير (Invoices)
- * CREATE TABLE invoices (
+ * -- 8. حركات المخزن
+ * CREATE TABLE stock_transactions (
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   patient_id UUID REFERENCES patients(id),
+ *   productId UUID REFERENCES products(id),
+ *   storeId UUID REFERENCES stores(id),
+ *   type TEXT NOT NULL, -- 'ADD', 'DEDUCT', 'TRANSFER'
+ *   quantity NUMERIC NOT NULL,
  *   date DATE DEFAULT CURRENT_DATE,
- *   total_amount NUMERIC(10,2) DEFAULT 0,
- *   status TEXT,
- *   funding_entity_id UUID REFERENCES funding_entities(id),
- *   room TEXT,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ *   note TEXT,
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
- * -- 8. أصناف المخزن (Products)
- * CREATE TABLE products (
+ * -- 9. طلبات التحويل
+ * CREATE TABLE transfer_requests (
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   name TEXT NOT NULL,
- *   unit TEXT,
- *   min_stock NUMERIC DEFAULT 0,
- *   price NUMERIC(10,2) DEFAULT 0,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
- * );
- * 
- * -- 9. الموظفين (Employees)
- * CREATE TABLE employees (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   code TEXT UNIQUE,
- *   name TEXT NOT NULL,
- *   bank_account TEXT,
- *   shift_price NUMERIC(10,2) DEFAULT 0,
- *   type TEXT,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
- * );
- * 
- * -- 10. سجل الشفتات (Shifts)
- * CREATE TABLE shifts (
- *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   employee_id UUID REFERENCES employees(id),
+ *   fromStoreId UUID REFERENCES stores(id),
+ *   toStoreId UUID REFERENCES stores(id),
+ *   items JSONB NOT NULL,
+ *   status TEXT DEFAULT 'PENDING',
+ *   note TEXT,
  *   date DATE DEFAULT CURRENT_DATE,
- *   count NUMERIC DEFAULT 1,
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
- * -- 11. حسابات النظام (System Users)
+ * -- 10. المعاملات المالية
+ * CREATE TABLE transactions (
+ *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+ *   accountId UUID REFERENCES financial_accounts(id),
+ *   amount NUMERIC NOT NULL,
+ *   type TEXT NOT NULL, -- 'INCOME', 'EXPENSE'
+ *   date DATE DEFAULT CURRENT_DATE,
+ *   category TEXT,
+ *   note TEXT,
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * -- 11. حسابات النظام
  * CREATE TABLE system_users (
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
  *   name TEXT NOT NULL,
  *   username TEXT UNIQUE NOT NULL,
- *   password TEXT NOT NULL, -- تمت إضافة عمود كلمة المرور هنا
+ *   password TEXT NOT NULL,
  *   permissions TEXT[],
- *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ *   createdAt TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
- * -- 12. سجل العمليات (Audit Logs)
+ * -- 12. سجل العمليات
  * CREATE TABLE audit_logs (
  *   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
- *   user_id TEXT,
+ *   userId TEXT,
  *   action TEXT,
  *   details TEXT,
  *   timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()

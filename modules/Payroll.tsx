@@ -1,34 +1,62 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AR } from '../constants.ts';
 import { DB } from '../store.ts';
-import { Users, Upload, Download, RotateCcw, Archive, DollarSign, Wallet } from 'lucide-react';
+import { Employee, ShiftRecord } from '../types.ts';
+import { Users, Upload, Download, RotateCcw, Archive, DollarSign, Wallet, Loader2 } from 'lucide-react';
 
 const PayrollModule: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'employees' | 'payroll'>('payroll');
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [shifts, setShifts] = useState<ShiftRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [e, s] = await Promise.all([DB.getEmployees(), DB.getShifts()]);
+      setEmployees(e || []);
+      setShifts(s || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const calculateSalary = (empId: string) => {
-    const emp = DB.employees.find(e => e.id === empId);
+    const emp = employees.find(e => e.id === empId);
     if (!emp) return 0;
-    const shiftCount = DB.shifts
+    const shiftCount = shifts
       .filter(s => s.employeeId === empId)
       .reduce((acc, curr) => acc + curr.count, 0);
     return shiftCount * emp.shiftPrice;
   };
 
-  const totalMonthlyPayroll = DB.employees.reduce((acc, emp) => acc + calculateSalary(emp.id), 0);
+  const totalMonthlyPayroll = employees.reduce((acc, emp) => acc + calculateSalary(emp.id), 0);
 
   const handlePreparePayroll = async () => {
     const confirmed = confirm("هل أنت متأكد من رغبتك في تجهيز المرتبات؟ سيتم ترحيل سجلات هذا الشهر وتصفير العدادات لبدء شهر جديد.");
     if (confirmed) {
       try {
         await DB.resetShifts();
+        await loadData();
         alert("تم تجهيز المرتبات بنجاح.");
       } catch (err) {
         alert("حدث خطأ أثناء المعالجة.");
       }
     }
   };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center py-20"><Loader2 className="animate-spin text-primary-600" size={40} /></div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -53,7 +81,7 @@ const PayrollModule: React.FC = () => {
             <div className="p-3 bg-blue-100 text-blue-600 rounded-xl"><Users /></div>
             <div>
               <div className="text-sm text-gray-500">عدد الموظفين</div>
-              <div className="text-2xl font-bold">{DB.employees.length}</div>
+              <div className="text-2xl font-bold">{employees.length}</div>
             </div>
           </div>
         </div>
@@ -108,14 +136,14 @@ const PayrollModule: React.FC = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {DB.employees.map(emp => (
+              {employees.map(emp => (
                 <tr key={emp.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 font-mono text-xs">{emp.code}</td>
                   <td className="px-6 py-4 font-bold">{emp.name}</td>
                   <td className="px-6 py-4 text-xs text-gray-500">{emp.bankAccount}</td>
                   <td className="px-6 py-4">{emp.shiftPrice}</td>
                   <td className="px-6 py-4 font-bold text-primary-600">
-                    {DB.shifts.filter(s => s.employeeId === emp.id).reduce((a, b) => a + b.count, 0)}
+                    {shifts.filter(s => s.employeeId === emp.id).reduce((a, b) => a + b.count, 0)}
                   </td>
                   <td className="px-6 py-4 font-bold">{calculateSalary(emp.id).toLocaleString()} ج.م</td>
                 </tr>
@@ -130,7 +158,7 @@ const PayrollModule: React.FC = () => {
             <button className="bg-primary-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md">+ إضافة موظف</button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-             {DB.employees.map(emp => (
+             {employees.map(emp => (
                <div key={emp.id} className="p-4 border rounded-xl flex items-center gap-4 hover:border-primary-300 transition-colors cursor-pointer group">
                  <div className="w-12 h-12 bg-primary-50 text-primary-600 rounded-full flex items-center justify-center font-bold group-hover:bg-primary-600 group-hover:text-white transition-colors">
                    {emp.name[0]}

@@ -39,13 +39,10 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user, onLogout }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // القائمة الأساسية التي تظهر للجميع
-  const baseItems = [
-    { id: 'dashboard', label: AR.dashboard, icon: <LayoutDashboard size={22} />, alwaysShow: true },
-  ];
-
-  // القائمة المشروطة بالصلاحيات
-  const restrictedItems = [
+  // القائمة الأساسية
+  const menuItems = [
+    { id: 'dashboard', label: AR.dashboard, icon: <LayoutDashboard size={22} />, permission: 'VIEW_DASHBOARD' },
+    { id: 'notifications', label: AR.notifications, icon: <Bell size={22} />, permission: 'VIEW_NOTIFICATIONS' },
     { id: 'reception', label: AR.reception, icon: <Stethoscope size={22} />, permission: 'MANAGE_RECEPTION' },
     { id: 'patients', label: AR.patients, icon: <Users size={22} />, permission: 'MANAGE_PATIENTS' },
     { id: 'lab', label: AR.lab, icon: <FlaskConical size={22} />, permission: 'MANAGE_LAB' },
@@ -57,8 +54,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
     { id: 'setup', label: AR.setup, icon: <Settings size={22} />, permission: 'SYSTEM_SETUP' },
   ].filter(item => user.permissions.includes(item.permission as Permission));
 
-  const allVisibleItems = [...baseItems, ...restrictedItems];
-
   return (
     <div className="flex min-h-screen bg-gray-50 font-cairo" dir="rtl">
       {/* Sidebar - Desktop */}
@@ -68,7 +63,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
           <h1 className="text-xl font-bold text-primary-900 tracking-tight">مركز الهدايه الطبى</h1>
         </div>
         <nav className="flex-1 mt-4 overflow-y-auto">
-          {allVisibleItems.map((item) => (
+          {menuItems.map((item) => (
             <SidebarItem
               key={item.id}
               icon={item.icon}
@@ -91,7 +86,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
 
       {/* Main Content Area */}
       <main className="flex-1 lg:mr-72 min-h-screen transition-all duration-300">
-        {/* Header */}
         <header className="bg-white border-b border-gray-200 sticky top-0 z-30 px-6 h-20 flex items-center justify-between shadow-sm">
           <div className="flex items-center gap-4">
             <button 
@@ -101,12 +95,12 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
               <Menu size={24} />
             </button>
             <h2 className="text-xl font-bold text-gray-800">
-              {allVisibleItems.find(i => i.id === activeTab)?.label}
+              {menuItems.find(i => i.id === activeTab)?.label}
             </h2>
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="relative cursor-pointer text-gray-600 hover:text-primary-600 transition-colors p-2">
+            <div className="relative cursor-pointer text-gray-600 hover:text-primary-600 transition-colors p-2" onClick={() => setActiveTab('notifications')}>
               <Bell size={24} />
               <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
             </div>
@@ -122,7 +116,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
           </div>
         </header>
 
-        {/* Content */}
         <div className="p-6 max-w-7xl mx-auto">
           {children}
         </div>
@@ -142,7 +135,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
               </button>
             </div>
             <nav className="p-4">
-              {allVisibleItems.map((item) => (
+              {menuItems.map((item) => (
                 <SidebarItem
                   key={item.id}
                   icon={item.icon}
@@ -154,14 +147,6 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
                   }}
                 />
               ))}
-              <div className="mt-8 pt-8 border-t">
-                 <SidebarItem 
-                   icon={<LogOut size={22} />} 
-                   label={AR.logout} 
-                   active={false} 
-                   onClick={onLogout} 
-                 />
-              </div>
             </nav>
           </div>
         </div>

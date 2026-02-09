@@ -1,6 +1,7 @@
 
 export type Permission = 
   | 'VIEW_DASHBOARD' 
+  | 'VIEW_NOTIFICATIONS'
   | 'MANAGE_RECEPTION'
   | 'MANAGE_PATIENTS' 
   | 'MANAGE_LAB'
@@ -9,7 +10,8 @@ export type Permission =
   | 'MANAGE_INVENTORY' 
   | 'MANAGE_FINANCE' 
   | 'MANAGE_USERS' 
-  | 'SYSTEM_SETUP';
+  | 'SYSTEM_SETUP'
+  | string; // للسماح بصلاحيات ديناميكية مثل STORE_ACCESS_ID
 
 export interface User {
   id: string;
@@ -113,7 +115,7 @@ export interface StockTransaction {
   date: string;
   note?: string;
   status?: 'PENDING' | 'APPROVED' | 'REJECTED';
-  requestId?: string; // رابط لمجموعة تحويل واحدة
+  requestId?: string;
 }
 
 export interface TransferRequest {

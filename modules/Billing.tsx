@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { AR, ROOMS, calculateAge, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
-import { Invoice, Patient } from '../types.ts';
+import { Invoice, Patient, Service } from '../types.ts';
 import { FileDown, Filter, Printer, MoreVertical, CheckCircle, Clock, Plus, Search, X, UserPlus } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect.tsx';
 
@@ -12,16 +12,18 @@ const BillingModule: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [services, setServices] = useState<Service[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [showPatientModal, setShowPatientModal] = useState(false);
 
   useEffect(() => {
-    loadPatients();
+    loadData();
   }, []);
 
-  const loadPatients = async () => {
-    const data = await DB.getPatients();
-    setPatients(data || []);
+  const loadData = async () => {
+    const [p, s] = await Promise.all([DB.getPatients(), DB.getServices()]);
+    setPatients(p || []);
+    setServices(s || []);
   };
 
   const handleAddPatient = async (e: React.FormEvent) => {
@@ -185,7 +187,7 @@ const BillingModule: React.FC = () => {
                       <div className="flex-1">
                         <label className="block text-xs font-bold text-gray-400 mb-1">الخدمة</label>
                         <select className="w-full border rounded-lg p-2 bg-white outline-none">
-                          {DB.services.map(s => <option key={s.id} value={s.id}>{s.name} ({s.price} ج.م)</option>)}
+                          {services.map(s => <option key={s.id} value={s.id}>{s.name} ({s.price} ج.م)</option>)}
                         </select>
                       </div>
                       <div className="w-24">

@@ -2,12 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { AR, BLOOD_TYPES, calculateAge } from '../constants';
 import { DB } from '../store';
-import { Patient } from '../types';
+import { Patient, FundingEntity } from '../types';
 import { Plus, Search, UserPlus, History, Phone, FileText, Loader2, Calendar as CalendarIcon } from 'lucide-react';
 
 const PatientModule: React.FC = () => {
   const [view, setView] = useState<'list' | 'add' | 'profile'>('list');
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [fundingEntities, setFundingEntities] = useState<FundingEntity[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState<Partial<Patient>>({
@@ -26,8 +27,9 @@ const PatientModule: React.FC = () => {
   const loadPatients = async () => {
     setLoading(true);
     try {
-      const data = await DB.getPatients();
-      setPatients(data || []);
+      const [p, f] = await Promise.all([DB.getPatients(), DB.getFundingEntities()]);
+      setPatients(p || []);
+      setFundingEntities(f || []);
     } catch (error) {
       console.error("Error loading patients:", error);
     } finally {
@@ -193,7 +195,7 @@ const PatientModule: React.FC = () => {
                   <td className="px-6 py-4 text-gray-600">{p.phone}</td>
                   <td className="px-6 py-4">
                     <span className="bg-primary-50 text-primary-700 px-3 py-1 rounded-full text-xs font-bold border border-primary-100">
-                      {DB.funding.find(f => f.id === p.fundingEntityId)?.name || 'خاص'}
+                      {fundingEntities.find(f => f.id === p.fundingEntityId)?.name || 'خاص'}
                     </span>
                   </td>
                   <td className="px-6 py-4">

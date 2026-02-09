@@ -1,6 +1,7 @@
 
 export const AR = {
   dashboard: "لوحة التحكم",
+  notifications: "مركز الإشعارات",
   reception: "الاستقبال",
   patients: "المرضى",
   lab: "المعمل",
@@ -49,7 +50,6 @@ export const AR = {
   expense: "مصروف",
   balance: "الرصيد",
   auditLog: "سجل العمليات",
-  notifications: "التنبيهات",
   validationPhone: "يجب أن يبدأ بـ 01 ويتكون من 11 رقم",
   confirmation: "هل أنت متأكد؟",
   welcome: "مرحباً بك في نظام إدارة وحدة الكلى",
@@ -85,14 +85,15 @@ export const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 export const ROOMS = ['A1', 'A2', 'B1', 'B2', 'ICU-1', 'ICU-2'];
 
 export const PERMISSIONS_MAP: Record<string, string> = {
-  VIEW_DASHBOARD: "مشاهدة لوحة التحكم",
+  VIEW_DASHBOARD: "مشاهدة لوحة التحكم الإحصائية",
+  VIEW_NOTIFICATIONS: "مشاهدة مركز الإشعارات",
   MANAGE_RECEPTION: "إدارة الاستقبال",
   MANAGE_PATIENTS: "إدارة المرضى",
   MANAGE_LAB: "إدارة المعمل",
   MANAGE_BILLING: "إدارة الفواتير",
   MANAGE_PAYROLL: "إدارة الموظفين والرواتب",
-  MANAGE_INVENTORY: "إدارة المخازن",
-  MANAGE_FINANCE: "إدارة الحسابات والمالية",
+  MANAGE_INVENTORY: "إدارة المخازن (كاملة)",
+  MANAGE_FINANCE: "إدارة الحسابات والمالية (كاملة)",
   MANAGE_USERS: "إدارة حسابات النظام",
   SYSTEM_SETUP: "إعدادات النظام"
 };

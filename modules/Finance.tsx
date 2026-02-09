@@ -1,39 +1,69 @@
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { AR } from '../constants';
 import { DB } from '../store';
-import { Wallet, Landmark, ArrowUpCircle, ArrowDownCircle, Search, Calendar, Plus } from 'lucide-react';
+import { FinancialAccount, Transaction } from '../types';
+import { Wallet, Landmark, ArrowUpCircle, ArrowDownCircle, Search, Calendar, Plus, Loader2 } from 'lucide-react';
 
 const FinanceModule: React.FC = () => {
   const [activeAccount, setActiveAccount] = useState<string>('all');
   const [showTxForm, setShowTxForm] = useState(false);
   const [txType, setTxType] = useState<'INCOME' | 'EXPENSE'>('INCOME');
+  const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
 
-  const filteredTransactions = activeAccount === 'all' 
-    ? DB.transactions 
-    : DB.transactions.filter(t => t.accountId === activeAccount);
+  useEffect(() => {
+    loadData();
+  }, []);
 
-  const handleAddTransaction = (e: React.FormEvent) => {
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [acc, tx] = await Promise.all([DB.getAccounts(), DB.getTransactions()]);
+      setAccounts(acc || []);
+      setTransactions(tx || []);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     const target = e.target as any;
     const amount = parseFloat(target.amount.value);
     const accountId = target.accountId.value;
     
-    DB.addFinanceTx({
-      id: Math.random().toString(36).substr(2, 9),
-      accountId,
-      amount,
-      type: txType,
-      date: new Date().toISOString().split('T')[0],
-      category: target.category.value,
-      note: target.note.value
-    });
-    setShowTxForm(false);
+    try {
+      await DB.addFinanceTx({
+        accountId,
+        amount,
+        type: txType,
+        date: new Date().toISOString().split('T')[0],
+        category: target.category.value,
+        note: target.note.value
+      });
+      setShowTxForm(false);
+      await loadData();
+    } catch (err) {
+      alert("خطأ في حفظ المعاملة");
+    }
   };
+
+  const filteredTransactions = activeAccount === 'all' 
+    ? transactions 
+    : transactions.filter(t => t.accountId === activeAccount);
+
+  if (loading) {
+    return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-primary-600" size={40} /></div>;
+  }
 
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {DB.accounts.map(acc => (
+        {accounts.map(acc => (
           <div 
             key={acc.id} 
             onClick={() => setActiveAccount(acc.id)}
@@ -96,7 +126,7 @@ const FinanceModule: React.FC = () => {
             {filteredTransactions.length > 0 ? filteredTransactions.map(tx => (
               <tr key={tx.id} className="hover:bg-gray-50">
                 <td className="px-6 py-4 text-gray-500 text-sm font-mono">{tx.date}</td>
-                <td className="px-6 py-4 font-bold">{DB.accounts.find(a => a.id === tx.accountId)?.name}</td>
+                <td className="px-6 py-4 font-bold">{accounts.find(a => a.id === tx.accountId)?.name}</td>
                 <td className="px-6 py-4 text-xs font-bold uppercase">{tx.category}</td>
                 <td className={`px-6 py-4 font-bold ${tx.type === 'INCOME' ? 'text-green-600' : 'text-red-600'}`}>
                   {tx.type === 'INCOME' ? '+' : '-'}{tx.amount.toLocaleString()} ج.م
@@ -120,7 +150,7 @@ const FinanceModule: React.FC = () => {
               <div>
                 <label className="block text-sm font-bold text-gray-600 mb-1">الحساب</label>
                 <select name="accountId" required className="w-full border rounded-lg p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none">
-                  {DB.accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
+                  {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
                 </select>
               </div>
               <div>
