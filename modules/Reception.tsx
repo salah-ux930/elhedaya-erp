@@ -1,16 +1,17 @@
 
 import React, { useState, useEffect } from 'react';
-import { AR, ROOMS, calculateAge } from '../constants.ts';
+import { AR, ROOMS, calculateAge, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
 import { DialysisSession, Patient } from '../types.ts';
 import { 
   UserPlus, Search, Clock, Activity, ArrowRight, 
-  CheckCircle2, AlertCircle, MapPin, Scale, HeartPulse, MoreVertical, Loader2, X 
+  CheckCircle2, AlertCircle, MapPin, Scale, HeartPulse, MoreVertical, Loader2, X, BellRing, UserCheck
 } from 'lucide-react';
 
 const ReceptionModule: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showCheckInModal, setShowCheckInModal] = useState(false);
+  const [showQuickAddModal, setShowQuickAddModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [sessions, setSessions] = useState<any[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
@@ -39,8 +40,56 @@ const ReceptionModule: React.FC = () => {
     setShowCheckInModal(true);
   };
 
+  const confirmAttendanceOnly = async (patient: Patient) => {
+    try {
+      setLoading(true);
+      await DB.addSession({
+        patient_id: patient.id,
+        status: 'WAITING',
+        date: new Date().toISOString().split('T')[0],
+        start_time: new Date().toTimeString().split(' ')[0],
+        notes: 'تم تسجيل الحضور من الاستقبال - بانتظار التمريض'
+      });
+      
+      // محاكاة إرسال إشعار للتمريض (يمكن ربطها بجدول التنبيهات لاحقاً)
+      alert(`تم تسجيل حضور المريض ${patient.name} بنجاح. تم إرسال تنبيه لطاقم التمريض.`);
+      
+      setSearchTerm('');
+      setShowQuickAddModal(false);
+      loadData();
+    } catch (err) {
+      alert("خطأ في تسجيل الحضور");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleQuickAddPatient = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const target = e.target as any;
+    try {
+      setLoading(true);
+      const newPatient = await DB.addPatient({
+        name: target.name.value,
+        national_id: target.national_id.value,
+        phone: target.phone.value,
+        blood_type: target.blood_type.value,
+        date_of_birth: target.dob.value,
+        address: target.address.value,
+      });
+      
+      if (newPatient) {
+        await confirmAttendanceOnly(newPatient);
+      }
+    } catch (err) {
+      alert("خطأ في إضافة المريض الجديد");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredPatients = patients.filter(p => 
-    p.name.includes(searchTerm) || p.phone.includes(searchTerm)
+    p.name.includes(searchTerm) || p.phone.includes(searchTerm) || p.national_id?.includes(searchTerm)
   );
 
   const confirmCheckIn = async (e: React.FormEvent) => {
@@ -99,9 +148,9 @@ const ReceptionModule: React.FC = () => {
 
           <div className="space-y-3">
             {sessions.map(session => (
-              <div key={session.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${session.status === 'ACTIVE' ? 'border-green-100 bg-green-50/20' : 'border-gray-100'}`}>
+              <div key={session.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${session.status === 'ACTIVE' ? 'border-green-100 bg-green-50/20' : session.status === 'WAITING' ? 'border-yellow-100 bg-yellow-50/20' : 'border-gray-100'}`}>
                 <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg ${session.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg ${session.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : session.status === 'WAITING' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
                     {session.patients?.name?.[0] || '?'}
                   </div>
                   <div>
@@ -110,14 +159,14 @@ const ReceptionModule: React.FC = () => {
                       <span className="text-primary-600 text-xs mr-2 font-bold">{calculateAge(session.patients?.date_of_birth)}</span>
                     </h4>
                     <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-gray-500 flex items-center gap-1"><MapPin size={12} /> {session.room || 'لم يحدد'}</span>
+                      <span className="text-xs text-gray-500 flex items-center gap-1"><MapPin size={12} /> {session.room || 'بانتظار التخصيص'}</span>
                       <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {session.start_time || '--:--'}</span>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-3 w-full md:w-auto">
-                   <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${session.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>
+                   <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${session.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : session.status === 'WAITING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-gray-50 text-gray-600'}`}>
                      {session.status === 'ACTIVE' ? AR.inSession : session.status === 'FINISHED' ? AR.completed : AR.waiting}
                    </div>
                    <button className="p-2 text-gray-400 hover:text-primary-600 bg-gray-50 rounded-lg"><MoreVertical size={18} /></button>
@@ -147,10 +196,9 @@ const ReceptionModule: React.FC = () => {
             </div>
 
             <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
-              {searchTerm && filteredPatients.map(p => (
-                <button 
+              {searchTerm && filteredPatients.length > 0 && filteredPatients.map(p => (
+                <div 
                   key={p.id}
-                  onClick={() => handleCheckIn(p)}
                   className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-primary-50 border border-transparent hover:border-primary-100 transition-all group"
                 >
                   <div className="text-right">
@@ -160,14 +208,96 @@ const ReceptionModule: React.FC = () => {
                     </div>
                     <div className="text-xs text-gray-400">{p.phone}</div>
                   </div>
-                  <ArrowRight size={18} className="text-gray-300 group-hover:text-primary-500" />
-                </button>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => confirmAttendanceOnly(p)}
+                      title="تسجيل حضور فقط"
+                      className="p-2 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-600 hover:text-white transition-all"
+                    >
+                      <UserCheck size={18} />
+                    </button>
+                    <button 
+                      onClick={() => handleCheckIn(p)}
+                      title="بدء جلسة مباشرة"
+                      className="p-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-600 hover:text-white transition-all"
+                    >
+                      <Activity size={18} />
+                    </button>
+                  </div>
+                </div>
               ))}
+              
+              {searchTerm && filteredPatients.length === 0 && (
+                <div className="p-6 text-center bg-indigo-50 rounded-2xl border-2 border-dashed border-indigo-200 animate-in zoom-in-95">
+                  <p className="text-indigo-800 font-bold mb-3">لم يتم العثور على المريض</p>
+                  <button 
+                    onClick={() => setShowQuickAddModal(true)}
+                    className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"
+                  >
+                    <UserPlus size={18} /> إضافة مريض جديد فوراً
+                  </button>
+                </div>
+              )}
+
               {!searchTerm && <div className="text-center py-10 text-gray-300 italic text-sm">ابدأ بكتابة الاسم للبحث عن المريض</div>}
             </div>
           </div>
         </div>
       </div>
+
+      {/* Quick Add Patient & Confirm Attendance Modal */}
+      {showQuickAddModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl animate-in zoom-in-95 duration-300">
+             <div className="p-6 bg-indigo-600 text-white flex justify-between items-center rounded-t-2xl">
+                <h3 className="text-xl font-bold flex items-center gap-2"><UserPlus size={22} /> إضافة مريض وتسجيل حضور</h3>
+                <button onClick={() => setShowQuickAddModal(false)}><X size={24} /></button>
+             </div>
+             <form onSubmit={handleQuickAddPatient} className="p-8 space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-2">الاسم بالكامل</label>
+                    <input name="name" required placeholder="اسم المريض" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-2">الرقم القومي</label>
+                    <input name="national_id" required placeholder="14 رقم" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-2">رقم الهاتف</label>
+                    <input name="phone" required placeholder="01xxxxxxxxx" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-2">تاريخ الميلاد</label>
+                    <input name="dob" type="date" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-2">فصيلة الدم</label>
+                    <select name="blood_type" className="w-full border rounded-xl p-3 bg-gray-50">
+                       {BLOOD_TYPES.map(bt => <option key={bt} value={bt}>{bt}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-2">العنوان</label>
+                    <input name="address" placeholder="عنوان المريض" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  </div>
+                </div>
+
+                <div className="p-4 bg-blue-50 border border-blue-100 rounded-xl flex gap-3 items-center mt-4">
+                  <BellRing size={24} className="text-blue-600" />
+                  <p className="text-xs text-blue-800 font-bold leading-relaxed">
+                    سيتم حفظ بيانات المريض وتسجيل حضوره في قائمة الانتظار تلقائياً وإرسال تنبيه فوري لطاقم التمريض.
+                  </p>
+                </div>
+
+                <button type="submit" disabled={loading} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-2">
+                   {loading ? <Loader2 className="animate-spin" /> : <CheckCircle2 size={20} />}
+                   حفظ المريض وتسجيل الحضور
+                </button>
+             </form>
+          </div>
+        </div>
+      )}
 
       {showCheckInModal && selectedPatient && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">

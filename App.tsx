@@ -19,30 +19,59 @@ import { ShieldAlert } from 'lucide-react';
 
 const INACTIVITY_LIMIT = 60 * 60 * 1000;
 
+// مستخدم افتراضي بصلاحيات كاملة لضمان عمل النظام بدون تسجيل دخول
+const DEFAULT_ADMIN = {
+  id: 'default-admin-id',
+  name: 'المدير العام',
+  username: 'admin',
+  permissions: [
+    'VIEW_DASHBOARD', 
+    'VIEW_NOTIFICATIONS', 
+    'MANAGE_RECEPTION', 
+    'MANAGE_PATIENTS', 
+    'MANAGE_LAB', 
+    'MANAGE_BILLING', 
+    'MANAGE_PAYROLL', 
+    'MANAGE_INVENTORY', 
+    'MANAGE_FINANCE', 
+    'MANAGE_USERS', 
+    'SYSTEM_SETUP',
+    'MANAGE_STORES',
+    'MANAGE_ACCOUNTS'
+  ] as Permission[]
+};
+
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const lastActivityRef = useRef<number>(Date.now());
-  const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-
-  useEffect(() => {
+  
+  // تعيين الحالة الافتراضية كمصرح له بالدخول مع تحميل المدير العام تلقائياً
+  const [currentUser, setCurrentUser] = useState<any>(() => {
     const savedUser = localStorage.getItem('dialysis_user');
     if (savedUser) {
       try {
-        const user = JSON.parse(savedUser);
-        setCurrentUser(user);
-        setIsAuthenticated(true);
+        return JSON.parse(savedUser);
       } catch (e) {
-        localStorage.removeItem('dialysis_user');
+        return DEFAULT_ADMIN;
       }
+    }
+    return DEFAULT_ADMIN;
+  });
+  
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+
+  useEffect(() => {
+    // التأكد من وجود بيانات مستخدم في التخزين المحلي لدعم الموديولات الأخرى
+    if (!localStorage.getItem('dialysis_user')) {
+      localStorage.setItem('dialysis_user', JSON.stringify(DEFAULT_ADMIN));
     }
   }, []);
 
   const handleLogout = () => {
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-    localStorage.removeItem('dialysis_user');
-    localStorage.removeItem('last_activity');
+    // عند تسجيل الخروج، نعيد تعيين الجلسة للمدير العام ليبقى النظام متاحاً
+    setCurrentUser(DEFAULT_ADMIN);
+    localStorage.setItem('dialysis_user', JSON.stringify(DEFAULT_ADMIN));
+    setActiveTab('dashboard');
   };
 
   const handleLoginSuccess = (user: any) => {
@@ -56,14 +85,17 @@ const App: React.FC = () => {
     const resetTimer = () => { lastActivityRef.current = Date.now(); };
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
     events.forEach(event => window.addEventListener(event, resetTimer));
-    const interval = setInterval(() => { if (Date.now() - lastActivityRef.current > INACTIVITY_LIMIT) handleLogout(); }, 10000);
+    // في وضع "بدون تسجيل دخول"، نقوم فقط بتحديث التوقيت ولا نسجل الخروج فعلياً
+    const interval = setInterval(() => { 
+        if (Date.now() - lastActivityRef.current > INACTIVITY_LIMIT) {
+            resetTimer();
+        }
+    }, 10000);
     return () => {
       events.forEach(event => window.removeEventListener(event, resetTimer));
       clearInterval(interval);
     };
   }, [isAuthenticated]);
-
-  if (!isAuthenticated) return <LoginModule onLoginSuccess={handleLoginSuccess} />;
 
   const tabPermissions: Record<string, Permission> = {
     dashboard: 'VIEW_DASHBOARD',
@@ -80,7 +112,10 @@ const App: React.FC = () => {
     setup: 'SYSTEM_SETUP'
   };
 
-  const hasPermission = (tab: string) => currentUser?.permissions?.includes(tabPermissions[tab]);
+  const hasPermission = (tab: string) => {
+    if (!currentUser) return false;
+    return currentUser.permissions?.includes(tabPermissions[tab]);
+  };
 
   const renderModule = () => {
     if (!hasPermission(activeTab)) {
@@ -110,6 +145,7 @@ const App: React.FC = () => {
     }
   };
 
+  // تمت إزالة شرط !isAuthenticated لعرض النظام مباشرة
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} user={currentUser} onLogout={handleLogout}>
       {renderModule()}
