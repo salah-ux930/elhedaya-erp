@@ -19,58 +19,28 @@ import { ShieldAlert } from 'lucide-react';
 
 const INACTIVITY_LIMIT = 60 * 60 * 1000;
 
-// مستخدم افتراضي بصلاحيات كاملة لضمان عمل النظام بدون تسجيل دخول
-const DEFAULT_ADMIN = {
-  id: 'default-admin-id',
-  name: 'المدير العام',
-  username: 'admin',
-  permissions: [
-    'VIEW_DASHBOARD', 
-    'VIEW_NOTIFICATIONS', 
-    'MANAGE_RECEPTION', 
-    'MANAGE_PATIENTS', 
-    'MANAGE_LAB', 
-    'MANAGE_BILLING', 
-    'MANAGE_PAYROLL', 
-    'MANAGE_INVENTORY', 
-    'MANAGE_FINANCE', 
-    'MANAGE_USERS', 
-    'SYSTEM_SETUP',
-    'MANAGE_STORES',
-    'MANAGE_ACCOUNTS'
-  ] as Permission[]
-};
-
 const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const lastActivityRef = useRef<number>(Date.now());
   
-  // تعيين الحالة الافتراضية كمصرح له بالدخول مع تحميل المدير العام تلقائياً
   const [currentUser, setCurrentUser] = useState<any>(() => {
     const savedUser = localStorage.getItem('dialysis_user');
     if (savedUser) {
       try {
         return JSON.parse(savedUser);
       } catch (e) {
-        return DEFAULT_ADMIN;
+        return null;
       }
     }
-    return DEFAULT_ADMIN;
+    return null;
   });
   
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
-
-  useEffect(() => {
-    // التأكد من وجود بيانات مستخدم في التخزين المحلي لدعم الموديولات الأخرى
-    if (!localStorage.getItem('dialysis_user')) {
-      localStorage.setItem('dialysis_user', JSON.stringify(DEFAULT_ADMIN));
-    }
-  }, []);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!currentUser);
 
   const handleLogout = () => {
-    // عند تسجيل الخروج، نعيد تعيين الجلسة للمدير العام ليبقى النظام متاحاً
-    setCurrentUser(DEFAULT_ADMIN);
-    localStorage.setItem('dialysis_user', JSON.stringify(DEFAULT_ADMIN));
+    localStorage.removeItem('dialysis_user');
+    setCurrentUser(null);
+    setIsAuthenticated(false);
     setActiveTab('dashboard');
   };
 
@@ -85,10 +55,10 @@ const App: React.FC = () => {
     const resetTimer = () => { lastActivityRef.current = Date.now(); };
     const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
     events.forEach(event => window.addEventListener(event, resetTimer));
-    // في وضع "بدون تسجيل دخول"، نقوم فقط بتحديث التوقيت ولا نسجل الخروج فعلياً
+    
     const interval = setInterval(() => { 
         if (Date.now() - lastActivityRef.current > INACTIVITY_LIMIT) {
-            resetTimer();
+            handleLogout();
         }
     }, 10000);
     return () => {
@@ -145,7 +115,10 @@ const App: React.FC = () => {
     }
   };
 
-  // تمت إزالة شرط !isAuthenticated لعرض النظام مباشرة
+  if (!isAuthenticated) {
+    return <LoginModule onLoginSuccess={handleLoginSuccess} />;
+  }
+
   return (
     <Layout activeTab={activeTab} setActiveTab={setActiveTab} user={currentUser} onLogout={handleLogout}>
       {renderModule()}
