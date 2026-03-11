@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { AR, ROOMS, calculateAge, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
-import { Invoice, Patient, Service } from '../types.ts';
+// Fixed: Removed Invoice from imports as it is not defined in types.ts and not used in this file
+import { Patient, Service } from '../types.ts';
 import { FileDown, Filter, Printer, MoreVertical, CheckCircle, Clock, Plus, Search, X, UserPlus } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect.tsx';
 

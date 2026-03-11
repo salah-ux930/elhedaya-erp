@@ -35,15 +35,11 @@ const FinanceModule: React.FC = () => {
   };
 
   const visibleAccounts = accounts.filter(acc => 
-    userPerms.includes('SYSTEM_SETUP') || 
-    userPerms.includes('MANAGE_FINANCE') || 
     userPerms.includes(`ACCOUNT_VIEW:${acc.id}`) || 
     userPerms.includes(`ACCOUNT_MANAGE:${acc.id}`)
   );
 
   const manageableAccounts = accounts.filter(acc => 
-    userPerms.includes('SYSTEM_SETUP') || 
-    userPerms.includes('MANAGE_FINANCE') || 
     userPerms.includes(`ACCOUNT_MANAGE:${acc.id}`)
   );
 
@@ -54,9 +50,7 @@ const FinanceModule: React.FC = () => {
     const accountId = target.accountId.value;
     
     // تأمين الصلاحيات برمجياً
-    const canManage = userPerms.includes('SYSTEM_SETUP') || 
-                      userPerms.includes('MANAGE_FINANCE') || 
-                      userPerms.includes(`ACCOUNT_MANAGE:${accountId}`);
+    const canManage = userPerms.includes(`ACCOUNT_MANAGE:${accountId}`);
     
     if (!canManage) return alert("عذراً، لا تملك صلاحية الإدارة (قبض/صرف) على هذا الحساب.");
 
@@ -76,9 +70,11 @@ const FinanceModule: React.FC = () => {
     }
   };
 
-  const filteredTransactions = activeAccount === 'all' 
-    ? transactions.filter(t => visibleAccounts.some(acc => acc.id === t.account_id))
-    : transactions.filter(t => t.account_id === activeAccount);
+  const filteredTransactions = transactions.filter(t => {
+    const isVisible = visibleAccounts.some(acc => acc.id === t.account_id);
+    if (!isVisible) return false;
+    return activeAccount === 'all' || t.account_id === activeAccount;
+  });
 
   if (loading) {
     return <div className="flex justify-center py-20"><Loader2 className="animate-spin text-primary-600" size={40} /></div>;

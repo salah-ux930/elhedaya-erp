@@ -59,6 +59,7 @@ export const AR = {
   products: "الأصناف",
   cashAndBank: "الخزينة والبنك",
   reports: "التقارير",
+  medicalRecords: "السجلات الطبية",
   resetData: "تصفير البيانات",
   preparePayroll: "تجهيز المرتبات",
   archive: "الأرشفة",
@@ -98,6 +99,8 @@ export const PERMISSIONS_MAP: Record<string, string> = {
   MANAGE_FINANCE: "إدارة الحسابات والمالية (إيرادات ومصروفات)",
   MANAGE_ACCOUNTS: "تعريف وإدارة الخزن والحسابات البنكية",
   MANAGE_USERS: "إدارة حسابات النظام",
+  VIEW_REPORTS: "عرض التقارير والرسوم البيانية",
+  VIEW_MEDICAL_RECORDS: "الوصول لأرشيف السجلات الطبية",
   SYSTEM_SETUP: "إعدادات النظام"
 };
 

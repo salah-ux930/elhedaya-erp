@@ -181,7 +181,31 @@ const UsersModule: React.FC = () => {
 
                 {/* Store Permissions */}
                 <div className="space-y-4">
-                   <h4 className="font-black text-gray-800 flex items-center gap-2 border-b pb-2"><Package size={20} className="text-indigo-600"/> صلاحيات المخازن المخصصة</h4>
+                   <div className="flex justify-between items-end border-b pb-2">
+                      <h4 className="font-black text-gray-800 flex items-center gap-2"><Package size={20} className="text-indigo-600"/> صلاحيات المخازن المخصصة</h4>
+                      <div className="flex gap-4">
+                         <button type="button" onClick={() => {
+                            const allView = availableStores.map(s => `STORE_VIEW:${s.id}`);
+                            const current = userData.permissions || [];
+                            const hasAll = allView.every(p => current.includes(p));
+                            if (hasAll) {
+                               setUserData({ ...userData, permissions: current.filter(p => !allView.includes(p)) });
+                            } else {
+                               setUserData({ ...userData, permissions: Array.from(new Set([...current, ...allView])) });
+                            }
+                         }} className="text-[10px] font-black text-indigo-600 hover:underline">تحديد الكل (مشاهدة)</button>
+                         <button type="button" onClick={() => {
+                            const allManage = availableStores.map(s => `STORE_MANAGE:${s.id}`);
+                            const current = userData.permissions || [];
+                            const hasAll = allManage.every(p => current.includes(p));
+                            if (hasAll) {
+                               setUserData({ ...userData, permissions: current.filter(p => !allManage.includes(p)) });
+                            } else {
+                               setUserData({ ...userData, permissions: Array.from(new Set([...current, ...allManage])) });
+                            }
+                         }} className="text-[10px] font-black text-indigo-600 hover:underline">تحديد الكل (إدارة)</button>
+                      </div>
+                   </div>
                    <div className="overflow-hidden border border-gray-100 rounded-2xl">
                       <table className="w-full text-right text-sm">
                          <thead className="bg-gray-50">
@@ -218,7 +242,31 @@ const UsersModule: React.FC = () => {
 
                 {/* Account Permissions */}
                 <div className="space-y-4">
-                   <h4 className="font-black text-gray-800 flex items-center gap-2 border-b pb-2"><Wallet size={20} className="text-emerald-600"/> صلاحيات الخزن والحسابات</h4>
+                   <div className="flex justify-between items-end border-b pb-2">
+                      <h4 className="font-black text-gray-800 flex items-center gap-2"><Wallet size={20} className="text-emerald-600"/> صلاحيات الخزن والحسابات</h4>
+                      <div className="flex gap-4">
+                         <button type="button" onClick={() => {
+                            const allView = availableAccounts.map(a => `ACCOUNT_VIEW:${a.id}`);
+                            const current = userData.permissions || [];
+                            const hasAll = allView.every(p => current.includes(p));
+                            if (hasAll) {
+                               setUserData({ ...userData, permissions: current.filter(p => !allView.includes(p)) });
+                            } else {
+                               setUserData({ ...userData, permissions: Array.from(new Set([...current, ...allView])) });
+                            }
+                         }} className="text-[10px] font-black text-emerald-600 hover:underline">تحديد الكل (مشاهدة)</button>
+                         <button type="button" onClick={() => {
+                            const allManage = availableAccounts.map(a => `ACCOUNT_MANAGE:${a.id}`);
+                            const current = userData.permissions || [];
+                            const hasAll = allManage.every(p => current.includes(p));
+                            if (hasAll) {
+                               setUserData({ ...userData, permissions: current.filter(p => !allManage.includes(p)) });
+                            } else {
+                               setUserData({ ...userData, permissions: Array.from(new Set([...current, ...allManage])) });
+                            }
+                         }} className="text-[10px] font-black text-emerald-600 hover:underline">تحديد الكل (إدارة)</button>
+                      </div>
+                   </div>
                    <div className="overflow-hidden border border-gray-100 rounded-2xl">
                       <table className="w-full text-right text-sm">
                          <thead className="bg-gray-50">

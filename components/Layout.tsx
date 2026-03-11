@@ -3,7 +3,8 @@ import React, { useState } from 'react';
 import { AR } from '../constants';
 import { 
   LayoutDashboard, Users, CreditCard, Users2, Package, 
-  Wallet, Settings, LogOut, Menu, X, Bell, UserCheck, Stethoscope, FlaskConical, UserRoundCheck
+  Wallet, Settings, LogOut, Menu, X, Bell, UserCheck, 
+  Stethoscope, FlaskConical, UserRoundCheck, PieChart, LibraryBig
 } from 'lucide-react';
 import { Permission } from '../types';
 
@@ -39,17 +40,18 @@ interface LayoutProps {
 const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user, onLogout }) => {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
-  // القائمة الأساسية
   const menuItems = [
     { id: 'dashboard', label: AR.dashboard, icon: <LayoutDashboard size={22} />, permission: 'VIEW_DASHBOARD' },
     { id: 'activePatients', label: AR.activePatients, icon: <UserRoundCheck size={22} />, permission: 'MANAGE_RECEPTION' },
     { id: 'patients', label: AR.patients, icon: <Users size={22} />, permission: 'MANAGE_PATIENTS' },
+    { id: 'medicalRecords', label: AR.medicalRecords, icon: <LibraryBig size={22} />, permission: 'VIEW_MEDICAL_RECORDS' },
     { id: 'reception', label: AR.reception, icon: <Stethoscope size={22} />, permission: 'MANAGE_RECEPTION' },
     { id: 'lab', label: AR.lab, icon: <FlaskConical size={22} />, permission: 'MANAGE_LAB' },
     { id: 'billing', label: AR.billing, icon: <CreditCard size={22} />, permission: 'MANAGE_BILLING' },
     { id: 'employees', label: AR.employees, icon: <Users2 size={22} />, permission: 'MANAGE_PAYROLL' },
     { id: 'inventory', label: AR.inventory, icon: <Package size={22} />, permission: 'MANAGE_INVENTORY' },
     { id: 'finance', label: AR.finance, icon: <Wallet size={22} />, permission: 'MANAGE_FINANCE' },
+    { id: 'reports', label: AR.reports, icon: <PieChart size={22} />, permission: 'VIEW_REPORTS' },
     { id: 'users', label: AR.users, icon: <UserCheck size={22} />, permission: 'MANAGE_USERS' },
     { id: 'setup', label: AR.setup, icon: <Settings size={22} />, permission: 'SYSTEM_SETUP' },
   ].filter(item => user.permissions.includes(item.permission as Permission));

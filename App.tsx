@@ -14,6 +14,8 @@ import FinanceModule from './modules/Finance.tsx';
 import SetupModule from './modules/Setup.tsx';
 import UsersModule from './modules/Users.tsx';
 import LoginModule from './modules/Login.tsx';
+import ReportsModule from './modules/Reports.tsx';
+import MedicalRecordsModule from './modules/MedicalRecords.tsx';
 import { Permission } from './types.ts';
 import { ShieldAlert } from 'lucide-react';
 
@@ -79,12 +81,25 @@ const App: React.FC = () => {
     inventory: 'MANAGE_INVENTORY',
     finance: 'MANAGE_FINANCE',
     users: 'MANAGE_USERS',
-    setup: 'SYSTEM_SETUP'
+    setup: 'SYSTEM_SETUP',
+    reports: 'VIEW_REPORTS',
+    medicalRecords: 'VIEW_MEDICAL_RECORDS'
   };
 
   const hasPermission = (tab: string) => {
     if (!currentUser) return false;
-    return currentUser.permissions?.includes(tabPermissions[tab]);
+    const basePermission = tabPermissions[tab];
+    if (currentUser.permissions?.includes(basePermission)) return true;
+
+    // Specific logic for modules with sub-permissions
+    if (tab === 'inventory') {
+      return currentUser.permissions?.some((p: string) => p.startsWith('STORE_'));
+    }
+    if (tab === 'finance') {
+      return currentUser.permissions?.some((p: string) => p.startsWith('ACCOUNT_'));
+    }
+
+    return false;
   };
 
   const renderModule = () => {
@@ -111,6 +126,8 @@ const App: React.FC = () => {
       case 'finance': return <FinanceModule />;
       case 'users': return <UsersModule />;
       case 'setup': return <SetupModule />;
+      case 'reports': return <ReportsModule />;
+      case 'medicalRecords': return <MedicalRecordsModule />;
       default: return <DashboardModule />;
     }
   };

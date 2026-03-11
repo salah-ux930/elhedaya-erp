@@ -13,6 +13,8 @@ export type Permission =
   | 'SYSTEM_SETUP'
   | 'MANAGE_STORES'
   | 'MANAGE_ACCOUNTS'
+  | 'VIEW_REPORTS'
+  | 'VIEW_MEDICAL_RECORDS'
   | string;
 
 export interface User {
@@ -85,6 +87,8 @@ export interface Employee {
   name: string;
   bank_account: string;
   shift_price: number;
+  salary_type?: 'MONTHLY' | 'PER_SHIFT';
+  monthly_salary?: number;
   type: 'PERMANENT' | 'TEMPORARY';
 }
 
@@ -129,36 +133,23 @@ export interface DialysisSession {
   machine_id?: string;
 }
 
-// Add missing FundingEntity type
 export interface FundingEntity {
   id: string;
   name: string;
   created_at: string;
 }
 
-// Add missing TransferRequest type
 export interface TransferRequest {
   id: string;
   from_store_id: string;
   to_store_id: string;
   items: { product_id: string; quantity: number }[];
-  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'COMPLETED';
   requested_by?: string;
   note?: string;
   date: string;
 }
 
-// Add missing Invoice type
-export interface Invoice {
-  id: string;
-  patient_id: string;
-  date: string;
-  amount: number;
-  status: 'PAID' | 'DEFERRED' | 'FREE';
-  room?: string;
-}
-
-// Add missing LabTestDefinition type
 export interface LabTestDefinition {
   id: string;
   name: string;
@@ -169,7 +160,6 @@ export interface LabTestDefinition {
   normal_range_child?: string;
 }
 
-// Add missing LabTest type
 export interface LabTest {
   id: string;
   patient_id: string;
