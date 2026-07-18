@@ -132,18 +132,18 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm lg:hidden" onClick={() => setIsMobileMenuOpen(false)}>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm lg:hidden flex justify-end" onClick={() => setIsMobileMenuOpen(false)}>
           <div 
-            className="w-72 h-full bg-white shadow-2xl relative" 
+            className="w-72 h-full bg-white shadow-2xl relative flex flex-col animate-in slide-in-from-right duration-200" 
             onClick={e => e.stopPropagation()}
           >
-            <div className="p-6 border-b flex justify-between items-center">
-              <h1 className="text-xl font-bold">مركز الهدايه الطبى</h1>
-              <button onClick={() => setIsMobileMenuOpen(false)}>
+            <div className="p-6 border-b border-gray-100 flex justify-between items-center shrink-0">
+              <h1 className="text-xl font-bold text-primary-900">مركز الهدايه الطبى</h1>
+              <button onClick={() => setIsMobileMenuOpen(false)} className="p-1 hover:bg-gray-100 rounded-lg">
                 <X size={24} className="text-gray-500" />
               </button>
             </div>
-            <nav className="p-4">
+            <nav className="flex-1 mt-4 overflow-y-auto">
               {menuItems.map((item) => (
                 <SidebarItem
                   key={item.id}
@@ -157,6 +157,15 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
                 />
               ))}
             </nav>
+            <div className="p-4 border-t border-gray-100 shrink-0">
+              <button 
+                onClick={onLogout}
+                className="flex items-center gap-3 px-6 py-4 text-red-600 hover:bg-red-50 rounded-lg w-full transition-colors font-bold"
+              >
+                <LogOut size={22} />
+                <span className="font-medium">{AR.logout}</span>
+              </button>
+            </div>
           </div>
         </div>
       )}

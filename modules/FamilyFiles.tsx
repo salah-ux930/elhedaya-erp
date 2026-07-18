@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { DB } from '../store.ts';
+import { supabase } from '../supabase.ts';
 import { FamilyFile, Patient, FamilyFileMember } from '../types.ts';
 import { 
   FolderOpen, Users, Plus, Search, Phone, MapPin, 
@@ -7,9 +8,28 @@ import {
   Calendar, CreditCard, ClipboardList, ShieldAlert
 } from 'lucide-react';
 
+// تفتيت وحفظ الدور والملاحظات مدمجة لعدم كسر الهيكل الحالي لقاعدة البيانات
+const parseFamilyRoleAndNotes = (combinedRole: string | null) => {
+  if (!combinedRole) return { role: '', notes: '' };
+  const parts = combinedRole.split(' | ');
+  return {
+    role: parts[0] || '',
+    notes: parts[1] || ''
+  };
+};
+
+// التحقق من صحة أرقام الهواتف (أرقام فقط وطول من 8 إلى 15 رقم)
+const validatePhoneNumber = (phone: string): boolean => {
+  if (!phone) return true;
+  const clean = phone.replace(/\s+/g, ''); // إزالة الفراغات
+  if (!/^\d+$/.test(clean)) return false;
+  return clean.length >= 8 && clean.length <= 15;
+};
+
 const FamilyFilesModule: React.FC = () => {
   const [familyFiles, setFamilyFiles] = useState<FamilyFile[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [fundingEntities, setFundingEntities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -18,6 +38,7 @@ const FamilyFilesModule: React.FC = () => {
   const [showAddFamilyMember, setShowAddFamilyMember] = useState(false);
   const [selectedFamilyFile, setSelectedFamilyFile] = useState<FamilyFile | null>(null);
   const [selectedFamilyFileForMember, setSelectedFamilyFileForMember] = useState<FamilyFile | null>(null);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('');
 
   // Form error state
   const [formError, setFormError] = useState<string | null>(null);
@@ -29,12 +50,14 @@ const FamilyFilesModule: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [f, p] = await Promise.all([
+      const [f, p, fe] = await Promise.all([
         DB.getFamilyFiles(),
-        DB.getPatients()
+        DB.getPatients(),
+        DB.getFundingEntities()
       ]);
       setFamilyFiles(f);
       setPatients(p);
+      setFundingEntities(fe);
     } catch (err) {
       console.error(err);
     } finally {
@@ -53,6 +76,23 @@ const FamilyFilesModule: React.FC = () => {
       return;
     }
 
+    const phone = target.phone.value.trim();
+    const workPhone = target.work_phone.value.trim();
+    const nearestPhone = target.nearest_phone.value.trim();
+
+    if (phone && !validatePhoneNumber(phone)) {
+      setFormError("رقم الهاتف الأساسي غير صحيح. يجب أن يتكون من 8 إلى 15 رقماً.");
+      return;
+    }
+    if (workPhone && !validatePhoneNumber(workPhone)) {
+      setFormError("رقم تليفون العمل غير صحيح. يجب أن يتكون من 8 إلى 15 رقماً.");
+      return;
+    }
+    if (nearestPhone && !validatePhoneNumber(nearestPhone)) {
+      setFormError("رقم أقرب تليفون غير صحيح. يجب أن يتكون من 8 إلى 15 رقماً.");
+      return;
+    }
+
     try {
       await DB.addFamilyFile({
         family_code: target.family_code.value.trim(),
@@ -63,7 +103,9 @@ const FamilyFilesModule: React.FC = () => {
         village_city: target.village_city.value.trim(),
         health_unit: target.health_unit.value.trim(),
         address: target.address.value.trim(),
-        phone: target.phone.value.trim() || null,
+        phone: phone || null,
+        home_number: workPhone || null, // تليفون العمل
+        nearest_landmark: nearestPhone || null, // أقرب تليفون
         notes: target.notes.value.trim() || null
       });
       setShowAddFamilyFile(false);
@@ -79,16 +121,44 @@ const FamilyFilesModule: React.FC = () => {
     const target = e.target as any;
     if (!selectedFamilyFileForMember) return;
 
+    const patientId = target.patient_id.value;
+    const relationshipToHead = target.relationship_to_head.value;
+    const role = target.family_role.value.trim();
+    const notes = target.member_notes.value.trim();
+    const isHead = target.is_head.checked;
+
+    // دمج الدور والملاحظات في حقل واحد لعدم كسر الهيكل الحالي لقاعدة البيانات
+    const combinedRole = notes ? `${role} | ${notes}` : role;
+
+    // جلب قيم حقول بيانات المريض الاختيارية لتحديثها
+    const memberName = target.member_name.value.trim();
+    const memberGender = target.member_gender.value;
+    const memberDob = target.member_dob.value;
+    const memberInsurance = target.member_insurance.value;
+
     try {
+      // 1. تحديث بيانات المريض في قاعدة البيانات لضمان دقة الاسم رباعي، النوع، تاريخ الميلاد، ونوع التأمين
+      const { error: patientErr } = await supabase.from('patients').update({
+        name: memberName,
+        gender: memberGender,
+        date_of_birth: memberDob || null,
+        funding_entity_id: (memberInsurance && memberInsurance !== 'cash') ? memberInsurance : null
+      }).eq('id', patientId);
+
+      if (patientErr) throw patientErr;
+
+      // 2. ربط المريض بالملف العائلي
       await DB.addFamilyMember({
         family_file_id: selectedFamilyFileForMember.id,
-        patient_id: target.patient_id.value,
-        relationship_to_head: target.relationship_to_head.value,
-        family_role: target.family_role.value.trim() || null,
-        is_head: target.is_head.checked
+        patient_id: patientId,
+        relationship_to_head: relationshipToHead,
+        family_role: combinedRole || null,
+        is_head: isHead
       });
+
       setShowAddFamilyMember(false);
       setSelectedFamilyFileForMember(null);
+      setSelectedPatientId('');
       
       // Refresh family files to show the updated members
       const updatedFiles = await DB.getFamilyFiles();
@@ -191,8 +261,16 @@ const FamilyFilesModule: React.FC = () => {
               <span className="font-bold text-gray-800 text-base font-mono">{selectedFamilyFile.national_id || '---'}</span>
             </div>
             <div className="space-y-1">
-              <span className="text-xs text-gray-400 font-bold block">رقم الهاتف</span>
+              <span className="text-xs text-gray-400 font-bold block">رقم الهاتف الأساسي</span>
               <span className="font-bold text-gray-800 flex items-center gap-1"><Phone size={14} className="text-gray-400" /> {selectedFamilyFile.phone || '---'}</span>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-gray-400 font-bold block">تليفون العمل</span>
+              <span className="font-bold text-gray-800 flex items-center gap-1"><Phone size={14} className="text-gray-400" /> {selectedFamilyFile.home_number || '---'}</span>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-gray-400 font-bold block">أقرب تليفون</span>
+              <span className="font-bold text-gray-800 flex items-center gap-1"><Phone size={14} className="text-gray-400" /> {selectedFamilyFile.nearest_landmark || '---'}</span>
             </div>
             <div className="space-y-1">
               <span className="text-xs text-gray-400 font-bold block">المحافظة</span>
@@ -239,41 +317,78 @@ const FamilyFilesModule: React.FC = () => {
               </button>
             </div>
 
-            <div className="overflow-hidden border border-gray-100 rounded-2xl bg-white shadow-sm">
-              <table className="w-full text-right border-collapse">
+            <div className="overflow-x-auto border border-gray-100 rounded-2xl bg-white shadow-sm">
+              <table className="w-full text-right border-collapse min-w-[1100px]">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100 text-gray-500 font-bold text-xs">
-                    <th className="p-4">الاسم</th>
+                    <th className="p-4">الاسم رباعي</th>
                     <th className="p-4">الرقم القومي</th>
+                    <th className="p-4">النوع</th>
+                    <th className="p-4">تاريخ الميلاد</th>
+                    <th className="p-4">نوع التأمين</th>
                     <th className="p-4">صلة القرابة</th>
-                    <th className="p-4">الدور العائلي والوظيفة</th>
+                    <th className="p-4">الوظيفة والدور</th>
+                    <th className="p-4">الملاحظات</th>
                     <th className="p-4 text-center">رب العائلة؟</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50 text-sm font-bold text-gray-700">
                   {selectedFamilyFile.members && selectedFamilyFile.members.length > 0 ? (
-                    selectedFamilyFile.members.map((member: any) => (
-                      <tr key={member.id} className="hover:bg-gray-50/50">
-                        <td className="p-4 text-gray-900">{member.patients?.name || '---'}</td>
-                        <td className="p-4 font-mono text-gray-600">{member.patients?.national_id || '---'}</td>
-                        <td className="p-4">
-                          <span className="px-2.5 py-1 bg-gray-100 text-gray-800 rounded-lg text-xs font-bold border border-gray-200">
-                            {member.relationship_to_head || '---'}
-                          </span>
-                        </td>
-                        <td className="p-4 text-gray-600">{member.family_role || '---'}</td>
-                        <td className="p-4 text-center">
-                          {member.is_head ? (
-                            <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-bold border border-green-100 inline-block">نعم (رب الأسرة)</span>
-                          ) : (
-                            <span className="text-gray-400 text-xs">لا</span>
-                          )}
-                        </td>
-                      </tr>
-                    ))
+                    selectedFamilyFile.members.map((member: any) => {
+                      const parsed = parseFamilyRoleAndNotes(member.family_role);
+                      const insuranceName = member.patients?.funding_entity_id 
+                        ? (fundingEntities.find(fe => fe.id === member.patients.funding_entity_id)?.name || 'متعاقد')
+                        : 'نقدي (بدون تأمين)';
+
+                      return (
+                        <tr key={member.id} className="hover:bg-gray-50/50">
+                          <td className="p-4 text-gray-900">{member.patients?.name || '---'}</td>
+                          <td className="p-4 font-mono text-gray-600">{member.patients?.national_id || '---'}</td>
+                          <td className="p-4">
+                            {member.patients?.gender ? (
+                              <span className={`px-2 py-0.5 rounded-md text-xs font-bold ${
+                                member.patients.gender === 'ذكر' 
+                                  ? 'bg-blue-50 text-blue-700 border border-blue-100' 
+                                  : 'bg-pink-50 text-pink-700 border border-pink-100'
+                              }`}>
+                                {member.patients.gender}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400">---</span>
+                            )}
+                          </td>
+                          <td className="p-4 font-mono text-gray-600">
+                            {member.patients?.date_of_birth 
+                              ? new Date(member.patients.date_of_birth).toLocaleDateString('ar-EG') 
+                              : '---'}
+                          </td>
+                          <td className="p-4">
+                            <span className="px-2 py-0.5 bg-purple-50 text-purple-700 rounded-md text-xs font-bold border border-purple-100">
+                              {insuranceName}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <span className="px-2.5 py-1 bg-gray-100 text-gray-800 rounded-lg text-xs font-bold border border-gray-200">
+                              {member.relationship_to_head || '---'}
+                            </span>
+                          </td>
+                          <td className="p-4 text-gray-600">{parsed.role || '---'}</td>
+                          <td className="p-4 text-gray-500 font-normal max-w-[200px] truncate" title={parsed.notes}>
+                            {parsed.notes || '---'}
+                          </td>
+                          <td className="p-4 text-center">
+                            {member.is_head ? (
+                              <span className="px-3 py-1 bg-green-50 text-green-700 rounded-full text-xs font-bold border border-green-100 inline-block">نعم (رب الأسرة)</span>
+                            ) : (
+                              <span className="text-gray-400 text-xs">لا</span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
-                      <td colSpan={5} className="p-12 text-center text-gray-400 font-bold">
+                      <td colSpan={9} className="p-12 text-center text-gray-400 font-bold">
                         <Users size={32} className="mx-auto text-gray-300 mb-2" />
                         لا يوجد أفراد مسجلين في هذا الملف حالياً. اضغط على "إضافة فرد" لربط أفراد العائلة بالملف.
                       </td>
@@ -328,10 +443,27 @@ const FamilyFilesModule: React.FC = () => {
                           {file.health_unit || '---'}
                         </span>
                       </td>
-                      <td className="p-4 font-mono text-gray-600 text-xs">
-                        {file.phone ? (
-                          <span className="flex items-center gap-1"><Phone size={12} className="text-gray-400" /> {file.phone}</span>
-                        ) : '---'}
+                      <td className="p-4 text-xs font-normal">
+                        <div className="flex flex-col gap-1 font-mono">
+                          {file.phone && (
+                            <span className="flex items-center gap-1 text-gray-800 font-bold">
+                              <Phone size={10} className="text-primary-500 shrink-0" /> {file.phone}
+                            </span>
+                          )}
+                          {file.home_number && (
+                            <span className="flex items-center gap-1 text-gray-500">
+                              <span className="text-[10px] bg-gray-100 text-gray-600 px-1 rounded shrink-0 font-sans font-bold">عمل</span> {file.home_number}
+                            </span>
+                          )}
+                          {file.nearest_landmark && (
+                            <span className="flex items-center gap-1 text-gray-500">
+                              <span className="text-[10px] bg-blue-50 text-blue-600 px-1 rounded shrink-0 font-sans font-bold">أقرب</span> {file.nearest_landmark}
+                            </span>
+                          )}
+                          {!file.phone && !file.home_number && !file.nearest_landmark && (
+                            <span className="text-gray-400">---</span>
+                          )}
+                        </div>
                       </td>
                       <td className="p-4 text-center">
                         <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-black rounded-full border border-emerald-100">
@@ -420,8 +552,19 @@ const FamilyFilesModule: React.FC = () => {
                       <input name="head_name" required placeholder="الاسم الرباعي كاملاً لرب الأسرة" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold" />
                    </div>
                    <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">رقم الهاتف للأسرة</label>
-                      <input name="phone" placeholder="رقم الموبايل للتواصل" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono" />
+                      <label className="text-xs font-bold text-gray-500 block mb-1">رقم الهاتف الأساسي للأسرة *</label>
+                      <input name="phone" required placeholder="مثال: 01xxxxxxxxx" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono" />
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                   <div>
+                      <label className="text-xs font-bold text-gray-500 block mb-1">تليفون العمل</label>
+                      <input name="work_phone" placeholder="تليفون مكان العمل" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono" />
+                   </div>
+                   <div>
+                      <label className="text-xs font-bold text-gray-500 block mb-1">أقرب تليفون (طوارئ أو قريب)</label>
+                      <input name="nearest_phone" placeholder="تليفون قريب لحالات الطوارئ" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono" />
                    </div>
                 </div>
 
@@ -470,69 +613,145 @@ const FamilyFilesModule: React.FC = () => {
       {/* Add Family Member Modal */}
       {showAddFamilyMember && selectedFamilyFileForMember && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-md rounded-3xl shadow-2xl animate-in zoom-in-95" dir="rtl">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95" dir="rtl">
              <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-3xl">
                 <div className="flex items-center gap-2">
                    <UserPlus className="text-primary-600" size={24} />
                    <h3 className="font-bold text-lg text-gray-800">إضافة عضو للملف: {selectedFamilyFileForMember.family_code}</h3>
                 </div>
-                <button onClick={() => { setShowAddFamilyMember(false); setSelectedFamilyFileForMember(null); }} className="p-2 hover:bg-gray-200 rounded-xl transition-colors"><X size={20} /></button>
+                <button onClick={() => { setShowAddFamilyMember(false); setSelectedFamilyFileForMember(null); setSelectedPatientId(''); }} className="p-2 hover:bg-gray-200 rounded-xl transition-colors"><X size={20} /></button>
              </div>
              
-             <form onSubmit={handleAddFamilyMember} className="p-6 space-y-4">
-                {formError && (
-                  <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-2 text-red-700 font-bold text-sm">
-                    <ShieldAlert size={16} className="shrink-0" />
-                    <span>{formError}</span>
-                  </div>
-                )}
-
-                <div>
-                   <label className="text-xs font-bold text-gray-500 block mb-1">اختر المريض من السجل الطبي بالمركز *</label>
-                   <select name="patient_id" required className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold">
-                      <option value="">-- اختر مريضاً --</option>
-                      {patients.map(p => (
-                        <option key={p.id} value={p.id}>{p.name} (الرقم القومي: {p.national_id || 'غير مسجل'})</option>
-                      ))}
-                   </select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                   <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">صلة القرابة برب العائلة *</label>
-                      <select name="relationship_to_head" required className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold">
-                         <option value="رب العائلة">رب العائلة (نفسه)</option>
-                         <option value="زوج">زوج</option>
-                         <option value="زوجة">زوجة</option>
-                         <option value="ابن">ابن</option>
-                         <option value="ابنة">ابنة</option>
-                         <option value="أب">أب</option>
-                         <option value="أم">أم</option>
-                         <option value="أخ">أخ</option>
-                         <option value="أخت">أخت</option>
-                         <option value="حفيد / حفيدة">حفيد / حفيدة</option>
-                         <option value="أخرى">أخرى</option>
-                      </select>
+             <form onSubmit={handleAddFamilyMember} className="p-6 space-y-4 overflow-y-auto flex-1">
+                 {formError && (
+                   <div className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-2 text-red-700 font-bold text-sm">
+                     <ShieldAlert size={16} className="shrink-0" />
+                     <span>{formError}</span>
                    </div>
-                   <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">الدور العائلي والوظيفة</label>
-                      <input name="family_role" placeholder="مثال: عائل، طالب، ربة منزل" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold" />
-                   </div>
-                </div>
+                 )}
 
-                <div className="flex items-center gap-2.5 py-2">
-                   <input type="checkbox" id="is_head" name="is_head" className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer" />
-                   <label htmlFor="is_head" className="text-xs font-bold text-gray-700 cursor-pointer select-none">هل هذا الفرد هو رب الأسرة (Head of Family)؟</label>
-                </div>
+                 <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">اختر المريض من السجل الطبي بالمركز *</label>
+                    <select 
+                      name="patient_id" 
+                      required 
+                      value={selectedPatientId}
+                      onChange={(e) => setSelectedPatientId(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
+                    >
+                       <option value="">-- اختر مريضاً --</option>
+                       {patients.map(p => (
+                         <option key={p.id} value={p.id}>{p.name} (الرقم القومي: {p.national_id || 'غير مسجل'})</option>
+                       ))}
+                    </select>
+                 </div>
 
-                <div className="flex gap-4 pt-4 border-t border-gray-100">
-                   <button type="button" onClick={() => { setShowAddFamilyMember(false); setSelectedFamilyFileForMember(null); }} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold text-gray-600 transition-colors">إلغاء</button>
-                   <button type="submit" className="flex-1 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 transition-colors">
-                      <Save size={18} /> ربط العضو بالملف
-                   </button>
-                </div>
-             </form>
-          </div>
+                 {selectedPatientId && (() => {
+                    const selectedPatient = patients.find(p => p.id === selectedPatientId);
+                    if (!selectedPatient) return null;
+                    return (
+                      <div key={selectedPatientId} className="space-y-4 bg-gray-50 p-4 rounded-2xl border border-gray-200/60 animate-in fade-in slide-in-from-top-2 duration-200">
+                        <div className="text-xs font-bold text-primary-600 mb-2 border-b pb-1.5 flex items-center gap-1.5">
+                          <Info size={14} /> بيانات العضو المستوردة (قابلة للتعديل والتحديث)
+                        </div>
+                        
+                        <div>
+                           <label className="text-xs font-bold text-gray-500 block mb-1">الاسم رباعي *</label>
+                           <input 
+                             name="member_name" 
+                             required 
+                             defaultValue={selectedPatient.name || ''} 
+                             placeholder="الاسم رباعياً بالكامل" 
+                             className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-primary-500 outline-none font-bold text-sm" 
+                           />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3">
+                           <div>
+                              <label className="text-xs font-bold text-gray-500 block mb-1">النوع *</label>
+                              <select 
+                                name="member_gender" 
+                                required 
+                                defaultValue={selectedPatient.gender || ''}
+                                className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-primary-500 outline-none font-bold text-sm"
+                              >
+                                 <option value="">-- اختر النوع --</option>
+                                 <option value="ذكر">ذكر</option>
+                                 <option value="أنثى">أنثى</option>
+                              </select>
+                           </div>
+                           <div>
+                              <label className="text-xs font-bold text-gray-500 block mb-1">تاريخ الميلاد *</label>
+                              <input 
+                                type="date" 
+                                name="member_dob" 
+                                required 
+                                defaultValue={selectedPatient.date_of_birth || ''} 
+                                className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-primary-500 outline-none font-bold text-sm" 
+                              />
+                           </div>
+                        </div>
+
+                        <div>
+                           <label className="text-xs font-bold text-gray-500 block mb-1">نوع التأمين (جهة التعاقد) *</label>
+                           <select 
+                             name="member_insurance" 
+                             required 
+                             defaultValue={selectedPatient.funding_entity_id || ''}
+                             className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-primary-500 outline-none font-bold text-sm"
+                           >
+                              <option value="">-- اختر نوع التأمين --</option>
+                              {fundingEntities.map(fe => (
+                                <option key={fe.id} value={fe.id}>{fe.name}</option>
+                              ))}
+                              <option value="cash">نقدي (بدون تأمين)</option>
+                           </select>
+                        </div>
+                      </div>
+                    );
+                 })()}
+
+                 <div className="grid grid-cols-2 gap-4">
+                    <div>
+                       <label className="text-xs font-bold text-gray-500 block mb-1">صلة القرابة برب العائلة *</label>
+                       <select name="relationship_to_head" required className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
+                          <option value="رب العائلة">رب العائلة (نفسه)</option>
+                          <option value="زوج">زوج</option>
+                          <option value="زوجة">زوجة</option>
+                          <option value="ابن">ابن</option>
+                          <option value="ابنة">ابنة</option>
+                          <option value="أب">أب</option>
+                          <option value="أم">أم</option>
+                          <option value="أخ">أخ</option>
+                          <option value="أخت">أخت</option>
+                          <option value="حفيد / حفيدة">حفيد / حفيدة</option>
+                          <option value="أخرى">أخرى</option>
+                       </select>
+                    </div>
+                    <div>
+                       <label className="text-xs font-bold text-gray-500 block mb-1">الوظيفة والدور *</label>
+                       <input name="family_role" required placeholder="مثال: طالب، موظف، ربة منزل" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm" />
+                    </div>
+                 </div>
+
+                 <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">ملاحظات العضو</label>
+                    <textarea name="member_notes" rows={2} placeholder="أي ملاحظات خاصة بالفرد (حالة صحية، احتياجات، إلخ)..." className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm" />
+                 </div>
+
+                 <div className="flex items-center gap-2.5 py-1">
+                    <input type="checkbox" id="is_head" name="is_head" className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer" />
+                    <label htmlFor="is_head" className="text-xs font-bold text-gray-700 cursor-pointer select-none">هل هذا الفرد هو رب الأسرة (Head of Family)؟</label>
+                 </div>
+
+                 <div className="flex gap-4 pt-4 border-t border-gray-100">
+                    <button type="button" onClick={() => { setShowAddFamilyMember(false); setSelectedFamilyFileForMember(null); setSelectedPatientId(''); }} className="flex-1 py-3 bg-gray-100 hover:bg-gray-200 rounded-xl font-bold text-gray-600 transition-colors">إلغاء</button>
+                    <button type="submit" className="flex-1 py-3 bg-primary-600 hover:bg-primary-700 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2 transition-colors">
+                       <Save size={18} /> ربط العضو بالملف
+                    </button>
+                 </div>
+              </form>
+           </div>
         </div>
       )}
     </div>
