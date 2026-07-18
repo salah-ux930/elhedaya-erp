@@ -39,4 +39,8 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
  * );
  * 
  * NOTIFY pgrst, 'reload schema';
+ * 
+ * -- Note: Family Health / Primary Care Accreditation Phase 1 SQL Migration
+ * -- is located in: /supabase/migrations/20260626_family_health_primary_care_phase1.sql
+ * -- Documentation report is in: /supabase/migrations/README_SCHEMA_PROPOSAL.md
  */

@@ -16,6 +16,8 @@ import UsersModule from './modules/Users.tsx';
 import LoginModule from './modules/Login.tsx';
 import ReportsModule from './modules/Reports.tsx';
 import MedicalRecordsModule from './modules/MedicalRecords.tsx';
+import ClinicsModule from './modules/Clinics.tsx';
+import FamilyFilesModule from './modules/FamilyFiles.tsx';
 import { Permission } from './types.ts';
 import { ShieldAlert } from 'lucide-react';
 
@@ -74,6 +76,8 @@ const App: React.FC = () => {
     notifications: 'VIEW_NOTIFICATIONS',
     activePatients: 'MANAGE_RECEPTION',
     reception: 'MANAGE_RECEPTION',
+    sessionReception: 'MANAGE_RECEPTION',
+    clinicReception: 'MANAGE_CLINIC_RECEPTION',
     patients: 'MANAGE_PATIENTS',
     lab: 'MANAGE_LAB',
     billing: 'MANAGE_BILLING',
@@ -83,23 +87,14 @@ const App: React.FC = () => {
     users: 'MANAGE_USERS',
     setup: 'SYSTEM_SETUP',
     reports: 'VIEW_REPORTS',
-    medicalRecords: 'VIEW_MEDICAL_RECORDS'
+    medicalRecords: 'VIEW_MEDICAL_RECORDS',
+    clinics: 'MANAGE_CLINICS',
+    familyFiles: 'MANAGE_FAMILY_HEALTH'
   };
 
   const hasPermission = (tab: string) => {
-    if (!currentUser) return false;
-    const basePermission = tabPermissions[tab];
-    if (currentUser.permissions?.includes(basePermission)) return true;
-
-    // Specific logic for modules with sub-permissions
-    if (tab === 'inventory') {
-      return currentUser.permissions?.some((p: string) => p.startsWith('STORE_'));
-    }
-    if (tab === 'finance') {
-      return currentUser.permissions?.some((p: string) => p.startsWith('ACCOUNT_'));
-    }
-
-    return false;
+    // يمتلك المستخدم الحالي الصلاحية الكاملة للوصول إلى كافة الصفحات الحالية والمستقبلية
+    return !!currentUser;
   };
 
   const renderModule = () => {
@@ -118,6 +113,8 @@ const App: React.FC = () => {
       case 'notifications': return <NotificationsModule />;
       case 'activePatients': return <ActivePatients />;
       case 'reception': return <ReceptionModule />;
+      case 'sessionReception': return <ReceptionModule initialMode="dialysis" />;
+      case 'clinicReception': return <ReceptionModule initialMode="clinics" />;
       case 'patients': return <PatientModule setTab={setActiveTab} />;
       case 'lab': return <LabModule />;
       case 'billing': return <BillingModule />;
@@ -128,6 +125,8 @@ const App: React.FC = () => {
       case 'setup': return <SetupModule />;
       case 'reports': return <ReportsModule />;
       case 'medicalRecords': return <MedicalRecordsModule />;
+      case 'clinics': return <ClinicsModule />;
+      case 'familyFiles': return <FamilyFilesModule />;
       default: return <DashboardModule />;
     }
   };

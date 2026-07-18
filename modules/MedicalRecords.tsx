@@ -1,10 +1,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { DB } from '../store.ts';
-import { calculateAge } from '../constants.ts';
+import { calculateAge, AR } from '../constants.ts';
+import PatientTimeline from '../components/PatientTimeline.tsx';
 import { 
   Search, FileText, History, User, Calendar, 
-  ArrowRight, Loader2, MapPin, ClipboardCheck, Filter, Download,
+  ArrowRight, Loader2, MapPin, Download,
   Scale, HeartPulse
 } from 'lucide-react';
 
@@ -13,6 +14,8 @@ const MedicalRecordsModule: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState('');
+  
+  const [selectedPatient, setSelectedPatient] = useState<any | null>(null);
 
   useEffect(() => {
     loadSessions();
@@ -35,6 +38,10 @@ const MedicalRecordsModule: React.FC = () => {
     const matchesDate = filterDate ? s.date === filterDate : true;
     return matchesSearch && matchesDate;
   });
+
+  if (selectedPatient) {
+    return <PatientTimeline patient={selectedPatient} onClose={() => setSelectedPatient(null)} />;
+  }
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
@@ -94,19 +101,23 @@ const MedicalRecordsModule: React.FC = () => {
                 {filtered.map(s => (
                   <tr key={s.id} className="hover:bg-primary-50/20 transition-all group">
                     <td className="px-8 py-6">
-                       <div className="flex items-center gap-4">
+                       <button 
+                         onClick={() => setSelectedPatient(s.patients)}
+                         className="flex items-center gap-4 text-right hover:text-primary-600 transition-colors"
+                       >
                           <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center text-primary-600 font-black border group-hover:bg-white transition-colors shadow-sm">
                             {s.patients?.name?.[0]}
                           </div>
                           <div>
-                             <div className="font-black text-gray-800 text-lg leading-tight">{s.patients?.name}</div>
+                             <div className="font-black text-gray-800 text-lg leading-tight group-hover:text-primary-600">{s.patients?.name}</div>
                              <div className="text-[10px] text-gray-400 font-mono mt-1">{s.patients?.national_id}</div>
                           </div>
-                       </div>
+                       </button>
                     </td>
                     <td className="px-8 py-6">
                        <div className="text-sm font-bold text-gray-600">{s.date}</div>
-                       <div className="text-[10px] text-gray-400 font-mono">{s.start_time}</div>
+                       <div className="text-[10px] text-gray-400 font-mono">البدء: {s.start_time}</div>
+                       {s.end_time && <div className="text-[10px] text-emerald-500 font-mono">الانتهاء: {s.end_time}</div>}
                     </td>
                     <td className="px-8 py-6">
                        <div className="flex items-center gap-1 text-sm font-black text-gray-500">
@@ -117,12 +128,10 @@ const MedicalRecordsModule: React.FC = () => {
                     <td className="px-8 py-6">
                        <div className="flex flex-col gap-1">
                           <div className="flex items-center gap-2">
-                             {/* Fix: Added missing Scale import */}
                              <Scale size={14} className="text-indigo-300"/>
-                             <span className="text-xs font-black text-indigo-600">{s.weight_before} كجم</span>
+                             <span className="text-xs font-black text-indigo-600">ق: {s.weight_before || '--'} | ب: {s.weight_after || '--'} كجم</span>
                           </div>
                           <div className="flex items-center gap-2">
-                             {/* Fix: Added missing HeartPulse import */}
                              <HeartPulse size={14} className="text-rose-300"/>
                              <span className="text-xs font-black text-rose-600">{s.blood_pressure}</span>
                           </div>

@@ -25,11 +25,27 @@ const ActivePatients: React.FC = () => {
         DB.getServices(),
         DB.getStores()
       ]);
-      setActiveSessions(sess?.filter(session => session.status === 'ACTIVE') || []);
+      // Show both WAITING and ACTIVE sessions
+      setActiveSessions(sess?.filter(session => session.status === 'ACTIVE' || session.status === 'WAITING') || []);
       setServices(serv || []);
       setStores(stor || []);
     } catch (e) {
       console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleStartSession = async (session: any) => {
+    try {
+      setLoading(true);
+      await DB.updateSession(session.id, { 
+        status: 'ACTIVE',
+        start_time: new Date().toTimeString().split(' ')[0] 
+      });
+      load();
+    } catch (e) {
+      alert("فشل بدء الجلسة: " + (e as Error).message);
     } finally {
       setLoading(false);
     }
@@ -41,25 +57,21 @@ const ActivePatients: React.FC = () => {
     const target = e.target as any;
 
     try {
-      await DB.addSession({
-        patient_id: selectedSessionForReport.patient_id,
+      await DB.finishSession(selectedSessionForReport.id, {
         service_id: selectedService?.id,
-        status: 'ACTIVE', 
-        date: selectedSessionForReport.date,
-        room: selectedSessionForReport.room,
-        weight_before: selectedSessionForReport.weight_before,
         blood_pressure: target.bp.value,
+        weight_after: target.weightAfter?.value ? parseFloat(target.weightAfter.value) : null,
         notes: target.notes.value,
         custom_data: customFieldsData
       }, target.storeId.value);
 
-      alert("تم تسجيل التقرير الطبي وخصم المستهلكات بنجاح.");
+      alert("تم إنهاء الجلسة، تسجيل التقرير الطبي وخصم المستهلكات بنجاح.");
       setSelectedSessionForReport(null);
       setSelectedService(null);
       setCustomFieldsData({});
       load();
     } catch (e) {
-      alert("فشل حفظ التقرير: " + (e as Error).message);
+      alert("فشل إنهاء الجلسة: " + (e as Error).message);
     }
   };
 
@@ -76,44 +88,59 @@ const ActivePatients: React.FC = () => {
     <div className="space-y-6 animate-in fade-in duration-500">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {activeSessions.map(session => (
-          <div key={session.id} className="bg-white p-8 rounded-[2rem] border-2 border-emerald-100 shadow-sm hover:shadow-xl transition-all relative overflow-hidden group">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-50 rounded-full -mr-16 -mt-16 group-hover:bg-emerald-100 transition-colors"></div>
+          <div key={session.id} className={`bg-white p-8 rounded-[2rem] border-2 shadow-sm hover:shadow-xl transition-all relative overflow-hidden group ${session.status === 'ACTIVE' ? 'border-emerald-100' : 'border-yellow-100'}`}>
+            <div className={`absolute top-0 right-0 w-32 h-32 rounded-full -mr-16 -mt-16 transition-colors ${session.status === 'ACTIVE' ? 'bg-emerald-50 group-hover:bg-emerald-100' : 'bg-yellow-50 group-hover:bg-yellow-100'}`}></div>
             
             <div className="relative z-10 flex items-center gap-4 mb-6">
-              <div className="w-16 h-16 bg-emerald-600 text-white rounded-2xl flex items-center justify-center font-black text-2xl shadow-lg border-4 border-emerald-100">
+              <div className={`w-16 h-16 rounded-2xl flex items-center justify-center font-black text-2xl shadow-lg border-4 ${session.status === 'ACTIVE' ? 'bg-emerald-600 border-emerald-100' : 'bg-yellow-600 border-yellow-100'} text-white`}>
                 {session.patients?.name?.[0] || '?'}
               </div>
               <div>
                 <h4 className="font-black text-xl text-gray-800 leading-tight">{session.patients?.name}</h4>
-                <div className="text-xs text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded-full inline-block mt-1">في الجلسة الآن</div>
+                <div className={`text-xs font-bold px-2 py-0.5 rounded-full inline-block mt-1 ${session.status === 'ACTIVE' ? 'text-emerald-600 bg-emerald-50' : 'text-yellow-600 bg-yellow-50'}`}>
+                  {session.status === 'ACTIVE' ? 'في الجلسة الآن' : 'في قائمة الانتظار'}
+                </div>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4 relative z-10">
               <div className="bg-gray-50 p-3 rounded-2xl border">
                 <div className="text-[10px] text-gray-400 font-black mb-1 flex items-center gap-1"><MapPin size={10}/> الغرفة</div>
-                <div className="font-black text-gray-700">{session.room}</div>
+                <div className="font-black text-gray-700">{session.room || 'غير محدد'}</div>
               </div>
               <div className="bg-gray-50 p-3 rounded-2xl border">
-                <div className="text-[10px] text-gray-400 font-black mb-1 flex items-center gap-1"><Clock size={10}/> البدء</div>
+                <div className="text-[10px] text-gray-400 font-black mb-1 flex items-center gap-1"><Clock size={10}/> {session.status === 'ACTIVE' ? 'البدء' : 'الوصول'}</div>
                 <div className="font-black text-gray-700">{session.start_time}</div>
               </div>
-              <div className="bg-emerald-50 p-3 rounded-2xl border border-emerald-100">
-                <div className="text-[10px] text-emerald-600 font-black mb-1 flex items-center gap-1"><HeartPulse size={10}/> الضغط</div>
-                <div className="font-black text-emerald-700">{session.blood_pressure}</div>
-              </div>
-              <div className="bg-indigo-50 p-3 rounded-2xl border border-indigo-100">
-                <div className="text-[10px] text-indigo-600 font-black mb-1 flex items-center gap-1"><Scale size={10}/> الوزن قبل</div>
-                <div className="font-black text-indigo-700">{session.weight_before} كجم</div>
+              <div className="bg-emerald-50 p-3 rounded-2xl border border-emerald-100 col-span-2">
+                <div className="flex justify-between items-center">
+                  <div>
+                    <div className="text-[10px] text-emerald-600 font-black mb-1 flex items-center gap-1"><HeartPulse size={10}/> الضغط</div>
+                    <div className="font-black text-emerald-700">{session.blood_pressure || '--/--'}</div>
+                  </div>
+                  <div className="text-left">
+                    <div className="text-[10px] text-indigo-600 font-black mb-1 flex items-center gap-1 justify-end"><Scale size={10}/> الوزن قبلي</div>
+                    <div className="font-black text-indigo-700">{session.weight_before || '--'} كجم</div>
+                  </div>
+                </div>
               </div>
             </div>
 
-            <button 
-              onClick={() => setSelectedSessionForReport(session)}
-              className="w-full mt-6 py-4 bg-emerald-600 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg"
-            >
-              <FilePlus size={18} /> إضافة تقرير طبي (سجل)
-            </button>
+            {session.status === 'WAITING' ? (
+              <button 
+                onClick={() => handleStartSession(session)}
+                className="w-full mt-6 py-4 bg-yellow-600 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-yellow-700 transition-all shadow-lg"
+              >
+                <Activity size={18} /> بدء الجلسة الآن
+              </button>
+            ) : (
+              <button 
+                onClick={() => setSelectedSessionForReport(session)}
+                className="w-full mt-6 py-4 bg-emerald-600 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg"
+              >
+                <FilePlus size={18} /> إنهاء الجلسة وإضافة تقرير
+              </button>
+            )}
           </div>
         ))}
         {activeSessions.length === 0 && (
@@ -189,13 +216,18 @@ const ActivePatients: React.FC = () => {
                        <input name="bp" required className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 font-bold outline-none focus:border-emerald-500" defaultValue={selectedSessionForReport.blood_pressure} />
                     </div>
                     <div className="space-y-1">
-                       <label className="text-xs font-bold text-gray-500">ملاحظات التمريض</label>
-                       <input name="notes" className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 font-bold outline-none focus:border-emerald-500" placeholder="مثلاً: المريض مستقر.." />
+                       <label className="text-xs font-bold text-gray-500">الوزن البعدي (كجم)</label>
+                       <input name="weightAfter" type="number" step="0.1" required className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 font-bold outline-none focus:border-emerald-500" placeholder="00.0" />
                     </div>
                  </div>
                  
+                 <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500">ملاحظات التمريض</label>
+                    <textarea name="notes" className="w-full border-2 border-gray-100 rounded-2xl p-4 bg-gray-50 font-bold outline-none focus:border-emerald-500 h-24" placeholder="مثلاً: المريض مستقر.." defaultValue={selectedSessionForReport.notes}></textarea>
+                 </div>
+                 
                  <button type="submit" className="w-full py-5 bg-emerald-600 text-white rounded-2xl font-black shadow-xl hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
-                    <CheckCircle size={20} /> تسجيل السجل الطبي وخصم الأصناف
+                    <CheckCircle size={20} /> إنهاء الجلسة وحفظ التقرير الطبي
                  </button>
               </form>
            </div>

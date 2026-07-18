@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { AR, BLOOD_TYPES, calculateAge, ROOMS } from '../constants.ts';
 import { DB } from '../store.ts';
+import PatientTimeline from '../components/PatientTimeline.tsx';
 import { Patient, FundingEntity, DialysisSession, Service, Store } from '../types.ts';
 import { 
   Plus, Search, UserPlus, History, Phone, FileText, Loader2, 
@@ -16,7 +17,6 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-  const [patientHistory, setPatientHistory] = useState<DialysisSession[]>([]);
 
   useEffect(() => { loadData(); }, []);
 
@@ -145,10 +145,8 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
           </form>
         </div>
       ) : (
-        <div className="bg-white p-10 rounded-[3rem] shadow-sm animate-in fade-in">
-           <button onClick={() => setView('list')} className="mb-6 flex items-center gap-2 text-gray-400 font-bold"><X size={20}/> العودة للقائمة</button>
-           <h2 className="text-3xl font-black text-gray-800 mb-8">{selectedPatient?.name}</h2>
-           {/* تفاصيل المريض تظهر هنا */}
+        <div className="animate-in fade-in h-full">
+           <PatientTimeline patient={selectedPatient} onClose={() => { setSelectedPatient(null); setView('list'); }} />
         </div>
       )}
     </div>

@@ -2,7 +2,9 @@
 export const AR = {
   dashboard: "لوحة التحكم",
   notifications: "مركز الإشعارات",
-  reception: "الاستقبال",
+  sessionReception: "استقبال الجلسات",
+  clinicReception: "استقبال العيادات",
+  reception: "الاستقبال الشامل",
   patients: "سجلات المرضى",
   activePatients: "المرضى الحاليين",
   lab: "المعمل",
@@ -78,10 +80,30 @@ export const AR = {
   completed: "مكتمل",
   weightBefore: "الوزن قبل",
   bp: "ضغط الدم",
+  clinics: "العيادات",
+  familyHealth: "الملفات العائلية",
+  doctors: "الأطباء",
+  specialty: "التخصص",
+  appointments: "المواعيد",
+  appointmentDate: "تاريخ الموعد",
+  appointmentTime: "وقت الموعد",
+  diagnosis: "التشخيص",
+  prescription: "الروشتة",
+  newAppointment: "حجز موعد",
   testName: "اسم التحليل",
   result: "النتيجة",
   normalRange: "المعدل الطبيعي"
 };
+
+export const CLINIC_SPECIALTIES = [
+  "طب الأسرة والرعاية الأساسية",
+  "كلى ومسالك بولية",
+  "أمراض باطنة",
+  "أمراض قلب",
+  "أوعية دموية",
+  "تغذية علاجية",
+  "أخرى"
+];
 
 export const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 export const ROOMS = ['A1', 'A2', 'B1', 'B2', 'ICU-1', 'ICU-2'];
@@ -89,8 +111,10 @@ export const ROOMS = ['A1', 'A2', 'B1', 'B2', 'ICU-1', 'ICU-2'];
 export const PERMISSIONS_MAP: Record<string, string> = {
   VIEW_DASHBOARD: "مشاهدة لوحة التحكم الإحصائية",
   VIEW_NOTIFICATIONS: "مشاهدة مركز الإشعارات",
-  MANAGE_RECEPTION: "إدارة الاستقبال",
+  MANAGE_RECEPTION: "إدارة استقبال الجلسات",
+  MANAGE_CLINIC_RECEPTION: "إدارة استقبال العيادات",
   MANAGE_PATIENTS: "إدارة سجلات المرضى",
+  MANAGE_FAMILY_HEALTH: "إدارة طب الأسرة والاعتماد والرعاية الأساسية",
   MANAGE_LAB: "إدارة المعمل",
   MANAGE_BILLING: "إدارة الفواتير",
   MANAGE_PAYROLL: "إدارة الموظفين والرواتب",
@@ -101,6 +125,7 @@ export const PERMISSIONS_MAP: Record<string, string> = {
   MANAGE_USERS: "إدارة حسابات النظام",
   VIEW_REPORTS: "عرض التقارير والرسوم البيانية",
   VIEW_MEDICAL_RECORDS: "الوصول لأرشيف السجلات الطبية",
+  MANAGE_CLINICS: "إدارة العيادات والأطباء والمواعيد",
   SYSTEM_SETUP: "إعدادات النظام"
 };
 

@@ -2,20 +2,32 @@
 import React, { useState, useEffect } from 'react';
 import { AR, ROOMS, calculateAge, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
+import PatientTimeline from '../components/PatientTimeline.tsx';
 import { DialysisSession, Patient } from '../types.ts';
 import { 
   UserPlus, Search, Clock, Activity, ArrowRight, 
-  CheckCircle2, AlertCircle, MapPin, Scale, HeartPulse, MoreVertical, Loader2, X, BellRing, UserCheck
+  CheckCircle2, AlertCircle, MapPin, Scale, HeartPulse, MoreVertical, Loader2, X, BellRing, UserCheck,
+  Users, Calendar, Stethoscope
 } from 'lucide-react';
 
-const ReceptionModule: React.FC = () => {
+interface ReceptionProps {
+  initialMode?: 'dialysis' | 'clinics';
+}
+
+const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
+  const [activeQueue, setActiveQueue] = useState<'dialysis' | 'clinics'>(initialMode || 'dialysis');
   const [searchTerm, setSearchTerm] = useState('');
   const [showCheckInModal, setShowCheckInModal] = useState(false);
   const [showQuickAddModal, setShowQuickAddModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [sessions, setSessions] = useState<any[]>([]);
+  const [clinicAppointments, setClinicAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [clinics, setClinics] = useState<any[]>([]);
+  const [doctors, setDoctors] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [showClinicBookingModal, setShowClinicBookingModal] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -24,12 +36,32 @@ const ReceptionModule: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const s = await DB.getSessions();
-      const p = await DB.getPatients();
+      const [s, p, ca, cl, dr] = await Promise.all([
+        DB.getSessions(),
+        DB.getPatients(),
+        DB.getClinicAppointments(),
+        DB.getClinics(),
+        DB.getDoctors()
+      ]);
       setSessions(s || []);
       setPatients(p || []);
+      setClinicAppointments(ca || []);
+      setClinics(cl || []);
+      setDoctors(dr || []);
     } catch (err) {
       console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const updateAppointmentStatus = async (id: string, status: string) => {
+    try {
+      setLoading(true);
+      await DB.updateAppointmentStatus(id, status);
+      loadData();
+    } catch (err) {
+      alert("خطأ في تحديث الحالة");
     } finally {
       setLoading(false);
     }
@@ -111,69 +143,159 @@ const ReceptionModule: React.FC = () => {
     }
   };
 
+  const handleBookClinic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedPatient) return;
+    const target = e.target as any;
+    try {
+      setLoading(true);
+      await DB.addClinicAppointment({
+        patient_id: selectedPatient.id,
+        clinic_id: target.clinic_id.value,
+        doctor_id: target.doctor_id.value,
+        date: target.date.value,
+        time: target.time.value,
+        status: 'WAITING'
+      });
+      alert(`تم حجز موعد للمريض ${selectedPatient.name} بنجاح.`);
+      setShowClinicBookingModal(false);
+      loadData();
+    } catch (err) {
+      alert("خطأ في حجز الموعد: " + (err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+        <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-blue-500 flex items-center gap-4">
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Users size={24} /></div>
+          <div>
+            <p className="text-gray-500 text-sm">إجمالي اليوم</p>
+            <h3 className="text-2xl font-bold">{sessions.length + clinicAppointments.length}</h3>
+          </div>
+        </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-yellow-500 flex items-center gap-4">
           <div className="p-3 bg-yellow-50 text-yellow-600 rounded-xl"><Clock size={24} /></div>
           <div>
-            <p className="text-gray-500 text-sm">{AR.waiting}</p>
-            <h3 className="text-2xl font-bold">{sessions.filter(s => s.status === 'WAITING').length} مرضى</h3>
+            <p className="text-gray-500 text-sm">بانتظار الغسيل</p>
+            <h3 className="text-2xl font-bold">{sessions.filter(s => s.status === 'WAITING').length}</h3>
+          </div>
+        </div>
+        <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-indigo-500 flex items-center gap-4">
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Calendar size={24} /></div>
+          <div>
+            <p className="text-gray-500 text-sm">بانتظار العيادات</p>
+            <h3 className="text-2xl font-bold">{clinicAppointments.filter(a => a.status === 'WAITING').length}</h3>
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-green-500 flex items-center gap-4">
           <div className="p-3 bg-green-50 text-green-600 rounded-xl"><Activity size={24} /></div>
           <div>
             <p className="text-gray-500 text-sm">{AR.inSession}</p>
-            <h3 className="text-2xl font-bold">{sessions.filter(s => s.status === 'ACTIVE').length} مريض</h3>
-          </div>
-        </div>
-        <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-primary-500 flex items-center gap-4">
-          <div className="p-3 bg-primary-50 text-primary-600 rounded-xl"><CheckCircle2 size={24} /></div>
-          <div>
-            <p className="text-gray-500 text-sm">{AR.completed}</p>
-            <h3 className="text-2xl font-bold">{sessions.filter(s => s.status === 'FINISHED').length} مرضى</h3>
+            <h3 className="text-2xl font-bold">{sessions.filter(s => s.status === 'ACTIVE').length + clinicAppointments.filter(a => a.status === 'IN_PROGRESS').length}</h3>
           </div>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex justify-between items-center">
-            <h3 className="text-xl font-bold text-gray-800">قائمة الحضور اليومية</h3>
-            <button onClick={loadData} className="text-primary-600">
-              {loading ? <Loader2 className="animate-spin" size={20} /> : <Clock size={20} />}
-            </button>
+          <div className="flex justify-between items-center bg-white p-2 rounded-2xl border border-gray-100">
+             <div className="flex gap-2">
+                {!initialMode && (
+                  <>
+                    <button 
+                      onClick={() => setActiveQueue('dialysis')}
+                      className={`px-6 py-2 rounded-xl font-bold text-sm transition-all ${activeQueue === 'dialysis' ? 'bg-primary-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      قائمة الغسيل
+                    </button>
+                    <button 
+                      onClick={() => setActiveQueue('clinics')}
+                      className={`px-6 py-2 rounded-xl font-bold text-sm transition-all ${activeQueue === 'clinics' ? 'bg-primary-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
+                    >
+                      قائمة العيادات
+                    </button>
+                  </>
+                )}
+                {initialMode === 'dialysis' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار الجلسات</div>}
+                {initialMode === 'clinics' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار العيادات</div>}
+             </div>
+             <button onClick={loadData} className="p-2 text-primary-600">
+               {loading ? <Loader2 className="animate-spin" size={20} /> : <Clock size={20} />}
+             </button>
           </div>
 
           <div className="space-y-3">
-            {sessions.map(session => (
-              <div key={session.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${session.status === 'ACTIVE' ? 'border-green-100 bg-green-50/20' : session.status === 'WAITING' ? 'border-yellow-100 bg-yellow-50/20' : 'border-gray-100'}`}>
-                <div className="flex items-center gap-4">
-                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg ${session.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : session.status === 'WAITING' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
-                    {session.patients?.name?.[0] || '?'}
-                  </div>
-                  <div>
-                    <h4 className="font-bold text-gray-800">
-                      {session.patients?.name}
-                      <span className="text-primary-600 text-xs mr-2 font-bold">{calculateAge(session.patients?.date_of_birth)}</span>
-                    </h4>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="text-xs text-gray-500 flex items-center gap-1"><MapPin size={12} /> {session.room || 'بانتظار التخصيص'}</span>
-                      <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {session.start_time || '--:--'}</span>
+            {activeQueue === 'dialysis' ? (
+              sessions.map(session => (
+                <div key={session.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${session.status === 'ACTIVE' ? 'border-green-100 bg-green-50/20' : session.status === 'WAITING' ? 'border-yellow-100 bg-yellow-50/20' : 'border-gray-100'}`}>
+                   {/* ... content stays fairly same for dialysis but showing sessions ... */}
+                   <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg ${session.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : session.status === 'WAITING' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
+                      {session.patients?.name?.[0] || '?'}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-gray-800">
+                        {session.patients?.name}
+                        <span className="text-primary-600 text-xs mr-2 font-bold">{calculateAge(session.patients?.date_of_birth)}</span>
+                      </h4>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-xs text-gray-500 flex items-center gap-1"><MapPin size={12} /> {session.room || 'بانتظار التخصيص'}</span>
+                        <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {session.start_time || '--:--'}</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                   <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${session.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : session.status === 'WAITING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-gray-50 text-gray-600'}`}>
-                     {session.status === 'ACTIVE' ? AR.inSession : session.status === 'FINISHED' ? AR.completed : AR.waiting}
-                   </div>
-                   <button className="p-2 text-gray-400 hover:text-primary-600 bg-gray-50 rounded-lg"><MoreVertical size={18} /></button>
+                  <div className="flex items-center gap-3 w-full md:w-auto">
+                    <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${session.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : session.status === 'WAITING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-gray-50 text-gray-600'}`}>
+                      {session.status === 'ACTIVE' ? AR.inSession : session.status === 'FINISHED' ? AR.completed : AR.waiting}
+                    </div>
+                    <button className="p-2 text-gray-400 hover:text-primary-600 bg-gray-50 rounded-lg"><MoreVertical size={18} /></button>
+                  </div>
                 </div>
-              </div>
-            ))}
-            {sessions.length === 0 && !loading && <div className="text-center py-20 text-gray-300">لا توجد جلسات مسجلة اليوم</div>}
+              ))
+            ) : (
+              clinicAppointments.map(app => (
+                <div key={app.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${app.status === 'IN_PROGRESS' ? 'border-blue-100 bg-blue-50/20' : app.status === 'WAITING' ? 'border-yellow-100 bg-yellow-50/20' : 'border-gray-100'}`}>
+                   <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-lg">
+                      {app.patients?.name?.[0]}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-gray-800">{app.patients?.name}</h4>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-xs text-indigo-600 flex items-center gap-1 font-bold"><Stethoscope size={12} /> د/ {app.doctors?.name}</span>
+                        <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {app.time}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3 w-full md:w-auto">
+                    <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${app.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 border-blue-200' : app.status === 'WAITING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
+                       {app.status === 'WAITING' ? 'انتظار الكشف' : app.status === 'IN_PROGRESS' ? 'داخل العيادة' : 'مكتمل'}
+                    </div>
+                    {app.status === 'WAITING' && (
+                       <button 
+                         onClick={() => updateAppointmentStatus(app.id, 'IN_PROGRESS')}
+                         className="px-4 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-bold shadow-md hover:bg-primary-700"
+                       >
+                         دخول العيادة
+                       </button>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
+            
+            {activeQueue === 'dialysis' && sessions.length === 0 && !loading && (
+              <div className="text-center py-20 text-gray-300">لا توجد جلسات غسيل مسجلة اليوم</div>
+            )}
+            {activeQueue === 'clinics' && clinicAppointments.length === 0 && !loading && (
+              <div className="text-center py-20 text-gray-300">لا توجد مواعيد عيادات اليوم</div>
+            )}
           </div>
         </div>
 
@@ -201,28 +323,44 @@ const ReceptionModule: React.FC = () => {
                   key={p.id}
                   className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-primary-50 border border-transparent hover:border-primary-100 transition-all group"
                 >
-                  <div className="text-right">
+                  <button 
+                    onClick={() => { setSelectedPatient(p); setShowHistoryModal(true); }}
+                    className="text-right hover:text-primary-600 transition-colors"
+                  >
                     <div className="font-bold text-gray-700 group-hover:text-primary-700">
                       {p.name}
                       <span className="text-primary-500 text-[10px] mr-1">({calculateAge(p.date_of_birth)})</span>
                     </div>
                     <div className="text-xs text-gray-400">{p.phone}</div>
-                  </div>
+                  </button>
                   <div className="flex gap-2">
-                    <button 
-                      onClick={() => confirmAttendanceOnly(p)}
-                      title="تسجيل حضور فقط"
-                      className="p-2 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-600 hover:text-white transition-all"
-                    >
-                      <UserCheck size={18} />
-                    </button>
-                    <button 
-                      onClick={() => handleCheckIn(p)}
-                      title="بدء جلسة مباشرة"
-                      className="p-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-600 hover:text-white transition-all"
-                    >
-                      <Activity size={18} />
-                    </button>
+                    {activeQueue === 'dialysis' && (
+                      <button 
+                        onClick={() => confirmAttendanceOnly(p)}
+                        title="تسجيل حضور فقط"
+                        className="p-2 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-600 hover:text-white transition-all"
+                      >
+                        <UserCheck size={18} />
+                      </button>
+                    )}
+                    {activeQueue === 'clinics' && (
+                      <button 
+                        onClick={() => { setSelectedPatient(p); setShowClinicBookingModal(true); }}
+                        title="حجز موعد عيادة"
+                        className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"
+                      >
+                        <Stethoscope size={18} />
+                      </button>
+                    )}
+                    {activeQueue === 'dialysis' && (
+                      <button 
+                        onClick={() => handleCheckIn(p)}
+                        title="بدء جلسة مباشرة"
+                        className="p-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-600 hover:text-white transition-all"
+                      >
+                        <Activity size={18} />
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -345,6 +483,60 @@ const ReceptionModule: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {showClinicBookingModal && selectedPatient && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl animate-in zoom-in-95 duration-300">
+             <div className="p-6 bg-indigo-600 text-white flex justify-between items-center rounded-t-2xl">
+                <h3 className="text-xl font-bold flex items-center gap-2"><Stethoscope size={22} /> حجز موعد عيادة جديدة</h3>
+                <button onClick={() => setShowClinicBookingModal(false)}><X size={24} /></button>
+             </div>
+             <form onSubmit={handleBookClinic} className="p-8 space-y-4">
+                <div className="p-4 bg-indigo-50 rounded-xl mb-4 border border-indigo-100">
+                   <p className="text-sm font-bold text-indigo-800">حجز موعد للمريض: <span className="text-indigo-600">{selectedPatient.name}</span></p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-2">العيادة</label>
+                    <select name="clinic_id" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none">
+                       <option value="">اختر العيادة</option>
+                       {clinics.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-2">الطبيب</label>
+                    <select name="doctor_id" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none">
+                       <option value="">اختر الطبيب</option>
+                       {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-2">التاريخ</label>
+                    <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-bold text-gray-500 mr-2">الوقت</label>
+                    <input name="time" type="time" required defaultValue={new Date().toTimeString().split(' ')[0].slice(0, 5)} className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                  </div>
+                </div>
+
+                <button type="submit" disabled={loading} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 mt-4">
+                   {loading ? <Loader2 className="animate-spin" /> : <Calendar size={20} />}
+                   تأكيد حجز الموعد
+                </button>
+             </form>
+          </div>
+        </div>
+      )}
+
+      {showHistoryModal && selectedPatient && (
+        <div className="fixed inset-0 z-[60] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+           <div className="bg-white w-full max-w-5xl h-[85vh] rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+              <PatientTimeline patient={selectedPatient} onClose={() => setShowHistoryModal(false)} />
+           </div>
         </div>
       )}
 

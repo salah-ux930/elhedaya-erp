@@ -139,12 +139,30 @@ export class DB {
   }
 
   // Common CRUDs
-  static async getNotifications() { const { data, error } = await supabase.from('notifications').select('*').order('created_at', { ascending: false }); if (error) return handleError(error, "فشل جلب التنبيهات"); return data || []; }
+  static async getNotifications() {
+    try {
+      const { data, error } = await supabase.from('notifications').select('*').order('created_at', { ascending: false });
+      if (error) {
+        if (['42P01', 'PGRST116'].includes(error.code) || error.message.includes('schema cache')) return [];
+        return handleError(error, "فشل جلب التنبيهات");
+      }
+      return data || [];
+    } catch (e) { return []; }
+  }
   static async addNotification(notif: any) { const { error } = await supabase.from('notifications').insert([notif]); if (error) return handleError(error, "فشل إضافة التنبيه"); }
   static async getFundingEntities() { const { data, error } = await supabase.from('funding_entities').select('*'); if (error) return handleError(error, "فشل جلب جهات التعاقد"); return data || []; }
   static async getStores() { const { data, error } = await supabase.from('stores').select('*'); if (error) return handleError(error, "فشل جلب المخازن"); return data || []; }
   static async getProducts() { const { data, error } = await supabase.from('products').select('*'); if (error) return handleError(error, "فشل جلب المنتجات"); return data || []; }
-  static async getStockTransactions() { const { data, error } = await supabase.from('stock_transactions').select('*'); if (error) return handleError(error, "فشل جلب حركات المخزون"); return data || []; }
+  static async getStockTransactions() {
+    try {
+      const { data, error } = await supabase.from('stock_transactions').select('*');
+      if (error) {
+        if (['42P01', 'PGRST116'].includes(error.code) || error.message.includes('schema cache')) return [];
+        return handleError(error, "فشل جلب حركات المخزون");
+      }
+      return data || [];
+    } catch (e) { return []; }
+  }
   static async getTransferRequests() { const { data, error } = await supabase.from('transfer_requests').select('*'); if (error) return handleError(error, "فشل جلب طلبات التحويل"); return data || []; }
   static async getServices() { const { data, error } = await supabase.from('services').select('*'); if (error) return handleError(error, "فشل جلب الخدمات"); return data || []; }
   static async getSessions() { const { data, error } = await supabase.from('dialysis_sessions').select('*, patients(*)'); if (error) return handleError(error, "فشل جلب الجلسات"); return data || []; }
@@ -179,6 +197,140 @@ export class DB {
   static async addLabTest(t: any) { const { data, error } = await supabase.from('lab_tests').insert([t]).select(); if (error) return handleError(error, "فشل إضافة التحليل"); return data?.[0]; }
   static async addLabDefinition(d: any) { const { data, error } = await supabase.from('lab_test_definitions').insert([d]).select(); if (error) return handleError(error, "فشل إضافة تعريف التحليل"); return data?.[0]; }
   static async updateLabResult(id: string, res: string) { const { data, error } = await supabase.from('lab_tests').update({ result: res, status: 'COMPLETED' }).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث نتيجة التحليل"); return data?.[0]; }
+  
+  // --- Clinics & Doctors ---
+  static async getClinics() {
+    try {
+      const { data, error } = await supabase.from('clinics').select('*');
+      if (error) {
+        if (['42P01', 'PGRST116'].includes(error.code) || error.message.includes('schema cache')) return [];
+        return handleError(error, "فشل جلب العيادات");
+      }
+      return data || [];
+    } catch (e) { return []; }
+  }
+  static async addClinic(c: any) { const { data, error } = await supabase.from('clinics').insert([c]).select(); if (error) return handleError(error, "فشل إضافة العيادة"); return data?.[0]; }
+  
+  static async getDoctors() {
+    try {
+      const { data, error } = await supabase.from('doctors').select('*, clinics(*)');
+      if (error) {
+        if (['42P01', 'PGRST116'].includes(error.code) || error.message.includes('schema cache')) return [];
+        return handleError(error, "فشل جلب الأطباء");
+      }
+      return data || [];
+    } catch (e) { return []; }
+  }
+  static async addDoctor(d: any) { const { data, error } = await supabase.from('doctors').insert([d]).select(); if (error) return handleError(error, "فشل إضافة الطبيب"); return data?.[0]; }
+
+  static async getClinicAppointments() { 
+    try {
+      const { data, error } = await supabase.from('clinic_appointments').select('*, patients(*), doctors(*), clinics(*)').order('date', { ascending: false }); 
+      if (error) {
+        if (['42P01', 'PGRST116'].includes(error.code) || error.message.includes('schema cache')) return [];
+        return handleError(error, "فشل جلب المواعيد"); 
+      }
+      return data || [];
+    } catch (e) { return []; }
+  }
+  static async addClinicAppointment(a: any) { const { data, error } = await supabase.from('clinic_appointments').insert([a]).select(); if (error) return handleError(error, "فشل إضافة الموعد"); return data?.[0]; }
+  static async updateAppointmentStatus(id: string, status: string, diagnosis?: string, prescription?: string) {
+    const { data, error } = await supabase.from('clinic_appointments').update({ status, diagnosis, prescription }).eq('id', id).select();
+    if (error) return handleError(error, "فشل تحديث حالة الموعد");
+    return data?.[0];
+  }
+
+  // --- Family Files (الملفات العائلية) ---
+  static async getFamilyFiles() {
+    try {
+      const { data, error } = await supabase.from('family_files').select('*, family_file_members(*, patients(*))').order('created_at', { ascending: false });
+      if (error) { if (['42P01', 'PGRST116'].includes(error.code)) return []; throw error; }
+      return data || [];
+    } catch (e) { return []; }
+  }
+  static async addFamilyFile(f: any) {
+    const { data, error } = await supabase.from('family_files').insert([f]).select();
+    if (error) return handleError(error, "فشل إنشاء الملف العائلي");
+    return data?.[0];
+  }
+  static async addFamilyMember(m: any) {
+    const { data, error } = await supabase.from('family_file_members').insert([m]).select();
+    if (error) return handleError(error, "فشل إضافة فرد للأسرة");
+    return data?.[0];
+  }
+
+  // --- Clinical Encounters (اللقاءات السريرية) ---
+  static async getClinicalEncounters(patientId?: string) {
+    try {
+      let query = supabase.from('clinical_encounters').select('*, patients(*), doctors(*), clinics(*)').order('encounter_date', { ascending: false });
+      if (patientId) query = query.eq('patient_id', patientId);
+      const { data, error } = await query;
+      if (error) { if (['42P01', 'PGRST116'].includes(error.code)) return []; throw error; }
+      return data || [];
+    } catch (e) { return []; }
+  }
+  static async addClinicalEncounter(e: any) {
+    const { data, error } = await supabase.from('clinical_encounters').insert([e]).select();
+    if (error) return handleError(error, "فشل إنشاء اللقاء الطبي");
+    if (data?.[0] && e.appointment_id) {
+       await supabase.from('clinic_appointments').update({ encounter_id: data[0].id, status: 'IN_PROGRESS' }).eq('id', e.appointment_id);
+    }
+    return data?.[0];
+  }
+
+  // --- Patient Vitals & Problems ---
+  static async getPatientVitals(patientId: string) {
+    try {
+      const { data, error } = await supabase.from('patient_vitals').select('*').eq('patient_id', patientId).order('measured_at', { ascending: false });
+      if (error) { if (['42P01'].includes(error.code)) return []; throw error; }
+      return data || [];
+    } catch (e) { return []; }
+  }
+  static async addPatientVitals(v: any) {
+    const { data, error } = await supabase.from('patient_vitals').insert([v]).select();
+    if (error) return handleError(error, "فشل تسجيل العلامات الحيوية");
+    return data?.[0];
+  }
+
+  // --- Accreditation Specialized Forms Generic Fetch/Save ---
+  static async getAccreditationRecords(tableName: string, patientId?: string) {
+    try {
+      let query = supabase.from(tableName).select('*').order('created_at', { ascending: false });
+      if (patientId) query = query.eq('patient_id', patientId);
+      const { data, error } = await query;
+      if (error) { if (['42P01', 'PGRST116'].includes(error.code)) return []; throw error; }
+      return data || [];
+    } catch (e) { return []; }
+  }
+  static async addAccreditationRecord(tableName: string, record: any) {
+    const { data, error } = await supabase.from(tableName).insert([record]).select();
+    if (error) return handleError(error, `فشل حفظ السجل في ${tableName}`);
+    return data?.[0];
+  }
+
+  static async getPatientHistory(patientId: string) {
+    try {
+      const [sessions, labTests, appointments, invoices] = await Promise.all([
+        supabase.from('dialysis_sessions').select('*').eq('patient_id', patientId).order('date', { ascending: false }),
+        supabase.from('lab_tests').select('*, lab_test_definitions(*)').eq('patient_id', patientId).order('date', { ascending: false }),
+        supabase.from('clinic_appointments').select('*, doctors(*), clinics(*)').eq('patient_id', patientId).order('date', { ascending: false }),
+        supabase.from('invoices').select('*').eq('patient_id', patientId).order('date', { ascending: false })
+      ]);
+
+      const events: any[] = [];
+
+      sessions.data?.forEach(s => events.push({ ...s, type: 'SESSION' }));
+      labTests.data?.forEach(l => events.push({ ...l, type: 'LAB' }));
+      appointments.data?.forEach(a => events.push({ ...a, type: 'APPOINTMENT' }));
+      invoices.data?.forEach(i => events.push({ ...i, type: 'INVOICE' }));
+
+      return events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+    } catch (e) {
+      console.error(e);
+      return [];
+    }
+  }
+
   static async addSession(s: any, storeId?: string) { 
     if (storeId && s.service_id) {
       // Auto consume consumables if config exists
@@ -198,5 +350,30 @@ export class DB {
       }
     }
     const { data, error } = await supabase.from('dialysis_sessions').insert([s]).select(); if (error) return handleError(error, "فشل إضافة الجلسة"); return data?.[0]; 
+  }
+
+  static async updateSession(id: string, s: any) {
+    const { data, error } = await supabase.from('dialysis_sessions').update(s).eq('id', id).select();
+    if (error) return handleError(error, "فشل تحديث الجلسة");
+    return data?.[0];
+  }
+
+  static async finishSession(id: string, data: any, storeId?: string) {
+    if (storeId && data.service_id) {
+        const { data: service } = await supabase.from('services').select('*').eq('id', data.service_id).single();
+        if (service?.config?.consumables) {
+            for (const item of service.config.consumables) {
+                await this.addStockTransaction({
+                    product_id: item.product_id,
+                    store_id: storeId,
+                    type: 'DEDUCT',
+                    quantity: item.quantity,
+                    date: new Date().toISOString().split('T')[0],
+                    note: `استهلاك آلي - إنهاء جلسة`
+                });
+            }
+        }
+    }
+    return this.updateSession(id, { ...data, status: 'FINISHED', end_time: new Date().toTimeString().split(' ')[0] });
   }
 }
