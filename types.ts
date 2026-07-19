@@ -344,6 +344,15 @@ export interface FamilyFile {
   lighting_type?: 'electricity' | 'other' | string;
   has_animals_birds?: boolean;
   barn_location?: 'inside' | 'outside' | 'none' | string;
+
+  // Social Search / Social Assessment (البحث الاجتماعي)
+  income_type?: 'fixed' | 'variable' | string;
+  monthly_income?: number;
+  has_chronic_diseases?: boolean;
+  has_disabilities?: boolean;
+  receives_pension?: boolean;
+  breadwinner_name?: string;
+  eligible_for_free_service?: boolean;
 }
 
 export interface FamilyFileMember {

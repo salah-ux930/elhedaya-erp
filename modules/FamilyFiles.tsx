@@ -71,6 +71,16 @@ const FamilyFilesModule: React.FC = () => {
   const [housingHasAnimalsBirds, setHousingHasAnimalsBirds] = useState<boolean>(false);
   const [housingBarnLocation, setHousingBarnLocation] = useState<string>('none');
 
+  // States for social search (البحث الاجتماعي)
+  const [showEditSocialModal, setShowEditSocialModal] = useState(false);
+  const [socialIncomeType, setSocialIncomeType] = useState<string>('fixed');
+  const [socialMonthlyIncome, setSocialMonthlyIncome] = useState<number>(0);
+  const [socialHasChronicDiseases, setSocialHasChronicDiseases] = useState<boolean>(false);
+  const [socialHasDisabilities, setSocialHasDisabilities] = useState<boolean>(false);
+  const [socialReceivesPension, setSocialReceivesPension] = useState<boolean>(false);
+  const [socialBreadwinnerName, setSocialBreadwinnerName] = useState<string>('');
+  const [socialEligibleForFreeService, setSocialEligibleForFreeService] = useState<boolean>(false);
+
   // Form error state
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -249,6 +259,36 @@ const FamilyFilesModule: React.FC = () => {
     }
   };
 
+  const handleUpdateSocial = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+    if (!selectedFamilyFile) return;
+
+    try {
+      const payload = {
+        income_type: socialIncomeType,
+        monthly_income: Number(socialMonthlyIncome),
+        has_chronic_diseases: socialHasChronicDiseases,
+        has_disabilities: socialHasDisabilities,
+        receives_pension: socialReceivesPension,
+        breadwinner_name: socialBreadwinnerName.trim() || null,
+        eligible_for_free_service: socialEligibleForFreeService
+      };
+
+      await DB.updateFamilyFile(selectedFamilyFile.id, payload);
+      setShowEditSocialModal(false);
+      
+      await loadData();
+      const updatedFiles = await DB.getFamilyFiles();
+      const updatedFile = updatedFiles.find((f: any) => f.id === selectedFamilyFile.id);
+      if (updatedFile) setSelectedFamilyFile(updatedFile);
+      
+      alert("تم تحديث بيان البحث الاجتماعي بنجاح");
+    } catch (err: any) {
+      setFormError(err.message || "خطأ في تحديث بيان البحث الاجتماعي");
+    }
+  };
+
   const handleAddFamilyFile = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError(null);
@@ -300,7 +340,16 @@ const FamilyFilesModule: React.FC = () => {
         sewage_system: target.sewage_system?.value || 'sanitary',
         lighting_type: target.lighting_type?.value || 'electricity',
         has_animals_birds: target.has_animals_birds?.checked || false,
-        barn_location: target.barn_location?.value || 'none'
+        barn_location: target.barn_location?.value || 'none',
+
+        // Social Search (البحث الاجتماعي)
+        income_type: target.income_type?.value || 'fixed',
+        monthly_income: target.monthly_income?.value ? Number(target.monthly_income.value) : null,
+        has_chronic_diseases: target.has_chronic_diseases?.checked || false,
+        has_disabilities: target.has_disabilities?.checked || false,
+        receives_pension: target.receives_pension?.checked || false,
+        breadwinner_name: target.breadwinner_name?.value ? target.breadwinner_name.value.trim() : null,
+        eligible_for_free_service: target.eligible_for_free_service?.checked || false
       });
       setShowAddFamilyFile(false);
       loadData();
@@ -602,6 +651,119 @@ const FamilyFilesModule: React.FC = () => {
                   <span className="text-[11px] text-gray-400 font-bold block mb-0.5">مكان الحظيرة</span>
                   <span className="font-extrabold text-gray-800 text-sm">
                     {selectedFamilyFile.barn_location === 'inside' ? 'بالمنزل' : selectedFamilyFile.barn_location === 'outside' ? 'بالخارج' : selectedFamilyFile.barn_location === 'none' ? 'لا يوجد حظيرة' : '---'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* بيان البحث الاجتماعي والتمكين */}
+          <div className="bg-sky-50/50 border border-sky-100 p-6 rounded-3xl space-y-4 shadow-sm animate-in fade-in duration-300">
+            <div className="flex justify-between items-center pb-3 border-b border-sky-100">
+              <h4 className="font-bold text-lg text-sky-900 flex items-center gap-2">
+                <Users size={20} className="text-sky-700" />
+                بيان البحث الاجتماعي والتمكين الأسري
+              </h4>
+              <button 
+                onClick={() => {
+                  setSocialIncomeType(selectedFamilyFile.income_type || 'fixed');
+                  setSocialMonthlyIncome(selectedFamilyFile.monthly_income || 0);
+                  setSocialHasChronicDiseases(!!selectedFamilyFile.has_chronic_diseases);
+                  setSocialHasDisabilities(!!selectedFamilyFile.has_disabilities);
+                  setSocialReceivesPension(!!selectedFamilyFile.receives_pension);
+                  setSocialBreadwinnerName(selectedFamilyFile.breadwinner_name || '');
+                  setSocialEligibleForFreeService(!!selectedFamilyFile.eligible_for_free_service);
+                  setFormError(null);
+                  setShowEditSocialModal(true);
+                }}
+                className="px-3.5 py-1.5 bg-white text-sky-900 hover:bg-sky-900 hover:text-white rounded-xl text-xs font-bold transition-all border border-sky-200 flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Pencil size={14} />
+                تعديل البحث الاجتماعي
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-3.5 rounded-xl border border-sky-100/50 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-sky-50 flex items-center justify-center text-sky-700 shrink-0">
+                  <CreditCard size={18} />
+                </div>
+                <div>
+                  <span className="text-[11px] text-gray-400 font-bold block mb-0.5">طبيعة دخل الأسرة</span>
+                  <span className="font-extrabold text-sky-950 text-sm">
+                    {selectedFamilyFile.income_type === 'fixed' ? 'ثابت' : selectedFamilyFile.income_type === 'variable' ? 'متغير' : '---'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-sky-100/50 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-sky-50 flex items-center justify-center text-sky-700 shrink-0">
+                  <span className="font-bold text-xs font-mono">EGP</span>
+                </div>
+                <div>
+                  <span className="text-[11px] text-gray-400 font-bold block mb-0.5">متوسط الدخل الشهري</span>
+                  <span className="font-extrabold text-sky-950 text-sm">
+                    {selectedFamilyFile.monthly_income != null ? `${selectedFamilyFile.monthly_income.toLocaleString('ar-EG')} ج.م` : '---'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-sky-100/50 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-sky-50 flex items-center justify-center text-sky-700 shrink-0">
+                  <HeartPulse size={18} />
+                </div>
+                <div>
+                  <span className="text-[11px] text-gray-400 font-bold block mb-0.5">وجود أمراض مزمنة</span>
+                  <span className={`font-extrabold text-sm ${selectedFamilyFile.has_chronic_diseases ? 'text-amber-600' : 'text-gray-500'}`}>
+                    {selectedFamilyFile.has_chronic_diseases ? 'يوجد أمراض مزمنة' : 'لا يوجد'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-sky-100/50 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-sky-50 flex items-center justify-center text-sky-700 shrink-0">
+                  <ShieldAlert size={18} />
+                </div>
+                <div>
+                  <span className="text-[11px] text-gray-400 font-bold block mb-0.5">وجود حالات إعاقة</span>
+                  <span className={`font-extrabold text-sm ${selectedFamilyFile.has_disabilities ? 'text-red-500' : 'text-gray-500'}`}>
+                    {selectedFamilyFile.has_disabilities ? 'يوجد حالات إعاقة' : 'لا يوجد'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-sky-100/50 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-sky-50 flex items-center justify-center text-sky-700 shrink-0">
+                  <FileText size={18} />
+                </div>
+                <div>
+                  <span className="text-[11px] text-gray-400 font-bold block mb-0.5">الحصول على معاش</span>
+                  <span className={`font-extrabold text-sm ${selectedFamilyFile.receives_pension ? 'text-emerald-600' : 'text-gray-500'}`}>
+                    {selectedFamilyFile.receives_pension ? 'نعم (تحصل على معاش)' : 'لا (لا تحصل)'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-sky-100/50 flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-sky-50 flex items-center justify-center text-sky-700 shrink-0">
+                  <Plus size={18} />
+                </div>
+                <div>
+                  <span className="text-[11px] text-gray-400 font-bold block mb-0.5">استحقاق الخدمة المجانية</span>
+                  <span className={`font-extrabold text-sm ${selectedFamilyFile.eligible_for_free_service ? 'text-emerald-600' : 'text-gray-400'}`}>
+                    {selectedFamilyFile.eligible_for_free_service ? 'تستحق الخدمة المجانية' : 'غير مستحقة'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-3.5 rounded-xl border border-sky-100/50 flex items-center gap-3 md:col-span-2">
+                <div className="w-10 h-10 rounded-lg bg-sky-50 flex items-center justify-center text-sky-700 shrink-0">
+                  <Users size={18} />
+                </div>
+                <div>
+                  <span className="text-[11px] text-gray-400 font-bold block mb-0.5">العائل البديل (عند وفاة الأب)</span>
+                  <span className="font-extrabold text-sky-950 text-sm">
+                    {selectedFamilyFile.breadwinner_name || '---'}
                   </span>
                 </div>
               </div>
@@ -1046,55 +1208,102 @@ const FamilyFilesModule: React.FC = () => {
                    </div>
 
                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                       <div>
+                          <label className="text-xs font-bold text-gray-500 block mb-1">التهوية</label>
+                          <select name="ventilation" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
+                             <option value="good">جيدة</option>
+                             <option value="poor">غير جيدة</option>
+                          </select>
+                       </div>
+                       <div>
+                          <label className="text-xs font-bold text-gray-500 block mb-1">مصدر المياه</label>
+                          <select name="water_source" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
+                             <option value="public">عام (شبكة عمومية)</option>
+                             <option value="other">أخرى</option>
+                          </select>
+                       </div>
+                       <div>
+                          <label className="text-xs font-bold text-gray-500 block mb-1">الصرف الصحي</label>
+                          <select name="sewage_system" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
+                             <option value="sanitary">صحي</option>
+                             <option value="trench">طرنش (غير صحي)</option>
+                          </select>
+                       </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                       <div>
+                          <label className="text-xs font-bold text-gray-500 block mb-1">نوع الإضاءة</label>
+                          <select name="lighting_type" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
+                             <option value="electricity">كهرباء</option>
+                             <option value="other">أخرى</option>
+                          </select>
+                       </div>
+                       <div>
+                          <label className="text-xs font-bold text-gray-500 block mb-1">حظيرة طيور/حيوانات</label>
+                          <select name="barn_location" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
+                             <option value="none">لا يوجد حظيرة</option>
+                             <option value="inside">بالمنزل</option>
+                             <option value="outside">بالخارج</option>
+                          </select>
+                       </div>
+                       <div className="flex items-center gap-2.5 pt-6">
+                          <input type="checkbox" id="has_animals_birds" name="has_animals_birds" className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer" />
+                          <label htmlFor="has_animals_birds" className="text-xs font-bold text-gray-700 cursor-pointer select-none">تربية حيوانات أو طيور بالمنزل</label>
+                       </div>
+                    </div>
+                 </div>
+
+                 <div className="border-t border-gray-100 pt-4 space-y-4">
+                   <h4 className="font-extrabold text-sm text-primary-600 flex items-center gap-1.5 pb-2 border-b">
+                      <Users size={16} /> بيان البحث الاجتماعي والتمكين الأسري (اختياري)
+                   </h4>
+                   
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                         <label className="text-xs font-bold text-gray-500 block mb-1">التهوية</label>
-                         <select name="ventilation" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
-                            <option value="good">جيدة</option>
-                            <option value="poor">غير جيدة</option>
+                         <label className="text-xs font-bold text-gray-500 block mb-1">طبيعة دخل الأسرة</label>
+                         <select name="income_type" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
+                            <option value="fixed">دخل ثابت</option>
+                            <option value="variable">دخل متغير</option>
                          </select>
                       </div>
                       <div>
-                         <label className="text-xs font-bold text-gray-500 block mb-1">مصدر المياه</label>
-                         <select name="water_source" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
-                            <option value="public">عام (شبكة عمومية)</option>
-                            <option value="other">أخرى</option>
-                         </select>
-                      </div>
-                      <div>
-                         <label className="text-xs font-bold text-gray-500 block mb-1">الصرف الصحي</label>
-                         <select name="sewage_system" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
-                            <option value="sanitary">صحي</option>
-                            <option value="trench">طرنش (غير صحي)</option>
-                         </select>
+                         <label className="text-xs font-bold text-gray-500 block mb-1">متوسط الدخل الشهري (بالجنيه)</label>
+                         <input type="number" name="monthly_income" min={0} placeholder="متوسط الدخل الشهري بالجنيه" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm" />
                       </div>
                    </div>
 
-                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                         <label className="text-xs font-bold text-gray-500 block mb-1">نوع الإضاءة</label>
-                         <select name="lighting_type" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
-                            <option value="electricity">كهرباء</option>
-                            <option value="other">أخرى</option>
-                         </select>
+                         <label className="text-xs font-bold text-gray-500 block mb-1">العائل البديل (في حالة وفاة الأب)</label>
+                         <input type="text" name="breadwinner_name" placeholder="اسم العائل البديل" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm" />
                       </div>
-                      <div>
-                         <label className="text-xs font-bold text-gray-500 block mb-1">حظيرة طيور/حيوانات</label>
-                         <select name="barn_location" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm">
-                            <option value="none">لا يوجد حظيرة</option>
-                            <option value="inside">بالمنزل</option>
-                            <option value="outside">بالخارج</option>
-                         </select>
-                      </div>
-                      <div className="flex items-center gap-2.5 pt-6">
-                         <input type="checkbox" id="has_animals_birds" name="has_animals_birds" className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer" />
-                         <label htmlFor="has_animals_birds" className="text-xs font-bold text-gray-700 cursor-pointer select-none">تربية حيوانات أو طيور بالمنزل</label>
+                      <div className="flex flex-col gap-3 pt-2">
+                         <div className="flex items-center gap-2.5">
+                            <input type="checkbox" id="has_chronic_diseases" name="has_chronic_diseases" className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer" />
+                            <label htmlFor="has_chronic_diseases" className="text-xs font-bold text-gray-700 cursor-pointer select-none">وجود أمراض مزمنة بالأسرة</label>
+                         </div>
+                         <div className="flex items-center gap-2.5">
+                            <input type="checkbox" id="has_disabilities" name="has_disabilities" className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer" />
+                            <label htmlFor="has_disabilities" className="text-xs font-bold text-gray-700 cursor-pointer select-none">وجود حالات إعاقة بالأسرة</label>
+                         </div>
+                         <div className="flex items-center gap-2.5">
+                            <input type="checkbox" id="receives_pension" name="receives_pension" className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer" />
+                            <label htmlFor="receives_pension" className="text-xs font-bold text-gray-700 cursor-pointer select-none">الأسرة تحصل على معاش</label>
+                         </div>
+                         <div className="flex items-center gap-2.5">
+                            <input type="checkbox" id="eligible_for_free_service" name="eligible_for_free_service" className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer" />
+                            <label htmlFor="eligible_for_free_service" className="text-xs font-bold text-gray-700 cursor-pointer select-none">الأسرة تستحق الخدمة المجانية</label>
+                         </div>
                       </div>
                    </div>
                 </div>
+                </div>
 
-                <div>
-                   <label className="text-xs font-bold text-gray-500 block mb-1">ملاحظات ديموغرافية واجتماعية</label>
-                   <textarea name="notes" rows={3} placeholder="تفاصيل ديموغرافية، الحالة الاجتماعية أو أي ملاحظات هامة للأسرة..." className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold" />
+                 <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">ملاحظات ديموغرافية واجتماعية</label>
+                    <textarea name="notes" rows={3} placeholder="تفاصيل ديموغرافية، الحالة الاجتماعية أو أي ملاحظات هامة للأسرة..." className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold" />
                 </div>
 
                 <div className="flex gap-4 pt-4 border-t border-gray-100">
@@ -1231,6 +1440,8 @@ const FamilyFilesModule: React.FC = () => {
                        <input name="family_role" required placeholder="مثال: طالب، موظف، ربة منزل" className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm" />
                     </div>
                  </div>
+
+                 
 
                  <div>
                     <label className="text-xs font-bold text-gray-500 block mb-1">ملاحظات العضو</label>
@@ -1632,6 +1843,136 @@ const FamilyFilesModule: React.FC = () => {
                 <button 
                   type="button"
                   onClick={() => { setShowEditHousingModal(false); setFormError(null); }}
+                  className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold text-xs transition-colors"
+                >
+                  إلغاء
+                </button>
+                <button 
+                  type="submit" 
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-bold text-xs shadow-md flex items-center gap-1.5 transition-colors"
+                >
+                  <Save size={16} /> حفظ التعديلات
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Social Assessment Modal (تعديل بيان البحث الاجتماعي والتمكين الأسري) */}
+      {showEditSocialModal && selectedFamilyFile && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95" dir="rtl">
+            <div className="p-6 border-b flex justify-between items-center bg-slate-50 rounded-t-3xl">
+              <div className="flex items-center gap-2">
+                <Users className="text-slate-600" size={24} />
+                <div>
+                  <h3 className="font-bold text-lg text-slate-800">تعديل بيان البحث الاجتماعي والتمكين الأسري</h3>
+                  <p className="text-xs text-gray-400">للملف العائلي: {selectedFamilyFile.family_code}</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => { setShowEditSocialModal(false); setFormError(null); }}
+                className="p-1.5 hover:bg-gray-100 rounded-lg text-gray-400 hover:text-gray-600 cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateSocial} className="flex-1 overflow-y-auto p-6 space-y-6">
+              {formError && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 font-bold text-xs flex items-center gap-2">
+                  <Info size={16} />
+                  <span>{formError}</span>
+                </div>
+              )}
+
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">طبيعة دخل الأسرة</label>
+                    <select 
+                      value={socialIncomeType}
+                      onChange={(e) => setSocialIncomeType(e.target.value)}
+                      className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-slate-500 outline-none font-bold text-sm"
+                    >
+                      <option value="fixed">دخل ثابت</option>
+                      <option value="variable">دخل متغير</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">متوسط الدخل الشهري (بالجنيه)</label>
+                    <input 
+                      type="number" 
+                      min={0}
+                      value={socialMonthlyIncome}
+                      onChange={(e) => setSocialMonthlyIncome(Number(e.target.value))}
+                      className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-slate-500 outline-none font-bold text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="col-span-full">
+                    <label className="text-xs font-bold text-gray-500 block mb-1">العائل البديل (في حالة وفاة الأب)</label>
+                    <input 
+                      type="text" 
+                      value={socialBreadwinnerName}
+                      onChange={(e) => setSocialBreadwinnerName(e.target.value)}
+                      placeholder="اسم العائل البديل"
+                      className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-slate-500 outline-none font-bold text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3.5 pt-2 border-t border-gray-100 mt-4">
+                  <div className="flex items-center gap-2.5">
+                    <input 
+                      type="checkbox" 
+                      id="edit_has_chronic_diseases" 
+                      checked={socialHasChronicDiseases}
+                      onChange={(e) => setSocialHasChronicDiseases(e.target.checked)}
+                      className="w-5 h-5 text-slate-800 focus:ring-slate-500 border-gray-300 rounded cursor-pointer" 
+                    />
+                    <label htmlFor="edit_has_chronic_diseases" className="text-xs font-bold text-gray-700 cursor-pointer select-none">وجود أمراض مزمنة بالأسرة</label>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <input 
+                      type="checkbox" 
+                      id="edit_has_disabilities" 
+                      checked={socialHasDisabilities}
+                      onChange={(e) => setSocialHasDisabilities(e.target.checked)}
+                      className="w-5 h-5 text-slate-800 focus:ring-slate-500 border-gray-300 rounded cursor-pointer" 
+                    />
+                    <label htmlFor="edit_has_disabilities" className="text-xs font-bold text-gray-700 cursor-pointer select-none">وجود حالات إعاقة بالأسرة</label>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <input 
+                      type="checkbox" 
+                      id="edit_receives_pension" 
+                      checked={socialReceivesPension}
+                      onChange={(e) => setSocialReceivesPension(e.target.checked)}
+                      className="w-5 h-5 text-slate-800 focus:ring-slate-500 border-gray-300 rounded cursor-pointer" 
+                    />
+                    <label htmlFor="edit_receives_pension" className="text-xs font-bold text-gray-700 cursor-pointer select-none">الأسرة تحصل على معاش</label>
+                  </div>
+                  <div className="flex items-center gap-2.5">
+                    <input 
+                      type="checkbox" 
+                      id="edit_eligible_for_free_service" 
+                      checked={socialEligibleForFreeService}
+                      onChange={(e) => setSocialEligibleForFreeService(e.target.checked)}
+                      className="w-5 h-5 text-slate-800 focus:ring-slate-500 border-gray-300 rounded cursor-pointer" 
+                    />
+                    <label htmlFor="edit_eligible_for_free_service" className="text-xs font-bold text-gray-700 cursor-pointer select-none">الأسرة تستحق الخدمة المجانية</label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
+                <button 
+                  type="button"
+                  onClick={() => { setShowEditSocialModal(false); setFormError(null); }}
                   className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold text-xs transition-colors"
                 >
                   إلغاء
