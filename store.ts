@@ -245,12 +245,20 @@ export class DB {
     try {
       const { data, error } = await supabase.from('family_files').select('*, family_file_members(*, patients(*))').order('created_at', { ascending: false });
       if (error) { if (['42P01', 'PGRST116'].includes(error.code)) return []; throw error; }
-      return data || [];
+      return (data || []).map((file: any) => ({
+        ...file,
+        members: file.family_file_members || []
+      }));
     } catch (e) { return []; }
   }
   static async addFamilyFile(f: any) {
     const { data, error } = await supabase.from('family_files').insert([f]).select();
     if (error) return handleError(error, "فشل إنشاء الملف العائلي");
+    return data?.[0];
+  }
+  static async updateFamilyFile(id: string, f: any) {
+    const { data, error } = await supabase.from('family_files').update(f).eq('id', id).select();
+    if (error) return handleError(error, "فشل تحديث الملف العائلي");
     return data?.[0];
   }
   static async addFamilyMember(m: any) {
@@ -290,6 +298,104 @@ export class DB {
     const { data, error } = await supabase.from('patient_vitals').insert([v]).select();
     if (error) return handleError(error, "فشل تسجيل العلامات الحيوية");
     return data?.[0];
+  }
+
+  static async getPatientProblems(patientId?: string) {
+    try {
+      let query = supabase.from('patient_problem_list').select('*, patients(*)').order('onset_date', { ascending: false });
+      if (patientId) query = query.eq('patient_id', patientId);
+      const { data, error } = await query;
+      if (error) { if (['42P01'].includes(error.code)) return []; throw error; }
+      return data || [];
+    } catch (e) { return []; }
+  }
+  static async addPatientProblem(prob: any) {
+    const { data, error } = await supabase.from('patient_problem_list').insert([prob]).select();
+    if (error) return handleError(error, "فشل إضافة التاريخ المرضي");
+    return data?.[0];
+  }
+  static async deletePatientProblem(id: string) {
+    const { error } = await supabase.from('patient_problem_list').delete().eq('id', id);
+    if (error) return handleError(error, "فشل حذف التاريخ المرضي");
+    return true;
+  }
+
+  // --- Patient Deaths (بيانات الوفيات) ---
+  static async getPatientDeaths() {
+    try {
+      const { data, error } = await supabase.from('patient_deaths').select('*, patients(*)').order('death_date', { ascending: false });
+      if (error) {
+        if (['42P01', 'PGRST116', 'PGRST107'].includes(error.code)) {
+          const local = localStorage.getItem('local_patient_deaths');
+          return local ? JSON.parse(local) : [];
+        }
+        throw error;
+      }
+      return data || [];
+    } catch (e) {
+      const local = localStorage.getItem('local_patient_deaths');
+      return local ? JSON.parse(local) : [];
+    }
+  }
+
+  static async addPatientDeath(death: any) {
+    try {
+      const { data, error } = await supabase.from('patient_deaths').insert([death]).select();
+      if (error) {
+        if (['42P01', 'PGRST116', 'PGRST107'].includes(error.code)) {
+          const local = localStorage.getItem('local_patient_deaths');
+          const list = local ? JSON.parse(local) : [];
+          const newDeath = {
+            id: Math.random().toString(36).substring(2) + Date.now().toString(36),
+            ...death,
+            created_at: new Date().toISOString()
+          };
+          list.push(newDeath);
+          localStorage.setItem('local_patient_deaths', JSON.stringify(list));
+          return newDeath;
+        }
+        return handleError(error, "فشل تسجيل حالة الوفاة");
+      }
+      return data?.[0];
+    } catch (e: any) {
+      const local = localStorage.getItem('local_patient_deaths');
+      const list = local ? JSON.parse(local) : [];
+      const newDeath = {
+        id: Math.random().toString(36).substring(2) + Date.now().toString(36),
+        ...death,
+        created_at: new Date().toISOString()
+      };
+      list.push(newDeath);
+      localStorage.setItem('local_patient_deaths', JSON.stringify(list));
+      return newDeath;
+    }
+  }
+
+  static async deletePatientDeath(id: string) {
+    try {
+      const { error } = await supabase.from('patient_deaths').delete().eq('id', id);
+      if (error) {
+        if (['42P01', 'PGRST116', 'PGRST107'].includes(error.code)) {
+          const local = localStorage.getItem('local_patient_deaths');
+          if (local) {
+            let list = JSON.parse(local);
+            list = list.filter((d: any) => d.id !== id);
+            localStorage.setItem('local_patient_deaths', JSON.stringify(list));
+          }
+          return true;
+        }
+        return handleError(error, "فشل حذف حالة الوفاة");
+      }
+      return true;
+    } catch (e: any) {
+      const local = localStorage.getItem('local_patient_deaths');
+      if (local) {
+        let list = JSON.parse(local);
+        list = list.filter((d: any) => d.id !== id);
+        localStorage.setItem('local_patient_deaths', JSON.stringify(list));
+      }
+      return true;
+    }
   }
 
   // --- Accreditation Specialized Forms Generic Fetch/Save ---

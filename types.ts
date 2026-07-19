@@ -334,6 +334,16 @@ export interface FamilyFile {
   head_name?: string;
   created_at?: string;
   members?: FamilyFileMember[];
+  
+  // Housing conditions (حالة المسكن)
+  total_rooms?: number;
+  sleeping_rooms?: number;
+  ventilation?: 'good' | 'poor' | string;
+  water_source?: 'public' | 'other' | string;
+  sewage_system?: 'sanitary' | 'trench' | string;
+  lighting_type?: 'electricity' | 'other' | string;
+  has_animals_birds?: boolean;
+  barn_location?: 'inside' | 'outside' | 'none' | string;
 }
 
 export interface FamilyFileMember {
@@ -544,5 +554,17 @@ export interface DentalAssessment {
   dmft_filled?: number;
   treatment_plan?: string;
   doctor_signature?: string;
+}
+
+export interface PatientDeath {
+  id: string;
+  patient_id: string;
+  deceased_name: string;
+  age_at_death: number;
+  death_date: string;
+  death_code: string;
+  notes?: string;
+  created_at?: string;
+  patients?: Patient;
 }
 
