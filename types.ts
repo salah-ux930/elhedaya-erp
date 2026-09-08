@@ -359,9 +359,11 @@ export interface FamilyFileMember {
   id: string;
   family_file_id: string;
   patient_id: string;
+  family_individual_number?: number;
   relationship_to_head?: string;
   family_role?: string;
   is_head: boolean;
+  created_by?: string;
   patients?: Patient;
 }
 
@@ -577,3 +579,48 @@ export interface PatientDeath {
   patients?: Patient;
 }
 
+export interface HistoryPhysicalExam {
+  id: string;
+  patient_id: string;
+  exam_date: string;
+  hospitalization?: string;
+  previous_operations?: string;
+  current_medications?: string;
+  trauma_injuries?: string;
+  allergy?: string;
+  adverse_drug_reactions?: string;
+  abuse_negligence?: string;
+  psychiatric_history?: 'medical_treatment' | 'followup_with_psychiatrist' | 'irrelevant' | string;
+  psychiatric_details?: string;
+  other_history?: string;
+  special_habits?: string; // comma separated list
+  special_habits_other?: string;
+  family_history?: string; // comma separated list e.g. TB,Asthma,Cardiac...
+  family_history_other?: string;
+  lab_hemoglobin?: string;
+  lab_blood_group?: string;
+  lab_rh?: string;
+  lab_urine?: string;
+  lab_stool?: string;
+  maternal_history_notes?: string;
+  clinical_findings?: string; // JSON string of general physical examination & clinical findings
+  doctor_name?: string;
+  created_at?: string;
+  patients?: Patient;
+}
+
+export interface PatientVisit {
+  id: string;
+  patient_id: string;
+  visit_date: string;
+  visit_type: string;
+  visit_code?: number;
+  complaint?: string;
+  clinical_exam?: string;
+  investigations?: string;
+  diagnosis?: string;
+  management?: string;
+  doctor_signature?: string;
+  created_at?: string;
+  patients?: Patient;
+}

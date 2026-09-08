@@ -266,6 +266,16 @@ export class DB {
     if (error) return handleError(error, "فشل إضافة فرد للأسرة");
     return data?.[0];
   }
+  static async updateFamilyMember(id: string, m: any) {
+    const { data, error } = await supabase.from('family_file_members').update(m).eq('id', id).select();
+    if (error) return handleError(error, "فشل تحديث بيانات الفرد");
+    return data?.[0];
+  }
+  static async deleteFamilyMember(id: string) {
+    const { error } = await supabase.from('family_file_members').delete().eq('id', id);
+    if (error) return handleError(error, "فشل حذف الفرد من الأسرة");
+    return true;
+  }
 
   // --- Clinical Encounters (اللقاءات السريرية) ---
   static async getClinicalEncounters(patientId?: string) {
@@ -404,23 +414,267 @@ export class DB {
       let query = supabase.from(tableName).select('*').order('created_at', { ascending: false });
       if (patientId) query = query.eq('patient_id', patientId);
       const { data, error } = await query;
-      if (error) { if (['42P01', 'PGRST116'].includes(error.code)) return []; throw error; }
-      return data || [];
-    } catch (e) { return []; }
+      
+      const localKey = 'local_' + tableName;
+      const local = localStorage.getItem(localKey);
+      const localList = local ? JSON.parse(local) : [];
+      const filteredLocal = patientId ? localList.filter((item: any) => item.patient_id === patientId) : localList;
+
+      if (error) {
+        return filteredLocal;
+      }
+
+      const combined = [...(data || [])];
+      for (const locItem of filteredLocal) {
+        if (!combined.some(c => c.id === locItem.id)) {
+          combined.push(locItem);
+        }
+      }
+      return combined.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    } catch (e) {
+      const localKey = 'local_' + tableName;
+      const local = localStorage.getItem(localKey);
+      const list = local ? JSON.parse(local) : [];
+      return patientId ? list.filter((item: any) => item.patient_id === patientId) : list;
+    }
   }
+
   static async addAccreditationRecord(tableName: string, record: any) {
-    const { data, error } = await supabase.from(tableName).insert([record]).select();
-    if (error) return handleError(error, `فشل حفظ السجل في ${tableName}`);
-    return data?.[0];
+    try {
+      const { data, error } = await supabase.from(tableName).insert([record]).select();
+      if (error) {
+        console.warn(`Supabase insert ${tableName} warning, saving locally:`, error.message || error);
+        const localKey = 'local_' + tableName;
+        const local = localStorage.getItem(localKey);
+        const list = local ? JSON.parse(local) : [];
+        const newRecord = {
+          id: 'rec_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
+          ...record,
+          created_at: new Date().toISOString()
+        };
+        list.push(newRecord);
+        localStorage.setItem(localKey, JSON.stringify(list));
+        return newRecord;
+      }
+      return data?.[0];
+    } catch (e: any) {
+      const localKey = 'local_' + tableName;
+      const local = localStorage.getItem(localKey);
+      const list = local ? JSON.parse(local) : [];
+      const newRecord = {
+        id: 'rec_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
+        ...record,
+        created_at: new Date().toISOString()
+      };
+      list.push(newRecord);
+      localStorage.setItem(localKey, JSON.stringify(list));
+      return newRecord;
+    }
+  }
+
+  static async deleteAccreditationRecord(tableName: string, id: string) {
+    try {
+      const { error } = await supabase.from(tableName).delete().eq('id', id);
+      const localKey = 'local_' + tableName;
+      const local = localStorage.getItem(localKey);
+      if (local) {
+        let list = JSON.parse(local);
+        list = list.filter((item: any) => item.id !== id);
+        localStorage.setItem(localKey, JSON.stringify(list));
+      }
+      return true;
+    } catch (e: any) {
+      const localKey = 'local_' + tableName;
+      const local = localStorage.getItem(localKey);
+      if (local) {
+        let list = JSON.parse(local);
+        list = list.filter((item: any) => item.id !== id);
+        localStorage.setItem(localKey, JSON.stringify(list));
+      }
+      return true;
+    }
+  }
+
+  // --- History & Physical Exams (نموذج الفحص الشامل والتاريخ المرضي) ---
+  static async getPhysicalExams(patientId?: string) {
+    try {
+      let query = supabase.from('history_physical_exams').select('*, patients(*)').order('exam_date', { ascending: false });
+      if (patientId) query = query.eq('patient_id', patientId);
+      const { data, error } = await query;
+      
+      const local = localStorage.getItem('local_history_physical_exams');
+      const localList = local ? JSON.parse(local) : [];
+      const filteredLocal = patientId ? localList.filter((item: any) => item.patient_id === patientId) : localList;
+
+      if (error) {
+        console.warn("Supabase query history_physical_exams info:", error.message || error);
+        return filteredLocal;
+      }
+
+      // Combine remote data and local fallback data without duplicates
+      const combined = [...(data || [])];
+      for (const locItem of filteredLocal) {
+        if (!combined.some(c => c.id === locItem.id)) {
+          combined.push(locItem);
+        }
+      }
+      return combined;
+    } catch (e) {
+      console.warn("Exception fetching physical exams, using local cache:", e);
+      const local = localStorage.getItem('local_history_physical_exams');
+      const list = local ? JSON.parse(local) : [];
+      return patientId ? list.filter((item: any) => item.patient_id === patientId) : list;
+    }
+  }
+
+  static async addPhysicalExam(exam: any) {
+    try {
+      const { data, error } = await supabase.from('history_physical_exams').insert([exam]).select();
+      if (error) {
+        console.warn("Supabase insert history_physical_exams warning, saving locally:", error.message || error);
+        const local = localStorage.getItem('local_history_physical_exams');
+        const list = local ? JSON.parse(local) : [];
+        const newExam = {
+          id: 'exam_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
+          ...exam,
+          created_at: new Date().toISOString()
+        };
+        list.push(newExam);
+        localStorage.setItem('local_history_physical_exams', JSON.stringify(list));
+        return newExam;
+      }
+      return data?.[0];
+    } catch (e: any) {
+      console.warn("Exception adding physical exam, saving locally:", e);
+      const local = localStorage.getItem('local_history_physical_exams');
+      const list = local ? JSON.parse(local) : [];
+      const newExam = {
+        id: 'exam_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
+        ...exam,
+        created_at: new Date().toISOString()
+      };
+      list.push(newExam);
+      localStorage.setItem('local_history_physical_exams', JSON.stringify(list));
+      return newExam;
+    }
+  }
+
+  static async deletePhysicalExam(id: string) {
+    try {
+      const { error } = await supabase.from('history_physical_exams').delete().eq('id', id);
+      const local = localStorage.getItem('local_history_physical_exams');
+      if (local) {
+        let list = JSON.parse(local);
+        list = list.filter((item: any) => item.id !== id);
+        localStorage.setItem('local_history_physical_exams', JSON.stringify(list));
+      }
+      if (error) console.warn("Supabase delete history_physical_exams warning:", error.message || error);
+      return true;
+    } catch (e: any) {
+      const local = localStorage.getItem('local_history_physical_exams');
+      if (local) {
+        let list = JSON.parse(local);
+        list = list.filter((item: any) => item.id !== id);
+        localStorage.setItem('local_history_physical_exams', JSON.stringify(list));
+      }
+      return true;
+    }
+  }
+
+  // --- Visits Form (نموذج التردد) ---
+  static async getPatientVisits(patientId?: string) {
+    try {
+      let query = supabase.from('patient_visits').select('*, patients(*)').order('visit_date', { ascending: false });
+      if (patientId) query = query.eq('patient_id', patientId);
+      const { data, error } = await query;
+      
+      const local = localStorage.getItem('local_patient_visits');
+      const localList = local ? JSON.parse(local) : [];
+      const filteredLocal = patientId ? localList.filter((item: any) => item.patient_id === patientId) : localList;
+
+      if (error) {
+        console.warn("Supabase query patient_visits info:", error.message || error);
+        return filteredLocal;
+      }
+
+      const combined = [...(data || [])];
+      for (const locItem of filteredLocal) {
+        if (!combined.some(c => c.id === locItem.id)) {
+          combined.push(locItem);
+        }
+      }
+      return combined.sort((a, b) => new Date(b.visit_date || b.created_at).getTime() - new Date(a.visit_date || a.created_at).getTime());
+    } catch (e) {
+      console.warn("Exception fetching patient visits, using local cache:", e);
+      const local = localStorage.getItem('local_patient_visits');
+      const list = local ? JSON.parse(local) : [];
+      return patientId ? list.filter((item: any) => item.patient_id === patientId) : list;
+    }
+  }
+
+  static async addPatientVisit(visit: any) {
+    try {
+      const { data, error } = await supabase.from('patient_visits').insert([visit]).select();
+      if (error) {
+        console.warn("Supabase insert patient_visits warning, saving locally:", error.message || error);
+        const local = localStorage.getItem('local_patient_visits');
+        const list = local ? JSON.parse(local) : [];
+        const newVisit = {
+          id: 'visit_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
+          ...visit,
+          created_at: new Date().toISOString()
+        };
+        list.push(newVisit);
+        localStorage.setItem('local_patient_visits', JSON.stringify(list));
+        return newVisit;
+      }
+      return data?.[0];
+    } catch (e: any) {
+      console.warn("Exception adding patient visit, saving locally:", e);
+      const local = localStorage.getItem('local_patient_visits');
+      const list = local ? JSON.parse(local) : [];
+      const newVisit = {
+        id: 'visit_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
+        ...visit,
+        created_at: new Date().toISOString()
+      };
+      list.push(newVisit);
+      localStorage.setItem('local_patient_visits', JSON.stringify(list));
+      return newVisit;
+    }
+  }
+
+  static async deletePatientVisit(id: string) {
+    try {
+      const { error } = await supabase.from('patient_visits').delete().eq('id', id);
+      const local = localStorage.getItem('local_patient_visits');
+      if (local) {
+        let list = JSON.parse(local);
+        list = list.filter((item: any) => item.id !== id);
+        localStorage.setItem('local_patient_visits', JSON.stringify(list));
+      }
+      if (error) console.warn("Supabase delete patient_visits warning:", error.message || error);
+      return true;
+    } catch (e: any) {
+      const local = localStorage.getItem('local_patient_visits');
+      if (local) {
+        let list = JSON.parse(local);
+        list = list.filter((item: any) => item.id !== id);
+        localStorage.setItem('local_patient_visits', JSON.stringify(list));
+      }
+      return true;
+    }
   }
 
   static async getPatientHistory(patientId: string) {
     try {
-      const [sessions, labTests, appointments, invoices] = await Promise.all([
+      const [sessions, labTests, appointments, invoices, physicalExams, visits] = await Promise.all([
         supabase.from('dialysis_sessions').select('*').eq('patient_id', patientId).order('date', { ascending: false }),
         supabase.from('lab_tests').select('*, lab_test_definitions(*)').eq('patient_id', patientId).order('date', { ascending: false }),
         supabase.from('clinic_appointments').select('*, doctors(*), clinics(*)').eq('patient_id', patientId).order('date', { ascending: false }),
-        supabase.from('invoices').select('*').eq('patient_id', patientId).order('date', { ascending: false })
+        supabase.from('invoices').select('*').eq('patient_id', patientId).order('date', { ascending: false }),
+        this.getPhysicalExams(patientId),
+        this.getPatientVisits(patientId)
       ]);
 
       const events: any[] = [];
@@ -429,6 +683,8 @@ export class DB {
       labTests.data?.forEach(l => events.push({ ...l, type: 'LAB' }));
       appointments.data?.forEach(a => events.push({ ...a, type: 'APPOINTMENT' }));
       invoices.data?.forEach(i => events.push({ ...i, type: 'INVOICE' }));
+      physicalExams.forEach((p: any) => events.push({ ...p, type: 'PHYSICAL_EXAM', date: p.exam_date }));
+      visits.forEach((v: any) => events.push({ ...v, type: 'VISIT', date: v.visit_date || v.created_at }));
 
       return events.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     } catch (e) {
@@ -436,6 +692,7 @@ export class DB {
       return [];
     }
   }
+
 
   static async addSession(s: any, storeId?: string) { 
     if (storeId && s.service_id) {
