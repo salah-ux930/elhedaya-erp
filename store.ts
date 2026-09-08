@@ -410,89 +410,32 @@ export class DB {
 
   // --- Accreditation Specialized Forms Generic Fetch/Save ---
   static async getAccreditationRecords(tableName: string, patientId?: string) {
-    try {
-      let query = supabase.from(tableName).select('*').order('created_at', { ascending: false });
-      if (patientId) query = query.eq('patient_id', patientId);
-      const { data, error } = await query;
-      
-      const localKey = 'local_' + tableName;
-      const local = localStorage.getItem(localKey);
-      const localList = local ? JSON.parse(local) : [];
-      const filteredLocal = patientId ? localList.filter((item: any) => item.patient_id === patientId) : localList;
-
-      if (error) {
-        return filteredLocal;
-      }
-
-      const combined = [...(data || [])];
-      for (const locItem of filteredLocal) {
-        if (!combined.some(c => c.id === locItem.id)) {
-          combined.push(locItem);
-        }
-      }
-      return combined.sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
-    } catch (e) {
-      const localKey = 'local_' + tableName;
-      const local = localStorage.getItem(localKey);
-      const list = local ? JSON.parse(local) : [];
-      return patientId ? list.filter((item: any) => item.patient_id === patientId) : list;
+    let query = supabase.from(tableName).select('*').order('created_at', { ascending: false });
+    if (patientId) query = query.eq('patient_id', patientId);
+    const { data, error } = await query;
+    if (error) {
+      throw new Error(`فشل استعلام سجلات جدول (${tableName}) من قاعدة البيانات: ${error.message || JSON.stringify(error)}`);
     }
+    return data || [];
   }
 
   static async addAccreditationRecord(tableName: string, record: any) {
-    try {
-      const { data, error } = await supabase.from(tableName).insert([record]).select();
-      if (error) {
-        console.warn(`Supabase insert ${tableName} warning, saving locally:`, error.message || error);
-        const localKey = 'local_' + tableName;
-        const local = localStorage.getItem(localKey);
-        const list = local ? JSON.parse(local) : [];
-        const newRecord = {
-          id: 'rec_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
-          ...record,
-          created_at: new Date().toISOString()
-        };
-        list.push(newRecord);
-        localStorage.setItem(localKey, JSON.stringify(list));
-        return newRecord;
-      }
-      return data?.[0];
-    } catch (e: any) {
-      const localKey = 'local_' + tableName;
-      const local = localStorage.getItem(localKey);
-      const list = local ? JSON.parse(local) : [];
-      const newRecord = {
-        id: 'rec_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
-        ...record,
-        created_at: new Date().toISOString()
-      };
-      list.push(newRecord);
-      localStorage.setItem(localKey, JSON.stringify(list));
-      return newRecord;
+    const { data, error } = await supabase.from(tableName).insert([record]).select();
+    if (error) {
+      throw new Error(`فشل حفظ السجل في جدول (${tableName}) في قاعدة البيانات: ${error.message || JSON.stringify(error)}`);
     }
+    if (!data || data.length === 0) {
+      throw new Error(`فشل استلام تأكيد الحفظ من جدول (${tableName}) في قاعدة البيانات`);
+    }
+    return data[0];
   }
 
   static async deleteAccreditationRecord(tableName: string, id: string) {
-    try {
-      const { error } = await supabase.from(tableName).delete().eq('id', id);
-      const localKey = 'local_' + tableName;
-      const local = localStorage.getItem(localKey);
-      if (local) {
-        let list = JSON.parse(local);
-        list = list.filter((item: any) => item.id !== id);
-        localStorage.setItem(localKey, JSON.stringify(list));
-      }
-      return true;
-    } catch (e: any) {
-      const localKey = 'local_' + tableName;
-      const local = localStorage.getItem(localKey);
-      if (local) {
-        let list = JSON.parse(local);
-        list = list.filter((item: any) => item.id !== id);
-        localStorage.setItem(localKey, JSON.stringify(list));
-      }
-      return true;
+    const { error } = await supabase.from(tableName).delete().eq('id', id);
+    if (error) {
+      throw new Error(`فشل حذف السجل من جدول (${tableName}) في قاعدة البيانات: ${error.message || JSON.stringify(error)}`);
     }
+    return true;
   }
 
   // --- History & Physical Exams (نموذج الفحص الشامل والتاريخ المرضي) ---

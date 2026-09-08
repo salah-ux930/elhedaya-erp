@@ -3,12 +3,13 @@ import React, { useState, useEffect } from 'react';
 import { AR, BLOOD_TYPES, calculateAge, ROOMS } from '../constants.ts';
 import { DB } from '../store.ts';
 import PatientTimeline from '../components/PatientTimeline.tsx';
+import FamilyComprehensiveHealthRecordModal from '../components/FamilyComprehensiveHealthRecordModal.tsx';
 import { Patient, FundingEntity, DialysisSession, Service, Store } from '../types.ts';
 import { 
   Plus, Search, UserPlus, History, Phone, FileText, Loader2, 
   Calendar as CalendarIcon, X, User, Activity, MapPin, 
   Droplets, CreditCard, ShieldCheck, HeartPulse, Clock, FilePlus, Scale, CheckCircle, Package, ListChecks,
-  Users, Info
+  Users, Info, Stethoscope
 } from 'lucide-react';
 
 const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab }) => {
@@ -19,6 +20,11 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+
+  // Comprehensive Health Record Modal States
+  const [showComprehensiveModal, setShowComprehensiveModal] = useState(false);
+  const [comprehensivePatient, setComprehensivePatient] = useState<Patient | null>(null);
+  const [comprehensiveFamilyFile, setComprehensiveFamilyFile] = useState<any | null>(null);
 
   // Family Files linking states
   const [addToFamilyFile, setAddToFamilyFile] = useState(false);
@@ -42,6 +48,15 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
       setFundingEntities(fe || []);
       setFamilyFiles(ff || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
+  };
+
+  const handleOpenComprehensiveRecord = (p: Patient) => {
+    const linkedFile = familyFiles.find(ff => 
+      ff.members?.some((m: any) => m.patient_id === p.id || m.patients?.id === p.id)
+    );
+    setComprehensivePatient(p);
+    setComprehensiveFamilyFile(linkedFile || null);
+    setShowComprehensiveModal(true);
   };
 
   const handleAddPatient = async (e: React.FormEvent) => {
@@ -131,21 +146,70 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
               <table className="w-full text-right">
                 <thead className="bg-gray-50 border-b">
                   <tr>
-                    <th className="px-8 py-4 font-black text-xs text-gray-400">الاسم</th>
-                    <th className="px-8 py-4 font-black text-xs text-gray-400">الهاتف</th>
-                    <th className="px-8 py-4 font-black text-xs text-gray-400">جهة التعاقد</th>
+                    <th className="px-6 py-4 font-black text-xs text-gray-400">الاسم والبيانات</th>
+                    <th className="px-6 py-4 font-black text-xs text-gray-400">الهاتف</th>
+                    <th className="px-6 py-4 font-black text-xs text-gray-400">جهة التعاقد</th>
+                    <th className="px-6 py-4 font-black text-xs text-gray-400">الملف العائلي</th>
+                    <th className="px-6 py-4 font-black text-xs text-gray-400 text-center">السجلات والملفات الطبية</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {patients.filter(p => p.name.includes(searchTerm)).map(p => (
-                    <tr key={p.id} className="hover:bg-gray-50 cursor-pointer" onClick={() => { setSelectedPatient(p); setView('details'); }}>
-                      <td className="px-8 py-4 font-bold">{p.name}</td>
-                      <td className="px-8 py-4 font-mono">{p.phone}</td>
-                      <td className="px-8 py-4 text-xs font-bold text-primary-600">
-                        {fundingEntities.find(fe => fe.id === p.funding_entity_id)?.name || 'نقدي'}
-                      </td>
-                    </tr>
-                  ))}
+                  {patients.filter(p => p.name.includes(searchTerm) || (p.national_id && p.national_id.includes(searchTerm))).map(p => {
+                    const linkedFile = familyFiles.find(ff => 
+                      ff.members?.some((m: any) => m.patient_id === p.id || m.patients?.id === p.id)
+                    );
+
+                    return (
+                      <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-6 py-4">
+                          <button 
+                            onClick={() => handleOpenComprehensiveRecord(p)}
+                            className="font-black text-slate-900 text-sm hover:text-indigo-600 transition-colors text-right flex flex-col items-start"
+                            title="فتح الملف الصحي الشامل"
+                          >
+                            <span>{p.name}</span>
+                            <span className="text-[11px] text-slate-400 font-mono mt-0.5">{p.national_id || '—'}</span>
+                          </button>
+                        </td>
+                        <td className="px-6 py-4 font-mono text-xs text-slate-600">{p.phone}</td>
+                        <td className="px-6 py-4 text-xs font-bold text-primary-600">
+                          {fundingEntities.find(fe => fe.id === p.funding_entity_id)?.name || 'نقدي'}
+                        </td>
+                        <td className="px-6 py-4">
+                          {linkedFile ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] font-black px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                              <Users size={12} /> {linkedFile.family_code}
+                            </span>
+                          ) : (
+                            <span className="text-[11px] text-slate-400 font-bold">غير مرتبط</span>
+                          )}
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex items-center justify-center gap-2">
+                            {/* المسار الأساسي: الملف الصحي الشامل */}
+                            <button
+                              onClick={() => handleOpenComprehensiveRecord(p)}
+                              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all"
+                              title="فتح الملف الصحي الشامل (10 موديولات سريرية معتمدة)"
+                            >
+                              <Stethoscope size={14} />
+                              <span>الملف الصحي الشامل</span>
+                            </button>
+
+                            {/* المسار المخصص: جلسات الغسيل الكلوي */}
+                            <button
+                              onClick={() => { setSelectedPatient(p); setView('details'); }}
+                              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200"
+                              title="عرض سجل وتاريخ جلسات الغسيل الكلوي"
+                            >
+                              <Activity size={14} className="text-primary-600" />
+                              <span>سجل جلسات الغسيل</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -296,6 +360,20 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
         <div className="animate-in fade-in h-full">
            <PatientTimeline patient={selectedPatient} onClose={() => { setSelectedPatient(null); setView('list'); }} />
         </div>
+      )}
+
+      {/* مودال الملف الصحي الشامل (10 موديولات معتمدة) */}
+      {showComprehensiveModal && comprehensivePatient && (
+        <FamilyComprehensiveHealthRecordModal
+          isOpen={showComprehensiveModal}
+          onClose={() => {
+            setShowComprehensiveModal(false);
+            setComprehensivePatient(null);
+            setComprehensiveFamilyFile(null);
+          }}
+          patient={comprehensivePatient}
+          familyFile={comprehensiveFamilyFile || undefined}
+        />
       )}
     </div>
   );

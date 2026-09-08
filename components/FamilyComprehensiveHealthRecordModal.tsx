@@ -17,6 +17,7 @@ interface Props {
   patient: any;
   familyFile?: any;
   initialModule?: string;
+  initialModuleId?: string;
   onRefresh?: () => void;
 }
 
@@ -25,7 +26,8 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   onClose,
   patient,
   familyFile,
-  initialModule = 'history',
+  initialModule,
+  initialModuleId,
   onRefresh
 }) => {
   if (!isOpen || !patient) return null;
@@ -51,7 +53,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   const isReproductiveAge = isFemale && age !== null && age >= 15 && age <= 49;
 
   // Active Module Tab
-  const [activeTab, setActiveTab] = useState<string>(initialModule);
+  const [activeTab, setActiveTab] = useState<string>(initialModule || initialModuleId || 'history');
 
   // Modals for sub-components
   const [showHistoryExamModal, setShowHistoryExamModal] = useState(false);
@@ -74,9 +76,37 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   // Sub-forms open state (Add new records)
   const [showAddForm, setShowAddForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [statusBanner, setStatusBanner] = useState<{ type: 'error' | 'success', message: string } | null>(null);
+
+  const showNotification = (type: 'error' | 'success', message: string) => {
+    setStatusBanner({ type, message });
+    if (type === 'success') {
+      setTimeout(() => {
+        setStatusBanner((prev) => (prev?.message === message ? null : prev));
+      }, 5000);
+    }
+  };
+
+  const handleDeleteRecord = async (tableName: string, id: string, recordLabel: string) => {
+    if (!window.confirm(`هل أنت متأكد من حذف ${recordLabel} نهائياً من قاعدة البيانات المركزية؟`)) return;
+    try {
+      await DB.deleteAccreditationRecord(tableName, id);
+      showNotification('success', `تم حذف ${recordLabel} بنجاح من قاعدة البيانات.`);
+      loadAllData();
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      console.error("Delete error:", err);
+      const errMsg = err?.message || "تعذر الحذف من قاعدة البيانات";
+      const userMessage = `فشل حذف البيانات من قاعدة البيانات. لم يتم الحذف. تفاصيل الخطأ: ${errMsg}`;
+      showNotification('error', userMessage);
+      alert(userMessage);
+    }
+  };
 
   const loadAllData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [
         examsData,
@@ -112,8 +142,11 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
       setPremaritalRecords(premaritalData || []);
       setGeriatricRecords(geriatricData || []);
       setDentalRecords(dentalData || []);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Error loading patient comprehensive record:", e);
+      const msg = e?.message || "تعذر الاتصال بقاعدة البيانات لتحميل السجلات.";
+      setLoadError(msg);
+      showNotification('error', `تعذر تحميل السجلات الطبية من قاعدة البيانات: ${msg}`);
     } finally {
       setLoading(false);
     }
@@ -128,111 +161,154 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
     window.print();
   };
 
-  // Module definitions with conditional tags
-  const modulesList = [
+  // Count calculations for modules
+  const significantEventsCount = physicalExams.reduce((sum, exam) => {
+    try {
+      const parsed = typeof exam.significant_events === 'string' 
+        ? JSON.parse(exam.significant_events) 
+        : exam.significant_events;
+      return sum + (Array.isArray(parsed) ? parsed.filter((e: any) => e && (e.description || e.date)).length : 0);
+    } catch {
+      return sum;
+    }
+  }, 0);
+
+  // 3 Organized Groups for the 10 Clinical Modules
+  const moduleGroups = [
     {
-      id: 'history',
-      number: '١',
-      title: 'التاريخ المرضي والصحي',
-      subtitle: 'Medical History Sheet',
-      icon: Shield,
-      color: 'purple',
-      badge: 'عام لجميع الأعمار',
-      available: true
+      id: 'general',
+      title: 'عام لكل الأعمار',
+      subtitle: 'العام والمشترك',
+      modules: [
+        {
+          id: 'history',
+          number: '١',
+          title: 'التاريخ المرضي والصحي',
+          subtitle: 'Medical History Sheet',
+          icon: Shield,
+          color: 'purple',
+          badge: 'عام لجميع الأعمار',
+          available: true,
+          count: physicalExams.length
+        },
+        {
+          id: 'significant',
+          number: '٢',
+          title: 'ملخص الأحداث الهامة',
+          subtitle: 'Significant Data Sheet',
+          icon: ClipboardList,
+          color: 'amber',
+          badge: 'سجل الأمراض والمحطات',
+          available: true,
+          count: significantEventsCount
+        },
+        {
+          id: 'clinical',
+          number: '٣',
+          title: 'الفحص السريري والعلامات الحيوية',
+          subtitle: 'Clinical Findings & Vitals',
+          icon: Activity,
+          color: 'indigo',
+          badge: 'فحص أجهزة الجسم',
+          available: true,
+          count: physicalExams.length
+        },
+        {
+          id: 'visits',
+          number: '٤',
+          title: 'نموذج التردد والزيارات',
+          subtitle: 'Patient Visits Form',
+          icon: FileText,
+          color: 'teal',
+          badge: 'سجل العيادة اليومي',
+          available: true,
+          count: visits.length
+        },
+        {
+          id: 'dental',
+          number: '١٠',
+          title: 'طب وصحة الفم والأسنان',
+          subtitle: 'Oral & Dental Health',
+          icon: Smile,
+          color: 'blue',
+          badge: 'فحص الفم ومؤشر DMFT',
+          available: true,
+          count: dentalRecords.length
+        }
+      ]
     },
     {
-      id: 'significant',
-      number: '٢',
-      title: 'ملخص الأحداث الهامة',
-      subtitle: 'Significant Data Sheet',
-      icon: ClipboardList,
-      color: 'amber',
-      badge: 'سجل الأمراض والمحطات',
-      available: true
+      id: 'demographic',
+      title: 'حسب الفئة العمرية / النوع',
+      subtitle: 'فئات مخصصة',
+      modules: [
+        {
+          id: 'child',
+          number: '٥',
+          title: 'صحة ورعاية الطفل والنمو',
+          subtitle: 'Child Health & Growth',
+          icon: Baby,
+          color: 'emerald',
+          badge: isChild ? 'متاح (< 18 سنة)' : 'خاص بالأطفال (< 18 سنة)',
+          available: isChild,
+          reason: 'يتاح للأفراد دون سن 18 عاماً فقط',
+          count: childUnder5Records.length + childOver5Records.length
+        },
+        {
+          id: 'maternal',
+          number: '٦',
+          title: 'رعاية الأمومة والحوامل والنفاس',
+          subtitle: 'Maternal ANC & Postpartum',
+          icon: HeartHandshake,
+          color: 'rose',
+          badge: isFemale ? 'متاح (إناث)' : 'خاص بالإناث فقط',
+          available: isFemale,
+          reason: 'يتاح للإناث فقط',
+          count: ancRecords.length + postpartumRecords.length
+        },
+        {
+          id: 'family_planning',
+          number: '٧',
+          title: 'تنظيم الأسرة والصحة الإنجابية',
+          subtitle: 'Family Planning',
+          icon: Sparkles,
+          color: 'pink',
+          badge: isReproductiveAge ? 'متاح (15 - 49 سنة)' : (isFemale ? 'سن الإنجاب (15-49)' : 'خاص بالإناث'),
+          available: isFemale,
+          reason: 'يتاح للإناث في سن الإنجاب',
+          count: familyPlanningRecords.length
+        },
+        {
+          id: 'geriatric',
+          number: '٩',
+          title: 'رعاية كبار السن والمسنين',
+          subtitle: 'Geriatric Assessment',
+          icon: Clock,
+          color: 'amber',
+          badge: isElderly ? 'متاح (≥ 60 سنة)' : 'خاص بالمسنين (≥ 60)',
+          available: isElderly,
+          reason: 'يتاح للمسنين من سن 60 عاماً فأكثر',
+          count: geriatricRecords.length
+        }
+      ]
     },
     {
-      id: 'clinical',
-      number: '٣',
-      title: 'الفحص السريري والعلامات الحيوية',
-      subtitle: 'Clinical Findings & Vitals',
-      icon: Activity,
-      color: 'indigo',
-      badge: 'فحص أجهزة الجسم',
-      available: true
-    },
-    {
-      id: 'visits',
-      number: '٤',
-      title: 'نموذج التردد والزيارات',
-      subtitle: 'Patient Visits Form',
-      icon: FileText,
-      color: 'teal',
-      badge: 'سجل العيادة اليومي',
-      available: true
-    },
-    {
-      id: 'child',
-      number: '٥',
-      title: 'صحة ورعاية الطفل والنمو',
-      subtitle: 'Child Health & Growth',
-      icon: Baby,
-      color: 'emerald',
-      badge: isChild ? 'متاح (< 18 سنة)' : 'خاص بالأطفال (< 18 سنة)',
-      available: isChild,
-      reason: 'يتاح للأفراد دون سن 18 عاماً فقط'
-    },
-    {
-      id: 'maternal',
-      number: '٦',
-      title: 'رعاية الأمومة والحوامل والنفاس',
-      subtitle: 'Maternal ANC & Postpartum',
-      icon: HeartHandshake,
-      color: 'rose',
-      badge: isFemale ? 'متاح (إناث)' : 'خاص بالإناث فقط',
-      available: isFemale,
-      reason: 'يتاح للإناث فقط'
-    },
-    {
-      id: 'family_planning',
-      number: '٧',
-      title: 'تنظيم الأسرة والصحة الإنجابية',
-      subtitle: 'Family Planning',
-      icon: Sparkles,
-      color: 'pink',
-      badge: isReproductiveAge ? 'متاح (15 - 49 سنة)' : (isFemale ? 'سن الإنجاب (15-49)' : 'خاص بالإناث'),
-      available: isFemale,
-      reason: 'يتاح للإناث في سن الإنجاب'
-    },
-    {
-      id: 'premarital',
-      number: '٨',
-      title: 'فحص المقبلين على الزواج',
-      subtitle: 'Premarital Screening',
-      icon: HeartHandshake,
-      color: 'cyan',
-      badge: 'مشورة وفحص وراثي',
-      available: true
-    },
-    {
-      id: 'geriatric',
-      number: '٩',
-      title: 'رعاية كبار السن والمسنين',
-      subtitle: 'Geriatric Assessment',
-      icon: Clock,
-      color: 'amber',
-      badge: isElderly ? 'متاح (≥ 60 سنة)' : 'خاص بالمسنين (≥ 60)',
-      available: isElderly,
-      reason: 'يتاح للمسنين من سن 60 عاماً فأكثر'
-    },
-    {
-      id: 'dental',
-      number: '١٠',
-      title: 'طب وصحة الفم والأسنان',
-      subtitle: 'Oral & Dental Health',
-      icon: Smile,
-      color: 'blue',
-      badge: 'فحص الفم ومؤشر DMFT',
-      available: true
+      id: 'specialized',
+      title: 'خاص',
+      subtitle: 'بروتوكول نوعي',
+      modules: [
+        {
+          id: 'premarital',
+          number: '٨',
+          title: 'فحص المقبلين على الزواج',
+          subtitle: 'Premarital Screening',
+          icon: HeartHandshake,
+          color: 'cyan',
+          badge: 'مشورة وفحص وراثي',
+          available: true,
+          count: premaritalRecords.length
+        }
+      ]
     }
   ];
 
@@ -281,51 +357,128 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           </div>
         </div>
 
-        {/* 10 Modules Navigation Tabs with conditional states */}
-        <div className="bg-white border-b border-slate-200 p-2 overflow-x-auto shrink-0">
-          <div className="flex items-center gap-1.5 min-w-max">
-            {modulesList.map((mod) => {
-              const Icon = mod.icon;
-              const isActive = activeTab === mod.id;
-              const isAllowed = mod.available;
+        {/* 10 Modules Navigation Tabs grouped into 3 categories */}
+        <div className="bg-slate-100/80 border-b border-slate-200 p-2.5 overflow-x-auto shrink-0">
+          <div className="flex items-stretch gap-2.5 min-w-max">
+            {moduleGroups.map((grp) => (
+              <div key={grp.id} className="bg-white rounded-2xl border border-slate-200/90 p-2 flex flex-col gap-1.5 shadow-sm">
+                <div className="flex items-center justify-between px-2 text-[10px] font-black text-slate-500">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                    {grp.title}
+                  </span>
+                  <span className="text-[9px] text-slate-400 font-bold">{grp.subtitle}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {grp.modules.map((mod) => {
+                    const Icon = mod.icon;
+                    const isActive = activeTab === mod.id;
+                    const isAllowed = mod.available;
 
-              return (
-                <button
-                  key={mod.id}
-                  disabled={!isAllowed}
-                  onClick={() => {
-                    setActiveTab(mod.id);
-                    setShowAddForm(false);
-                  }}
-                  className={`px-3 py-2 rounded-2xl text-xs font-black transition-all flex items-center gap-2 ${
-                    isActive
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 scale-[1.02]'
-                      : isAllowed
-                      ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                      : 'bg-slate-100/50 text-slate-400 opacity-60 cursor-not-allowed'
-                  }`}
-                  title={!isAllowed ? mod.reason : mod.title}
-                >
-                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black ${
-                    isActive ? 'bg-white/20 text-white' : 'bg-white text-slate-700 border border-slate-200'
-                  }`}>
-                    {mod.number}
-                  </div>
-                  <Icon size={14} className={isActive ? 'text-white' : 'text-indigo-600'} />
-                  <span>{mod.title}</span>
-                  {!isAllowed && (
-                    <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-normal">
-                      غير منطبق
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+                    return (
+                      <button
+                        key={mod.id}
+                        disabled={!isAllowed}
+                        onClick={() => {
+                          setActiveTab(mod.id);
+                          setShowAddForm(false);
+                        }}
+                        className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
+                          isActive
+                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 scale-[1.02]'
+                            : isAllowed
+                            ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/70'
+                            : 'bg-slate-100/50 text-slate-400 opacity-60 cursor-not-allowed border border-transparent'
+                        }`}
+                        title={!isAllowed ? mod.reason : mod.title}
+                      >
+                        <div className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
+                          isActive ? 'bg-white/20 text-white' : 'bg-white text-slate-700 border border-slate-200'
+                        }`}>
+                          {mod.number}
+                        </div>
+                        <Icon size={14} className={isActive ? 'text-white' : 'text-indigo-600 shrink-0'} />
+                        <span className="whitespace-nowrap">{mod.title}</span>
+                        {mod.count > 0 ? (
+                          <span className={`text-[10px] font-mono font-black px-1.5 py-0.2 rounded-full ${
+                            isActive ? 'bg-white/30 text-white' : 'bg-indigo-100 text-indigo-800'
+                          }`}>
+                            ({mod.count})
+                          </span>
+                        ) : (
+                          <span className="text-[10px] font-mono text-slate-300">
+                            (0)
+                          </span>
+                        )}
+                        {!isAllowed && (
+                          <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-normal shrink-0">
+                            غير منطبق
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
         {/* Module Content Body */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6">
+          {/* Status Message Notification Banner */}
+          {statusBanner && (
+            <div
+              className={`p-4 rounded-2xl flex items-start justify-between gap-3 shadow-sm border-2 animate-in fade-in ${
+                statusBanner.type === 'error'
+                  ? 'bg-red-50 border-red-300 text-red-900'
+                  : 'bg-emerald-50 border-emerald-300 text-emerald-950'
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                {statusBanner.type === 'error' ? (
+                  <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
+                ) : (
+                  <CheckCircle2 className="text-emerald-600 shrink-0 mt-0.5" size={20} />
+                )}
+                <div>
+                  <p className="font-black text-sm">
+                    {statusBanner.type === 'error' ? 'تنبيه: فشلت العملية في قاعدة البيانات' : 'تمت العملية بنجاح'}
+                  </p>
+                  <p className="text-xs font-bold mt-0.5 whitespace-pre-wrap">{statusBanner.message}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStatusBanner(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg shrink-0 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+
+          {/* Persistent Database Load Error Banner */}
+          {loadError && (
+            <div className="p-4 bg-red-50 border-2 border-red-300 rounded-2xl text-red-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
+                <div>
+                  <p className="font-black text-sm">تعذر استرجاع بيانات السجل الطبي من قاعدة البيانات المركزية</p>
+                  <p className="text-xs text-red-800 font-mono mt-0.5">{loadError}</p>
+                  <p className="text-[11px] text-red-600 mt-1 font-bold">تم إيقاف العرض المحلي تفادياً لعرض بيانات غير متزامنة مع السيرفر.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={loadAllData}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black shadow transition-all shrink-0 cursor-pointer"
+              >
+                إعادة المحاولة
+              </button>
+            </div>
+          )}
+
           {loading ? (
             <div className="py-20 text-center text-slate-400 font-bold">
               جاري تحميل بيانات السجل الصحي الشامل...
@@ -682,7 +835,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         setSubmitting(true);
                         const t = e.target as any;
                         try {
-                          await DB.addAccreditationRecord('child_under5_followups', {
+                          const saved = await DB.addAccreditationRecord('child_under5_followups', {
                             patient_id: patient.id,
                             age_months: Number(t.age_months.value) || 0,
                             weight_kg: Number(t.weight_kg.value) || null,
@@ -695,12 +848,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             clinical_assessment: t.clinical_assessment.value || null,
                             doctor_signature: t.doctor_signature.value || null
                           });
-                          alert("تم حفظ سجل متابعة الطفل بنجاح");
+                          if (!saved || !saved.id) {
+                            throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
+                          }
+                          showNotification('success', "تم حفظ فحص نمو الطفل بنجاح في قاعدة البيانات المركزية.");
                           setShowAddForm(false);
                           loadAllData();
                           if (onRefresh) onRefresh();
                         } catch (err: any) {
-                          alert(err.message || "خطأ أثناء الحفظ");
+                          console.error("Save error child_under5_followups:", err);
+                          const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
+                          const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
+                          showNotification('error', userMsg);
+                          alert(userMsg);
                         } finally {
                           setSubmitting(false);
                         }
@@ -766,13 +926,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                       <div className="flex justify-end gap-2">
                         <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">إلغاء</button>
                         <button type="submit" disabled={submitting} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black shadow-md">
-                          {submitting ? 'جاري الحفظ...' : 'حفظ الفحص'}
+                          {submitting ? 'جاري الحفظ في قاعدة البيانات...' : 'حفظ الفحص'}
                         </button>
                       </div>
                     </form>
                   )}
 
-                  {childUnder5Records.length === 0 ? (
+                  {loadError ? (
+                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
+                      <AlertCircle className="mx-auto text-red-500" size={28} />
+                      <p className="text-sm font-black">تعذر استرجاع سجلات متابعة نمو الطفل من قاعدة البيانات</p>
+                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                    </div>
+                  ) : childUnder5Records.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
                       لا توجد سجلات متابعة نمو مسجلة للطفل حتى الآن. اضغط على الزر أعلاه لإضافة فحص.
                     </div>
@@ -787,6 +953,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             <th className="p-3">الرضاعة والتغذية</th>
                             <th className="p-3">التطعيمات والفيتامينات</th>
                             <th className="p-3">التقييم والتوقيع</th>
+                            <th className="p-3 text-center">إجراءات</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-bold">
@@ -817,6 +984,16 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               <td className="p-3">
                                 <div className="text-slate-900">{c.clinical_assessment || 'سليم'}</div>
                                 <div className="text-slate-500 text-[11px]">{c.doctor_signature ? `د/ ${c.doctor_signature}` : ''}</div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRecord('child_under5_followups', c.id, 'فحص نمو الطفل')}
+                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                  title="حذف السجل"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -856,7 +1033,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         setSubmitting(true);
                         const t = e.target as any;
                         try {
-                          await DB.addAccreditationRecord('maternal_antenatal_followups', {
+                          const saved = await DB.addAccreditationRecord('maternal_antenatal_followups', {
                             patient_id: patient.id,
                             gravida: Number(t.gravida.value) || 0,
                             para: Number(t.para.value) || 0,
@@ -874,12 +1051,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             next_visit_date: t.next_visit_date.value || null,
                             doctor_signature: t.doctor_signature.value || null
                           });
-                          alert("تم حفظ سجل متابعة الحمل بنجاح");
+                          if (!saved || !saved.id) {
+                            throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
+                          }
+                          showNotification('success', "تم حفظ سجل متابعة الحمل (ANC) بنجاح في قاعدة البيانات المركزية.");
                           setShowAddForm(false);
                           loadAllData();
                           if (onRefresh) onRefresh();
                         } catch (err: any) {
-                          alert(err.message || "خطأ أثناء الحفظ");
+                          console.error("Save error maternal_antenatal_followups:", err);
+                          const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
+                          const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
+                          showNotification('error', userMsg);
+                          alert(userMsg);
                         } finally {
                           setSubmitting(false);
                         }
@@ -965,13 +1149,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                       <div className="flex justify-end gap-2">
                         <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">إلغاء</button>
                         <button type="submit" disabled={submitting} className="px-6 py-2 bg-rose-600 text-white rounded-xl text-xs font-black shadow-md">
-                          {submitting ? 'جاري الحفظ...' : 'حفظ سجل الحمل'}
+                          {submitting ? 'جاري الحفظ في قاعدة البيانات...' : 'حفظ سجل الحمل'}
                         </button>
                       </div>
                     </form>
                   )}
 
-                  {ancRecords.length === 0 ? (
+                  {loadError ? (
+                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
+                      <AlertCircle className="mx-auto text-red-500" size={28} />
+                      <p className="text-sm font-black">تعذر استرجاع سجلات متابعة الحمل من قاعدة البيانات</p>
+                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                    </div>
+                  ) : ancRecords.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
                       لا توجد زيارات متابعة حمل مسجلة حتى الآن.
                     </div>
@@ -986,6 +1176,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             <th className="p-3">ارتفاع الرحم ونبض الجنين</th>
                             <th className="p-3">تحاليل (Hb / سكر / زلال)</th>
                             <th className="p-3">الزيارة القادمة والطبيب</th>
+                            <th className="p-3 text-center">إجراءات</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-bold">
@@ -1019,6 +1210,16 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                                   {r.next_visit_date ? `القادمة: ${r.next_visit_date}` : '—'}
                                 </div>
                                 <div className="text-slate-500 text-[11px]">{r.doctor_signature ? `د/ ${r.doctor_signature}` : ''}</div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRecord('maternal_antenatal_followups', r.id, 'متابعة الحمل')}
+                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                  title="حذف السجل"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1057,7 +1258,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         setSubmitting(true);
                         const t = e.target as any;
                         try {
-                          await DB.addAccreditationRecord('family_planning_followups', {
+                          const saved = await DB.addAccreditationRecord('family_planning_followups', {
                             patient_id: patient.id,
                             visit_reason: t.visit_reason.value || 'متابعة دورية',
                             current_method: t.current_method.value || null,
@@ -1068,12 +1269,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             next_visit_date: t.next_visit_date.value || null,
                             doctor_signature: t.doctor_signature.value || null
                           });
-                          alert("تم حفظ سجل تنظيم الأسرة بنجاح");
+                          if (!saved || !saved.id) {
+                            throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
+                          }
+                          showNotification('success', "تم حفظ سجل تنظيم الأسرة بنجاح في قاعدة البيانات المركزية.");
                           setShowAddForm(false);
                           loadAllData();
                           if (onRefresh) onRefresh();
                         } catch (err: any) {
-                          alert(err.message || "خطأ أثناء الحفظ");
+                          console.error("Save error family_planning_followups:", err);
+                          const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
+                          const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
+                          showNotification('error', userMsg);
+                          alert(userMsg);
                         } finally {
                           setSubmitting(false);
                         }
@@ -1137,13 +1345,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                       <div className="flex justify-end gap-2">
                         <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">إلغاء</button>
                         <button type="submit" disabled={submitting} className="px-6 py-2 bg-pink-600 text-white rounded-xl text-xs font-black shadow-md">
-                          {submitting ? 'جاري الحفظ...' : 'حفظ السجل'}
+                          {submitting ? 'جاري الحفظ في قاعدة البيانات...' : 'حفظ السجل'}
                         </button>
                       </div>
                     </form>
                   )}
 
-                  {familyPlanningRecords.length === 0 ? (
+                  {loadError ? (
+                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
+                      <AlertCircle className="mx-auto text-red-500" size={28} />
+                      <p className="text-sm font-black">تعذر استرجاع سجلات تنظيم الأسرة من قاعدة البيانات</p>
+                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                    </div>
+                  ) : familyPlanningRecords.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
                       لا توجد سجلات تنظيم أسرة مسجلة حتى الآن.
                     </div>
@@ -1157,6 +1371,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             <th className="p-3">الآثار الجانبية</th>
                             <th className="p-3">الوسيلة المقررة</th>
                             <th className="p-3">المتابعة القادمة والطبيب</th>
+                            <th className="p-3 text-center">إجراءات</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-bold">
@@ -1176,6 +1391,16 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               <td className="p-3">
                                 <div>{fp.next_visit_date || '—'}</div>
                                 <div className="text-slate-500 text-[11px]">{fp.doctor_signature ? `د/ ${fp.doctor_signature}` : ''}</div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRecord('family_planning_followups', fp.id, 'متابعة تنظيم الأسرة')}
+                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                  title="حذف السجل"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1214,7 +1439,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         setSubmitting(true);
                         const t = e.target as any;
                         try {
-                          await DB.addAccreditationRecord('premarital_assessments', {
+                          const saved = await DB.addAccreditationRecord('premarital_assessments', {
                             patient_id: patient.id,
                             partner_name: t.partner_name.value,
                             partner_national_id: t.partner_national_id.value || null,
@@ -1227,12 +1452,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             mutual_consent_signed: t.consent.checked,
                             doctor_signature: t.doctor_signature.value || null
                           });
-                          alert("تم حفظ سجل فحص ما قبل الزواج بنجاح");
+                          if (!saved || !saved.id) {
+                            throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
+                          }
+                          showNotification('success', "تم حفظ سجل فحص ما قبل الزواج بنجاح في قاعدة البيانات المركزية.");
                           setShowAddForm(false);
                           loadAllData();
                           if (onRefresh) onRefresh();
                         } catch (err: any) {
-                          alert(err.message || "خطأ أثناء الحفظ");
+                          console.error("Save error premarital_assessments:", err);
+                          const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
+                          const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
+                          showNotification('error', userMsg);
+                          alert(userMsg);
                         } finally {
                           setSubmitting(false);
                         }
@@ -1300,13 +1532,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                       <div className="flex justify-end gap-2">
                         <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">إلغاء</button>
                         <button type="submit" disabled={submitting} className="px-6 py-2 bg-cyan-600 text-white rounded-xl text-xs font-black shadow-md">
-                          {submitting ? 'جاري الحفظ...' : 'حفظ الفحص'}
+                          {submitting ? 'جاري الحفظ في قاعدة البيانات...' : 'حفظ الفحص'}
                         </button>
                       </div>
                     </form>
                   )}
 
-                  {premaritalRecords.length === 0 ? (
+                  {loadError ? (
+                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
+                      <AlertCircle className="mx-auto text-red-500" size={28} />
+                      <p className="text-sm font-black">تعذر استرجاع سجلات فحص ما قبل الزواج من قاعدة البيانات</p>
+                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                    </div>
+                  ) : premaritalRecords.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
                       لا يوجد فحص مقبلين على الزواج مسجل حتى الآن.
                     </div>
@@ -1320,6 +1558,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             <th className="p-3">صلة القرابة والتحاليل</th>
                             <th className="p-3">الشهادة والحالة</th>
                             <th className="p-3">الطبيب المعتمد</th>
+                            <th className="p-3 text-center">إجراءات</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-bold">
@@ -1344,6 +1583,16 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               </td>
                               <td className="p-3 text-slate-700">
                                 {p.doctor_signature ? `د/ ${p.doctor_signature}` : '—'}
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRecord('premarital_assessments', p.id, 'فحص ما قبل الزواج')}
+                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                  title="حذف السجل"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1382,7 +1631,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         setSubmitting(true);
                         const t = e.target as any;
                         try {
-                          await DB.addAccreditationRecord('geriatric_assessments', {
+                          const saved = await DB.addAccreditationRecord('geriatric_assessments', {
                             patient_id: patient.id,
                             weight_loss: t.weight_loss.checked,
                             weakness_reported: t.weakness.checked,
@@ -1393,12 +1642,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             management_plan: t.plan.value || null,
                             doctor_signature: t.doctor_signature.value || null
                           });
-                          alert("تم حفظ تقييم المسن بنجاح");
+                          if (!saved || !saved.id) {
+                            throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
+                          }
+                          showNotification('success', "تم حفظ تقييم المسن بنجاح في قاعدة البيانات المركزية.");
                           setShowAddForm(false);
                           loadAllData();
                           if (onRefresh) onRefresh();
                         } catch (err: any) {
-                          alert(err.message || "خطأ أثناء الحفظ");
+                          console.error("Save error geriatric_assessments:", err);
+                          const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
+                          const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
+                          showNotification('error', userMsg);
+                          alert(userMsg);
                         } finally {
                           setSubmitting(false);
                         }
@@ -1463,13 +1719,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                       <div className="flex justify-end gap-2">
                         <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">إلغاء</button>
                         <button type="submit" disabled={submitting} className="px-6 py-2 bg-amber-600 text-white rounded-xl text-xs font-black shadow-md">
-                          {submitting ? 'جاري الحفظ...' : 'حفظ تقييم المسن'}
+                          {submitting ? 'جاري الحفظ في قاعدة البيانات...' : 'حفظ تقييم المسن'}
                         </button>
                       </div>
                     </form>
                   )}
 
-                  {geriatricRecords.length === 0 ? (
+                  {loadError ? (
+                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
+                      <AlertCircle className="mx-auto text-red-500" size={28} />
+                      <p className="text-sm font-black">تعذر استرجاع سجلات تقييم المسنين من قاعدة البيانات</p>
+                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                    </div>
+                  ) : geriatricRecords.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
                       لا يوجد تقييم مسنين مسجل حتى الآن.
                     </div>
@@ -1483,6 +1745,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             <th className="p-3">الإدراك والذاكرة (Mini-Cog)</th>
                             <th className="p-3">خطر السقوط والوهن</th>
                             <th className="p-3">الخطة والطبيب</th>
+                            <th className="p-3 text-center">إجراءات</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-bold">
@@ -1506,6 +1769,16 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               <td className="p-3">
                                 <div className="text-slate-800">{g.management_plan || 'خطة اعتيادية'}</div>
                                 <div className="text-slate-500 text-[11px]">{g.doctor_signature ? `د/ ${g.doctor_signature}` : ''}</div>
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRecord('geriatric_assessments', g.id, 'تقييم المسن')}
+                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                  title="حذف السجل"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               </td>
                             </tr>
                           ))}
@@ -1544,7 +1817,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         setSubmitting(true);
                         const t = e.target as any;
                         try {
-                          await DB.addAccreditationRecord('dental_assessments', {
+                          const saved = await DB.addAccreditationRecord('dental_assessments', {
                             patient_id: patient.id,
                             tmj_clicking: t.tmj_clicking.checked,
                             tmj_tenderness: t.tmj_tenderness.checked,
@@ -1554,12 +1827,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             treatment_plan: t.treatment_plan.value || null,
                             doctor_signature: t.doctor_signature.value || null
                           });
-                          alert("تم حفظ فحص الأسنان بنجاح");
+                          if (!saved || !saved.id) {
+                            throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
+                          }
+                          showNotification('success', "تم حفظ فحص الأسنان بنجاح في قاعدة البيانات المركزية.");
                           setShowAddForm(false);
                           loadAllData();
                           if (onRefresh) onRefresh();
                         } catch (err: any) {
-                          alert(err.message || "خطأ أثناء الحفظ");
+                          console.error("Save error dental_assessments:", err);
+                          const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
+                          const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
+                          showNotification('error', userMsg);
+                          alert(userMsg);
                         } finally {
                           setSubmitting(false);
                         }
@@ -1611,13 +1891,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                       <div className="flex justify-end gap-2">
                         <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">إلغاء</button>
                         <button type="submit" disabled={submitting} className="px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black shadow-md">
-                          {submitting ? 'جاري الحفظ...' : 'حفظ فحص الأسنان'}
+                          {submitting ? 'جاري الحفظ في قاعدة البيانات...' : 'حفظ فحص الأسنان'}
                         </button>
                       </div>
                     </form>
                   )}
 
-                  {dentalRecords.length === 0 ? (
+                  {loadError ? (
+                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
+                      <AlertCircle className="mx-auto text-red-500" size={28} />
+                      <p className="text-sm font-black">تعذر استرجاع سجلات فحص الأسنان من قاعدة البيانات</p>
+                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                    </div>
+                  ) : dentalRecords.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
                       لا توجد فحوصات أسنان مسجلة حتى الآن.
                     </div>
@@ -1631,6 +1917,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             <th className="p-3">مفصل الفك (TMJ)</th>
                             <th className="p-3">خطة العلاج</th>
                             <th className="p-3">طبيب الأسنان</th>
+                            <th className="p-3 text-center">إجراءات</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-bold">
@@ -1650,6 +1937,16 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               <td className="p-3 text-slate-800 font-black">{d.treatment_plan || 'سليم'}</td>
                               <td className="p-3 text-slate-700">
                                 {d.doctor_signature ? `د/ ${d.doctor_signature}` : '—'}
+                              </td>
+                              <td className="p-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteRecord('dental_assessments', d.id, 'فحص الأسنان')}
+                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                  title="حذف السجل"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
                               </td>
                             </tr>
                           ))}
