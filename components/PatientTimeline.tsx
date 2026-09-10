@@ -8,8 +8,7 @@ import {
   Table as TableIcon, Search, Printer, ArrowUpDown, Calendar,
   Clock, CheckCircle2, ChevronRight, AlertCircle, Sparkles
 } from 'lucide-react';
-import HistoryPhysicalModal from './HistoryPhysicalModal.tsx';
-import VisitsFormModal from './VisitsFormModal.tsx';
+import { FamilyComprehensiveHealthRecordModal } from './FamilyComprehensiveHealthRecordModal.tsx';
 
 interface PatientTimelineProps {
   patient: any;
@@ -19,10 +18,13 @@ interface PatientTimelineProps {
 const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) => {
   const [history, setHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [showAddExamModal, setShowAddExamModal] = useState(false);
-  const [showVisitsModal, setShowVisitsModal] = useState(false);
-  const [selectedExamForView, setSelectedExamForView] = useState<any | null>(null);
-  const [selectedExamInitialTab, setSelectedExamInitialTab] = useState<'history' | 'significant' | 'clinical' | 'full'>('full');
+  const [showComprehensiveModal, setShowComprehensiveModal] = useState(false);
+  const [comprehensiveInitialModule, setComprehensiveInitialModule] = useState<string>('history');
+
+  const openComprehensive = (module: string = 'history') => {
+    setComprehensiveInitialModule(module);
+    setShowComprehensiveModal(true);
+  };
   const [activeFilter, setActiveFilter] = useState<string>('ALL');
   
   // الوضع الافتراضي للعرض هو "جدول عادي" استجابة لطلب المستخدم
@@ -47,9 +49,8 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
     fetchHistory();
   }, [patient.id]);
 
-  const openExamModalWithTab = (examItem: any, tab: 'history' | 'significant' | 'clinical' | 'full') => {
-    setSelectedExamForView(examItem);
-    setSelectedExamInitialTab(tab);
+  const openExamModalWithTab = (_examItem: any, tab: 'history' | 'significant' | 'clinical' | 'full') => {
+    openComprehensive(tab === 'full' ? 'history' : tab);
   };
 
   const filteredHistory = useMemo(() => {
@@ -169,54 +170,38 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
 
             {/* Quick Action Buttons */}
             <button 
-               onClick={() => {
-                 setSelectedExamForView(null);
-                 setSelectedExamInitialTab('history');
-                 setShowAddExamModal(true);
-               }}
-               className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-black transition-all flex items-center gap-1.5 shadow-sm text-xs"
+               onClick={() => openComprehensive('history')}
+               className="px-3 py-2 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white rounded-xl font-black transition-all flex items-center gap-1.5 shadow-sm text-xs cursor-pointer"
             >
-               <Shield size={14}/> ١. التاريخ المرضي
+               <Activity size={14}/> الملف الشامل
             </button>
 
             <button 
-               onClick={() => {
-                 setSelectedExamForView(null);
-                 setSelectedExamInitialTab('significant');
-                 setShowAddExamModal(true);
-               }}
-               className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black transition-all flex items-center gap-1.5 shadow-sm text-xs"
+               onClick={() => openComprehensive('history')}
+               className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-black transition-all flex items-center gap-1.5 shadow-sm text-xs cursor-pointer"
             >
-               <ClipboardList size={14}/> ٢. الأحداث الهامة
+               <Shield size={14}/> التاريخ المرضي
             </button>
 
             <button 
-               onClick={() => {
-                 setSelectedExamForView(null);
-                 setSelectedExamInitialTab('clinical');
-                 setShowAddExamModal(true);
-               }}
-               className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black transition-all flex items-center gap-1.5 shadow-sm text-xs"
+               onClick={() => openComprehensive('significant')}
+               className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black transition-all flex items-center gap-1.5 shadow-sm text-xs cursor-pointer"
             >
-               <Activity size={14}/> ٣. الفحص السريري
+               <ClipboardList size={14}/> الأحداث الهامة
             </button>
 
             <button 
-               onClick={() => {
-                 setSelectedExamForView(null);
-                 setSelectedExamInitialTab('full');
-                 setShowAddExamModal(true);
-               }}
-               className="px-3 py-2 bg-gray-800 hover:bg-gray-900 text-white rounded-xl font-black transition-all flex items-center gap-1.5 shadow-sm text-xs"
+               onClick={() => openComprehensive('clinical')}
+               className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black transition-all flex items-center gap-1.5 shadow-sm text-xs cursor-pointer"
             >
-               <FileText size={14}/> ٤. النموذج الكامل
+               <Activity size={14}/> الفحص الإكلينيكي
             </button>
 
             <button 
-               onClick={() => setShowVisitsModal(true)}
-               className="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-black transition-all flex items-center gap-1.5 shadow-sm text-xs"
+               onClick={() => openComprehensive('visits')}
+               className="px-3 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-black transition-all flex items-center gap-1.5 shadow-sm text-xs cursor-pointer"
             >
-               <FileText size={14}/> ٥. نموذج التردد
+               <FileText size={14}/> سجل الزيارات
             </button>
 
             <button 
@@ -754,7 +739,7 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
 
                               {item.type === 'VISIT' && (
                                 <button
-                                  onClick={() => setShowVisitsModal(true)}
+                                  onClick={() => openComprehensive('visits')}
                                   className="px-2 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-[11px] font-black flex items-center gap-1 shadow-xs"
                                   title="فتح وتعديل نموذج التردد"
                                 >
@@ -842,7 +827,7 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
                                           </div>
                                        </div>
                                        <button
-                                         onClick={() => setShowVisitsModal(true)}
+                                         onClick={() => openComprehensive('visits')}
                                          className="px-3 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-[10px] font-black flex items-center gap-1 transition-all"
                                        >
                                          <Eye size={12}/> عرض وتعديل النموذج
@@ -1243,7 +1228,7 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
                     <button
                       onClick={() => {
                         setSelectedRecordForDetails(null);
-                        setShowVisitsModal(true);
+                        openComprehensive('visits');
                       }}
                       className="w-full py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-black text-xs transition-all shadow-sm flex items-center justify-center gap-1.5"
                     >
@@ -1351,34 +1336,16 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
         </div>
       )}
 
-      {/* Add Physical Exam Modal */}
-      <HistoryPhysicalModal 
-        isOpen={showAddExamModal}
-        onClose={() => setShowAddExamModal(false)}
-        patient={patient}
-        onSaved={fetchHistory}
-        initialTab={selectedExamInitialTab}
-      />
-
-      {/* View Physical Exam Modal */}
-      {selectedExamForView && (
-        <HistoryPhysicalModal 
-          isOpen={!!selectedExamForView}
-          onClose={() => setSelectedExamForView(null)}
+      {/* Comprehensive Health Record Modal */}
+      {showComprehensiveModal && (
+        <FamilyComprehensiveHealthRecordModal
+          isOpen={showComprehensiveModal}
+          onClose={() => setShowComprehensiveModal(false)}
           patient={patient}
-          onSaved={fetchHistory}
-          viewExamData={selectedExamForView}
-          initialTab={selectedExamInitialTab}
+          initialModule={comprehensiveInitialModule}
+          onRefresh={fetchHistory}
         />
       )}
-
-      {/* Visits Form Modal */}
-      <VisitsFormModal
-        isOpen={showVisitsModal}
-        onClose={() => setShowVisitsModal(false)}
-        patient={patient}
-        onVisitsUpdated={fetchHistory}
-      />
     </div>
   );
 };

@@ -2,9 +2,7 @@ import React, { useState, useEffect } from "react";
 import { DB } from "../store.ts";
 import { supabase } from "../supabase.ts";
 import { FamilyFile, Patient, FamilyFileMember } from "../types.ts";
-import HistoryPhysicalModal from "../components/HistoryPhysicalModal.tsx";
 import PatientTimeline from "../components/PatientTimeline.tsx";
-import VisitsFormModal from "../components/VisitsFormModal.tsx";
 import FamilyComprehensiveHealthRecordModal from "../components/FamilyComprehensiveHealthRecordModal.tsx";
 import QuickClinicBookingModal from "../components/QuickClinicBookingModal.tsx";
 import { calculatePatientSuggestedFollowups } from "../services/followupSuggestions.ts";
@@ -143,22 +141,14 @@ const FamilyFilesModule: React.FC = () => {
   const [socialEligibleForFreeService, setSocialEligibleForFreeService] =
     useState<boolean>(false);
 
-  // States for History & Physical Exams (نموذج الفحص الشامل والتاريخ المرضي)
+  // States for History & Physical Exams & Timeline
   const [physicalExams, setPhysicalExams] = useState<any[]>([]);
-  const [showExamModal, setShowExamModal] = useState(false);
-  const [examPatient, setExamPatient] = useState<any | null>(null);
-  const [examViewData, setExamViewData] = useState<any | null>(null);
-  const [examInitialTab, setExamInitialTab] = useState<
-    "history" | "significant" | "clinical" | "full"
-  >("history");
   const [timelinePatient, setTimelinePatient] = useState<Patient | null>(null);
 
-  // States for Visits Form (نموذج التردد - موديول رقم ٤)
+  // States for Visits Form
   const [patientVisits, setPatientVisits] = useState<any[]>([]);
-  const [showVisitsModal, setShowVisitsModal] = useState(false);
-  const [visitsPatient, setVisitsPatient] = useState<any | null>(null);
 
-  // States for 10-Module Comprehensive Health Record (الملف الصحي العائلي الشامل)
+  // States for Comprehensive Health Record
   const [familyDetailTab, setFamilyDetailTab] = useState<
     "members" | "clinical" | "housing" | "social" | "deaths"
   >("members");
@@ -169,6 +159,21 @@ const FamilyFilesModule: React.FC = () => {
     useState<string>("history");
   const [selectedClinicalMemberId, setSelectedClinicalMemberId] =
     useState<string>("");
+
+  const openComprehensiveForMember = (member: any, initialModule: string = "history") => {
+    const fullPatient =
+      patients.find((p) => p.id === member.patient_id) ||
+      member.patients || {
+        id: member.patient_id,
+        name: member.patients?.name || member.name,
+        national_id: member.patients?.national_id || member.national_id,
+        date_of_birth: member.patients?.date_of_birth || member.date_of_birth,
+        gender: member.patients?.gender || member.gender,
+      };
+    setComprehensiveModalPatient(fullPatient);
+    setComprehensiveInitialModule(initialModule);
+    setShowComprehensiveModal(true);
+  };
 
   // Quick Clinic Booking state
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -918,7 +923,7 @@ const FamilyFilesModule: React.FC = () => {
               }`}
             >
               <Activity size={18} className="text-purple-300" />
-              <span>الملف الصحي الشامل (١٠ موديولات معتمدة)</span>
+              <span>الملف الصحي الشامل</span>
               <span className="bg-white/25 text-white text-[10px] font-mono px-2 py-0.5 rounded-full font-black">
                 10
               </span>
@@ -1566,68 +1571,28 @@ const FamilyFilesModule: React.FC = () => {
                                     </div>
                                     <div className="grid grid-cols-2 gap-1 pt-1 border-t border-purple-100/60 text-[10px]">
                                       <button
-                                        onClick={() => {
-                                          setExamPatient(
-                                            member.patients || {
-                                              id: member.patient_id,
-                                              name: member.patients?.name,
-                                            },
-                                          );
-                                          setExamViewData(exam);
-                                          setExamInitialTab("history");
-                                          setShowExamModal(true);
-                                        }}
+                                        onClick={() => openComprehensiveForMember(member, "history")}
                                         className="px-1.5 py-1 bg-white hover:bg-purple-600 hover:text-white text-purple-800 rounded-md font-bold border border-purple-200 text-center transition-all"
                                       >
-                                        ١. التاريخ المرضي
+                                        التاريخ المرضي
                                       </button>
                                       <button
-                                        onClick={() => {
-                                          setExamPatient(
-                                            member.patients || {
-                                              id: member.patient_id,
-                                              name: member.patients?.name,
-                                            },
-                                          );
-                                          setExamViewData(exam);
-                                          setExamInitialTab("significant");
-                                          setShowExamModal(true);
-                                        }}
+                                        onClick={() => openComprehensiveForMember(member, "significant")}
                                         className="px-1.5 py-1 bg-white hover:bg-amber-600 hover:text-white text-amber-800 rounded-md font-bold border border-amber-200 text-center transition-all"
                                       >
-                                        ٢. الأحداث الهامة
+                                        الأحداث الهامة
                                       </button>
                                       <button
-                                        onClick={() => {
-                                          setExamPatient(
-                                            member.patients || {
-                                              id: member.patient_id,
-                                              name: member.patients?.name,
-                                            },
-                                          );
-                                          setExamViewData(exam);
-                                          setExamInitialTab("clinical");
-                                          setShowExamModal(true);
-                                        }}
+                                        onClick={() => openComprehensiveForMember(member, "clinical")}
                                         className="px-1.5 py-1 bg-white hover:bg-indigo-600 hover:text-white text-indigo-800 rounded-md font-bold border border-indigo-200 text-center transition-all"
                                       >
-                                        ٣. الفحص الإكلينيكي
+                                        الفحص الإكلينيكي
                                       </button>
                                       <button
-                                        onClick={() => {
-                                          setExamPatient(
-                                            member.patients || {
-                                              id: member.patient_id,
-                                              name: member.patients?.name,
-                                            },
-                                          );
-                                          setExamViewData(exam);
-                                          setExamInitialTab("full");
-                                          setShowExamModal(true);
-                                        }}
+                                        onClick={() => openComprehensiveForMember(member, "history")}
                                         className="px-1.5 py-1 bg-purple-700 text-white rounded-md font-bold text-center transition-all"
                                       >
-                                        ٤. النموذج الكامل
+                                        الملف الشامل
                                       </button>
                                     </div>
                                   </div>
@@ -1643,89 +1608,51 @@ const FamilyFilesModule: React.FC = () => {
                             {!isDeceased ? (
                               <div className="flex flex-wrap items-center justify-center gap-1.5 min-w-[280px]">
                                 <button
-                                  onClick={() => {
-                                    const fullPatient =
-                                      patients.find(
-                                        (p) => p.id === member.patient_id,
-                                      ) ||
-                                      member.patients || {
-                                        id: member.patient_id,
-                                        name: member.patients?.name,
-                                        national_id:
-                                          member.patients?.national_id,
-                                        date_of_birth:
-                                          member.patients?.date_of_birth,
-                                        gender: member.patients?.gender,
-                                      };
-                                    setComprehensiveModalPatient(fullPatient);
-                                    setComprehensiveInitialModule("history");
-                                    setShowComprehensiveModal(true);
-                                  }}
+                                  onClick={() => openComprehensiveForMember(member, "history")}
                                   className="px-2.5 py-1 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-800 hover:to-indigo-800 text-white rounded-lg text-xs font-black transition-all shadow-sm flex items-center gap-1 shrink-0 cursor-pointer"
-                                  title="فتح وتوثيق الملف الصحي العائلي الشامل (10 موديولات معتمدة)"
+                                  title="فتح وتوثيق الملف الصحي العائلي الشامل"
                                 >
                                   <Activity
                                     size={12}
                                     className="text-purple-200"
                                   />
-                                  الملف الشامل (10 موديولات)
+                                  الملف الشامل
                                 </button>
 
                                 <button
-                                  onClick={() => {
-                                    setExamPatient(
-                                      member.patients || {
-                                        id: member.patient_id,
-                                        name: member.patients?.name,
-                                      },
-                                    );
-                                    setExamViewData(null);
-                                    setExamInitialTab("history");
-                                    setShowExamModal(true);
-                                  }}
+                                  onClick={() => openComprehensiveForMember(member, "history")}
                                   className="px-2 py-1 bg-purple-50 text-purple-700 hover:bg-purple-600 hover:text-white rounded-lg text-xs font-bold transition-all border border-purple-200 flex items-center gap-1 shrink-0"
-                                  title="إضافة موديول التاريخ المرضي"
+                                  title="التاريخ المرضي والوراثي"
                                 >
                                   <Shield size={12} />
-                                  ١. التاريخ المرضي
+                                  التاريخ المرضي
                                 </button>
 
                                 <button
-                                  onClick={() => {
-                                    setExamPatient(
-                                      member.patients || {
-                                        id: member.patient_id,
-                                        name: member.patients?.name,
-                                      },
-                                    );
-                                    setExamViewData(null);
-                                    setExamInitialTab("significant");
-                                    setShowExamModal(true);
-                                  }}
+                                  onClick={() => openComprehensiveForMember(member, "significant")}
                                   className="px-2 py-1 bg-amber-50 text-amber-800 hover:bg-amber-600 hover:text-white rounded-lg text-xs font-bold transition-all border border-amber-200 flex items-center gap-1 shrink-0"
-                                  title="إضافة موديول ملخص الأحداث الهامة"
+                                  title="الأحداث الطبية الهامة"
                                 >
                                   <ClipboardList size={12} />
-                                  ٢. الأحداث الهامة
+                                  الأحداث الهامة
                                 </button>
 
                                 <button
-                                  onClick={() => {
-                                    setExamPatient(
-                                      member.patients || {
-                                        id: member.patient_id,
-                                        name: member.patients?.name,
-                                      },
-                                    );
-                                    setExamViewData(null);
-                                    setExamInitialTab("clinical");
-                                    setShowExamModal(true);
-                                  }}
+                                  onClick={() => openComprehensiveForMember(member, "clinical")}
                                   className="px-2 py-1 bg-indigo-50 text-indigo-700 hover:bg-indigo-600 hover:text-white rounded-lg text-xs font-bold transition-all border border-indigo-200 flex items-center gap-1 shrink-0"
-                                  title="إضافة موديول الفحص الإكلينيكي"
+                                  title="الفحص الإكلينيكي والبدني"
                                 >
                                   <Activity size={12} />
-                                  ٣. الفحص الإكلينيكي
+                                  الفحص الإكلينيكي
+                                </button>
+
+                                <button
+                                  onClick={() => openComprehensiveForMember(member, "visits")}
+                                  className="px-2 py-1 bg-teal-50 text-teal-800 hover:bg-teal-600 hover:text-white rounded-lg text-xs font-bold transition-all border border-teal-200 flex items-center gap-1 shrink-0"
+                                  title="سجل الزيارات والتردد"
+                                >
+                                  <FileText size={12} />
+                                  سجل الزيارات
                                 </button>
 
                                 <button
@@ -1748,30 +1675,6 @@ const FamilyFilesModule: React.FC = () => {
                                 >
                                   <User size={12} />
                                   الملف الكامل
-                                </button>
-
-                                <button
-                                  onClick={() => {
-                                    const fullPatient =
-                                      patients.find(
-                                        (p) => p.id === member.patient_id,
-                                      ) ||
-                                      member.patients || {
-                                        id: member.patient_id,
-                                        name: member.patients?.name,
-                                        national_id:
-                                          member.patients?.national_id,
-                                        date_of_birth:
-                                          member.patients?.date_of_birth,
-                                      };
-                                    setVisitsPatient(fullPatient);
-                                    setShowVisitsModal(true);
-                                  }}
-                                  className="px-2 py-1 bg-teal-50 text-teal-800 hover:bg-teal-600 hover:text-white rounded-lg text-xs font-bold transition-all border border-teal-200 flex items-center gap-1 shrink-0"
-                                  title="فتح وتعبئة نموذج التردد والزيارات"
-                                >
-                                  <FileText size={12} />
-                                  ٤. نموذج التردد
                                 </button>
 
                                 <button
@@ -1850,7 +1753,7 @@ const FamilyFilesModule: React.FC = () => {
                 </div>
                 <h4 className="font-black text-xl flex items-center gap-2.5">
                   <Activity size={24} className="text-purple-300" />
-                  الملف الصحي العائلي الشامل (١٠ موديولات معتمدة)
+                  الملف الصحي العائلي الشامل
                 </h4>
                 <p className="text-xs text-purple-200 font-medium max-w-3xl leading-relaxed">
                   نظام التوثيق الطبي الموحد لملف طب الأسرة: يشمل التاريخ المرضي،
@@ -2166,7 +2069,7 @@ const FamilyFilesModule: React.FC = () => {
                                   <IconComp size={18} />
                                 </div>
                                 <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600">
-                                  موديول {mod.num}
+                                  سجل صحي معتمد
                                 </span>
                               </div>
 
@@ -2207,7 +2110,7 @@ const FamilyFilesModule: React.FC = () => {
                                 className={`w-full py-2 px-3 ${mod.btnClass} rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer`}
                               >
                                 <Activity size={14} />
-                                <span>فتح وتوثيق الموديول</span>
+                                <span>فتح وتوثيق السجل</span>
                               </button>
                             </div>
                           </div>
@@ -2217,7 +2120,7 @@ const FamilyFilesModule: React.FC = () => {
                   ) : (
                     <div className="p-8 text-center bg-gray-50 rounded-3xl border border-gray-200">
                       <p className="text-sm font-bold text-gray-500">
-                        الرجاء اختيار فرد من الأسرة لعرض وتوثيق موديولاته
+                        الرجاء اختيار فرد من الأسرة لعرض وتوثيق سجلاته
                         الصحية.
                       </p>
                     </div>
@@ -2252,7 +2155,7 @@ const FamilyFilesModule: React.FC = () => {
                   </div>
                   <div>
                     <h5 className="font-black text-base text-purple-950">
-                      ١. جدول موديول التاريخ المرضي والصحي
+                      سجل التاريخ المرضي والوراثي
                     </h5>
                     <span className="text-[11px] font-bold text-purple-700">
                       Medical History Module Results
@@ -2260,7 +2163,7 @@ const FamilyFilesModule: React.FC = () => {
                   </div>
                 </div>
                 <span className="text-xs font-black bg-purple-100 text-purple-800 px-3 py-1 rounded-full border border-purple-200">
-                  موديول رقم ١
+                  التاريخ المرضي
                 </span>
               </div>
 
@@ -2276,7 +2179,7 @@ const FamilyFilesModule: React.FC = () => {
                       </th>
                       <th className="p-3.5">الحساسية والآثار العكسية</th>
                       <th className="p-3.5">التاريخ العائلي والعادات</th>
-                      <th className="p-3.5 text-center">إجراءات الموديول</th>
+                      <th className="p-3.5 text-center">الإجراءات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-xs font-bold text-gray-700">
@@ -2393,16 +2296,11 @@ const FamilyFilesModule: React.FC = () => {
                             <td className="p-3.5 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
-                                  onClick={() => {
-                                    setExamPatient(fullPatientObj);
-                                    setExamViewData(exam);
-                                    setExamInitialTab("history");
-                                    setShowExamModal(true);
-                                  }}
+                                  onClick={() => openComprehensiveForMember({ patient_id: exam.patient_id, patients: fullPatientObj }, "history")}
                                   className="px-2.5 py-1 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-black text-[11px] flex items-center gap-1 transition-all shadow-sm"
-                                  title="فتح وتعديل موديول التاريخ المرضي"
+                                  title="فتح وتعديل التاريخ المرضي"
                                 >
-                                  <Shield size={12} /> عرض الموديول
+                                  <Shield size={12} /> عرض في الملف الشامل
                                 </button>
                                 <button
                                   onClick={() =>
@@ -2433,8 +2331,7 @@ const FamilyFilesModule: React.FC = () => {
                   </div>
                   <div>
                     <h5 className="font-black text-base text-amber-950">
-                      ٢. جدول موديول ملخص الأحداث الطبية الهامة (Significant
-                      Data Sheet)
+                      سجل ملخص الأحداث الطبية الهامة (Significant Data Sheet)
                     </h5>
                     <span className="text-[11px] font-bold text-amber-700">
                       Significant Events & Medical Milestones Register
@@ -2442,7 +2339,7 @@ const FamilyFilesModule: React.FC = () => {
                   </div>
                 </div>
                 <span className="text-xs font-black bg-amber-100 text-amber-900 px-3 py-1 rounded-full border border-amber-200">
-                  موديول رقم ٢
+                  الأحداث الهامة
                 </span>
               </div>
 
@@ -2457,7 +2354,7 @@ const FamilyFilesModule: React.FC = () => {
                       <th className="p-3.5">
                         تفاصيل وملخص الأحداث والتشخيصات الهامة
                       </th>
-                      <th className="p-3.5 text-center">إجراءات الموديول</th>
+                      <th className="p-3.5 text-center">الإجراءات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-xs font-bold text-gray-700">
@@ -2579,16 +2476,11 @@ const FamilyFilesModule: React.FC = () => {
                             <td className="p-3.5 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
-                                  onClick={() => {
-                                    setExamPatient(fullPatientObj);
-                                    setExamViewData(exam);
-                                    setExamInitialTab("significant");
-                                    setShowExamModal(true);
-                                  }}
+                                  onClick={() => openComprehensiveForMember({ patient_id: exam.patient_id, patients: fullPatientObj }, "significant")}
                                   className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-black text-[11px] flex items-center gap-1 transition-all shadow-sm"
-                                  title="فتح وتعديل موديول الأحداث الطبية الهامة"
+                                  title="فتح وتعديل الأحداث الطبية الهامة"
                                 >
-                                  <ClipboardList size={12} /> عرض الموديول
+                                  <ClipboardList size={12} /> عرض في الملف الشامل
                                 </button>
                                 <button
                                   onClick={() =>
@@ -2619,8 +2511,7 @@ const FamilyFilesModule: React.FC = () => {
                   </div>
                   <div>
                     <h5 className="font-black text-base text-indigo-950">
-                      ٣. جدول موديول الفحص السريري الإكلينيكي (Clinical
-                      Findings)
+                      سجل الفحص السريري الإكلينيكي (Clinical Findings)
                     </h5>
                     <span className="text-[11px] font-bold text-indigo-700">
                       Physical Examination & Vital Signs Module Results
@@ -2628,7 +2519,7 @@ const FamilyFilesModule: React.FC = () => {
                   </div>
                 </div>
                 <span className="text-xs font-black bg-indigo-100 text-indigo-900 px-3 py-1 rounded-full border border-indigo-200">
-                  موديول رقم ٣
+                  الفحص الإكلينيكي
                 </span>
               </div>
 
@@ -2641,7 +2532,7 @@ const FamilyFilesModule: React.FC = () => {
                       <th className="p-3.5">تاريخ الفحص</th>
                       <th className="p-3.5">العلامات الحيوية (Vitals)</th>
                       <th className="p-3.5">ملخص نتائج الفحص السريري</th>
-                      <th className="p-3.5 text-center">إجراءات الموديول</th>
+                      <th className="p-3.5 text-center">الإجراءات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-xs font-bold text-gray-700">
@@ -2809,16 +2700,11 @@ const FamilyFilesModule: React.FC = () => {
                             <td className="p-3.5 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
-                                  onClick={() => {
-                                    setExamPatient(fullPatientObj);
-                                    setExamViewData(exam);
-                                    setExamInitialTab("clinical");
-                                    setShowExamModal(true);
-                                  }}
+                                  onClick={() => openComprehensiveForMember({ patient_id: exam.patient_id, patients: fullPatientObj }, "clinical")}
                                   className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-black text-[11px] flex items-center gap-1 transition-all shadow-sm"
-                                  title="فتح وتعديل موديول الفحص السريري الإكلينيكي"
+                                  title="فتح وتعديل الفحص السريري الإكلينيكي"
                                 >
-                                  <Activity size={12} /> عرض الموديول
+                                  <Activity size={12} /> عرض في الملف الشامل
                                 </button>
                                 <button
                                   onClick={() =>
@@ -2840,7 +2726,7 @@ const FamilyFilesModule: React.FC = () => {
               </div>
             </div>
 
-            {/* ---------------- ٤. جدول موديول نموذج التردد (Visits Form) ---------------- */}
+            {/* ---------------- سجل الزيارات والتردد (Visits Form) ---------------- */}
             <div className="bg-white border border-teal-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
               <div className="p-4 bg-gradient-to-r from-teal-50 via-white to-teal-50/30 border-b border-teal-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -2849,7 +2735,7 @@ const FamilyFilesModule: React.FC = () => {
                   </div>
                   <div>
                     <h5 className="font-black text-base text-teal-950">
-                      ٤. جدول موديول نموذج التردد (Visits Form)
+                      سجل الزيارات والتردد (Visits Form)
                     </h5>
                     <span className="text-[11px] font-bold text-teal-700">
                       Patient Visits & Consultations Register Module
@@ -2857,7 +2743,7 @@ const FamilyFilesModule: React.FC = () => {
                   </div>
                 </div>
                 <span className="text-xs font-black bg-teal-100 text-teal-900 px-3 py-1 rounded-full border border-teal-200">
-                  موديول رقم ٤
+                  سجل التردد
                 </span>
               </div>
 
@@ -2872,7 +2758,7 @@ const FamilyFilesModule: React.FC = () => {
                       <th className="p-3.5">الشكوى والتشخيص</th>
                       <th className="p-3.5">العلاج والإجراءات</th>
                       <th className="p-3.5">طبيب الزيارة</th>
-                      <th className="p-3.5 text-center">إجراءات الموديول</th>
+                      <th className="p-3.5 text-center">الإجراءات</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 text-xs font-bold text-gray-700">
@@ -2981,14 +2867,11 @@ const FamilyFilesModule: React.FC = () => {
                             <td className="p-3.5 text-center">
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
-                                  onClick={() => {
-                                    setVisitsPatient(fullPatientObj);
-                                    setShowVisitsModal(true);
-                                  }}
+                                  onClick={() => openComprehensiveForMember({ patient_id: visit.patient_id, patients: fullPatientObj }, "visits")}
                                   className="px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-black text-[11px] flex items-center gap-1 transition-all shadow-sm"
                                   title="عرض وتعديل جدول زيارات المريض"
                                 >
-                                  <FileText size={12} /> عرض الموديول
+                                  <FileText size={12} /> عرض في الملف الشامل
                                 </button>
                                 <button
                                   onClick={() => setTimelinePatient(fullPatientObj)}
@@ -4606,34 +4489,7 @@ const FamilyFilesModule: React.FC = () => {
         </div>
       )}
 
-      {/* نموذج الفحص الشامل والتاريخ المرضي بالموديولات */}
-      {showExamModal && examPatient && (
-        <HistoryPhysicalModal
-          isOpen={showExamModal}
-          initialTab={examInitialTab}
-          onClose={() => {
-            setShowExamModal(false);
-            setExamPatient(null);
-            setExamViewData(null);
-          }}
-          patient={examPatient}
-          viewExamData={examViewData}
-          onSaved={async () => {
-            const exams = await DB.getPhysicalExams();
-            setPhysicalExams(exams);
-          }}
-        />
-      )}
-
-      {/* موديول نموذج التردد والزيارات */}
-      <VisitsFormModal
-        isOpen={showVisitsModal}
-        onClose={() => setShowVisitsModal(false)}
-        patient={visitsPatient}
-        onVisitsUpdated={loadData}
-      />
-
-      {/* موديول الملف الصحي العائلي الشامل (10 أقسام إكلينيكية معتمدة) */}
+      {/* الملف الصحي العائلي الشامل (الأقسام الإكلينيكية المعتمدة) */}
       {showComprehensiveModal && comprehensiveModalPatient && (
         <FamilyComprehensiveHealthRecordModal
           isOpen={showComprehensiveModal}

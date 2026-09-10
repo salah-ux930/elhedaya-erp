@@ -246,7 +246,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
                             <button
                               onClick={() => handleOpenComprehensiveRecord(p)}
                               className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all"
-                              title="فتح الملف الصحي الشامل (10 موديولات سريرية معتمدة)"
+                              title="فتح الملف الصحي الشامل (الملف الصحي الشامل)"
                             >
                               <Stethoscope size={14} />
                               <span>الملف الصحي الشامل</span>
@@ -418,7 +418,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
         </div>
       )}
 
-      {/* مودال الملف الصحي الشامل (10 موديولات معتمدة) */}
+      {/* مودال الملف الصحي الشامل */}
       {showComprehensiveModal && comprehensivePatient && (
         <FamilyComprehensiveHealthRecordModal
           isOpen={showComprehensiveModal}

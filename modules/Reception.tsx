@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { AR, ROOMS, calculateAge, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
 import PatientTimeline from '../components/PatientTimeline.tsx';
+import QuickClinicBookingModal from '../components/QuickClinicBookingModal.tsx';
 import { DialysisSession, Patient } from '../types.ts';
 import { 
   UserPlus, Search, Clock, Activity, ArrowRight, 
@@ -487,49 +488,17 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
       )}
 
       {showClinicBookingModal && selectedPatient && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl animate-in zoom-in-95 duration-300">
-             <div className="p-6 bg-indigo-600 text-white flex justify-between items-center rounded-t-2xl">
-                <h3 className="text-xl font-bold flex items-center gap-2"><Stethoscope size={22} /> حجز موعد عيادة جديدة</h3>
-                <button onClick={() => setShowClinicBookingModal(false)}><X size={24} /></button>
-             </div>
-             <form onSubmit={handleBookClinic} className="p-8 space-y-4">
-                <div className="p-4 bg-indigo-50 rounded-xl mb-4 border border-indigo-100">
-                   <p className="text-sm font-bold text-indigo-800">حجز موعد للمريض: <span className="text-indigo-600">{selectedPatient.name}</span></p>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-500 mr-2">العيادة</label>
-                    <select name="clinic_id" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none">
-                       <option value="">اختر العيادة</option>
-                       {clinics.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-500 mr-2">الطبيب</label>
-                    <select name="doctor_id" required className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none">
-                       <option value="">اختر الطبيب</option>
-                       {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-500 mr-2">التاريخ</label>
-                    <input name="date" type="date" required defaultValue={new Date().toISOString().split('T')[0]} className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold text-gray-500 mr-2">الوقت</label>
-                    <input name="time" type="time" required defaultValue={new Date().toTimeString().split(' ')[0].slice(0, 5)} className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
-                  </div>
-                </div>
-
-                <button type="submit" disabled={loading} className="w-full py-4 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 mt-4">
-                   {loading ? <Loader2 className="animate-spin" /> : <Calendar size={20} />}
-                   تأكيد حجز الموعد
-                </button>
-             </form>
-          </div>
-        </div>
+        <QuickClinicBookingModal
+          isOpen={showClinicBookingModal}
+          onClose={() => {
+            setShowClinicBookingModal(false);
+            setSelectedPatient(null);
+          }}
+          patient={selectedPatient}
+          onBookingSuccess={() => {
+            loadData();
+          }}
+        />
       )}
 
       {showHistoryModal && selectedPatient && (

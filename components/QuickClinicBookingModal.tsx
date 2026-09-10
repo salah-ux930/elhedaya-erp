@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { Patient, Clinic, Doctor, LinkedModuleType, AppointmentTriggerType } from '../types.ts';
 import { DB } from '../store.ts';
 import { 
-  X, Calendar, Clock, Stethoscope, User, AlertCircle, CheckCircle, 
-  Loader2, Sparkles, Building2
+  X, Calendar, Clock, Stethoscope, AlertCircle, CheckCircle, 
+  Loader2, Sparkles, Building2, Copy, Check, Info, FileText
 } from 'lucide-react';
+import { getClinicRequirements, formatBookingRequirementsText } from '../constants/clinicRequirements.ts';
 
 interface QuickClinicBookingModalProps {
   isOpen: boolean;
@@ -57,6 +58,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [copiedReqs, setCopiedReqs] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -117,6 +119,29 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
     setSelectedDoctorId(matchingDoc ? matchingDoc.id : '');
   };
 
+  const selectedClinic = clinics.find(c => c.id === selectedClinicId);
+  const selectedDoctor = doctors.find(d => d.id === selectedDoctorId);
+  const clinicReqs = selectedClinic 
+    ? getClinicRequirements(selectedClinic.linked_module, selectedClinic.name)
+    : (normalizedModule ? getClinicRequirements(normalizedModule) : null);
+
+  const handleCopyRequirements = () => {
+    if (!clinicReqs || !selectedClinic) return;
+    const text = formatBookingRequirementsText({
+      patientName: patient.name,
+      clinicName: selectedClinic.name,
+      doctorName: selectedDoctor?.name,
+      date,
+      time,
+      room: selectedClinic.room,
+      requirements: clinicReqs.requirements,
+      preparationNotes: clinicReqs.preparationNotes
+    });
+    navigator.clipboard.writeText(text);
+    setCopiedReqs(true);
+    setTimeout(() => setCopiedReqs(false), 2000);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedClinicId) {
@@ -161,10 +186,10 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
   const filteredDoctors = doctors.filter(d => !selectedClinicId || d.clinic_id === selectedClinicId);
 
   return (
-    <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200" dir="rtl">
-      <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col">
+    <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200 overflow-y-auto" dir="rtl">
+      <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[92vh]">
         {/* Header */}
-        <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-5 flex items-center justify-between">
+        <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
               <Calendar size={20} />
@@ -176,7 +201,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
           </div>
           <button 
             onClick={onClose}
-            className="p-2 hover:bg-white/10 rounded-full transition-colors text-slate-300 hover:text-white"
+            className="p-2 hover:bg-white/10 rounded-full transition-colors text-slate-300 hover:text-white cursor-pointer"
           >
             <X size={20} />
           </button>
@@ -184,7 +209,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
 
         {/* Reason / Context Alert */}
         {suggestedReason && (
-          <div className="bg-amber-50 border-b border-amber-200 p-3.5 flex items-start gap-2.5 text-xs text-amber-900">
+          <div className="bg-amber-50 border-b border-amber-200 p-3.5 flex items-start gap-2.5 text-xs text-amber-900 shrink-0">
             <Sparkles size={16} className="text-amber-600 shrink-0 mt-0.5" />
             <div>
               <span className="font-black">متابعة مقترحة من النظام: </span>
@@ -194,7 +219,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
         )}
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
           {loading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
               <Loader2 size={32} className="animate-spin text-indigo-600" />
@@ -224,6 +249,61 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                   </select>
                 </div>
               </div>
+
+              {/* بطاقة تنبيهات ومتطلبات زيارة هذه العيادة */}
+              {clinicReqs && (
+                <div className="bg-sky-50/80 border-2 border-sky-200 rounded-2xl p-3.5 sm:p-4 space-y-2.5 animate-in fade-in duration-200">
+                  <div className="flex items-center justify-between gap-2 border-b border-sky-200 pb-2">
+                    <div className="flex items-center gap-2 text-sky-950 font-black text-xs">
+                      <FileText size={16} className="text-sky-600 shrink-0" />
+                      <span>تنبيهات ومتطلبات زيارة هذه العيادة:</span>
+                      <span className="bg-sky-200/80 text-sky-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                        {clinicReqs.badge}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleCopyRequirements}
+                      className="px-2.5 py-1 bg-white hover:bg-sky-100 text-sky-800 rounded-lg text-[11px] font-bold border border-sky-300 flex items-center gap-1 transition-all shadow-xs shrink-0 cursor-pointer"
+                      title="نسخ رسالة المتطلبات للمريض"
+                    >
+                      {copiedReqs ? (
+                        <>
+                          <Check size={12} className="text-emerald-600" />
+                          <span className="text-emerald-700">تم النسخ</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy size={12} />
+                          <span>نسخ للمريض</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <ul className="space-y-1.5 text-xs text-sky-950 font-medium pr-1">
+                    {clinicReqs.requirements.map((req, idx) => (
+                      <li key={idx} className="flex items-start gap-2">
+                        <span className="w-1.5 h-1.5 rounded-full bg-sky-500 mt-1.5 shrink-0"></span>
+                        <span className="font-bold">{req}</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  {clinicReqs.preparationNotes && clinicReqs.preparationNotes.length > 0 && (
+                    <div className="bg-white/70 border border-sky-200/70 rounded-xl p-2.5 text-[11px] text-sky-900 font-bold space-y-1">
+                      <div className="flex items-center gap-1 text-sky-950 font-black">
+                        <Info size={12} className="text-sky-600" />
+                        <span>إرشادات تحضير المريض:</span>
+                      </div>
+                      {clinicReqs.preparationNotes.map((note, idx) => (
+                        <p key={idx} className="text-slate-700 font-semibold">• {note}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* اختيار الطبيب (اختياري) */}
               <div>
@@ -290,7 +370,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                   <button
                     type="button"
                     onClick={() => setTriggerType('staff_scheduled')}
-                    className={`p-2.5 rounded-xl border text-[11px] font-black transition-all ${
+                    className={`p-2.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer ${
                       triggerType === 'staff_scheduled'
                         ? 'bg-indigo-50 border-indigo-600 text-indigo-700 shadow-sm'
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -301,7 +381,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                   <button
                     type="button"
                     onClick={() => setTriggerType('system_suggested')}
-                    className={`p-2.5 rounded-xl border text-[11px] font-black transition-all ${
+                    className={`p-2.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer ${
                       triggerType === 'system_suggested'
                         ? 'bg-amber-50 border-amber-600 text-amber-800 shadow-sm'
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -312,7 +392,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                   <button
                     type="button"
                     onClick={() => setTriggerType('patient_request')}
-                    className={`p-2.5 rounded-xl border text-[11px] font-black transition-all ${
+                    className={`p-2.5 rounded-xl border text-[11px] font-black transition-all cursor-pointer ${
                       triggerType === 'patient_request'
                         ? 'bg-emerald-50 border-emerald-600 text-emerald-800 shadow-sm'
                         : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -343,14 +423,14 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                   type="button"
                   onClick={onClose}
                   disabled={saving}
-                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                  className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
                 >
                   إلغاء
                 </button>
                 <button
                   type="submit"
                   disabled={saving || success}
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all disabled:opacity-50"
+                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
                 >
                   {saving ? (
                     <>

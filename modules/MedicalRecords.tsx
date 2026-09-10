@@ -79,7 +79,7 @@ const MedicalRecordsModule: React.FC = () => {
               </span>
             </div>
             <p className="text-xs text-indigo-200/80 mt-1">
-              متابعة أوزان وضغط دم وغرف جلسات الغسيل، مع إمكانية الدخول المباشر للملف الصحي الشامل (10 موديولات سريرية) لأي مريض.
+              متابعة أوزان وضغط دم وغرف جلسات الغسيل، مع إمكانية الدخول المباشر للملف الصحي الشامل (الملف الصحي الشامل) لأي مريض.
             </p>
           </div>
         </div>
@@ -211,7 +211,7 @@ const MedicalRecordsModule: React.FC = () => {
                           <button
                             onClick={() => handleOpenComprehensive(patient)}
                             className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 flex items-center gap-1.5 transition-all"
-                            title="فتح الملف الصحي الشامل للمريض (10 موديولات سريرية)"
+                            title="فتح الملف الصحي الشامل للمريض (الملف الصحي الشامل)"
                           >
                             <Stethoscope size={14} />
                             <span>الملف الصحي الشامل</span>

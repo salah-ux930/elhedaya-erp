@@ -10,7 +10,6 @@ import { DB } from '../store.ts';
 import { calculateAge, BLOOD_TYPES } from '../constants.ts';
 import { LinkedModuleType } from '../types.ts';
 import HistoryPhysicalModal from './HistoryPhysicalModal.tsx';
-import VisitsFormModal from './VisitsFormModal.tsx';
 import { QuickClinicBookingModal } from './QuickClinicBookingModal.tsx';
 
 interface Props {
@@ -64,7 +63,6 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   // Modals for sub-components
   const [showHistoryExamModal, setShowHistoryExamModal] = useState(false);
   const [historyExamInitialTab, setHistoryExamInitialTab] = useState<'history' | 'significant' | 'clinical' | 'full'>('full');
-  const [showVisitsModal, setShowVisitsModal] = useState(false);
   const [quickBookingState, setQuickBookingState] = useState<{ module: LinkedModuleType; reason: string } | null>(null);
 
   // Data states for modules
@@ -411,14 +409,13 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   const moduleGroups = [
     {
       id: 'general',
-      title: 'عام لكل الأعمار',
-      subtitle: 'العام والمشترك',
+      title: 'السجلات الأساسية والزيارات',
+      subtitle: 'العام والمشترك لكافة الأعمار',
       modules: [
         {
           id: 'history',
-          number: '١',
-          title: 'التاريخ المرضي والصحي',
-          subtitle: 'Medical History Sheet',
+          title: 'التاريخ المرضي والوراثي',
+          subtitle: 'Medical & Family History',
           icon: Shield,
           color: 'purple',
           badge: 'عام لجميع الأعمار',
@@ -427,8 +424,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         },
         {
           id: 'significant',
-          number: '٢',
-          title: 'ملخص الأحداث الهامة',
+          title: 'الأحداث الطبية الهامة',
           subtitle: 'Significant Data Sheet',
           icon: ClipboardList,
           color: 'amber',
@@ -438,9 +434,8 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         },
         {
           id: 'clinical',
-          number: '٣',
-          title: 'الفحص السريري والعلامات الحيوية',
-          subtitle: 'Clinical Findings & Vitals',
+          title: 'الفحص الإكلينيكي والبدني',
+          subtitle: 'Clinical Findings & Physical Examination',
           icon: Activity,
           color: 'indigo',
           badge: 'فحص أجهزة الجسم',
@@ -449,9 +444,8 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         },
         {
           id: 'visits',
-          number: '٤',
-          title: 'نموذج التردد والزيارات (تجميعي)',
-          subtitle: 'Visits Rollup View',
+          title: 'سجل الزيارات',
+          subtitle: 'Visits & Clinical Chronology',
           icon: FileText,
           color: 'teal',
           badge: 'سجل مجمّع للتردد والعيادات',
@@ -460,12 +454,11 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         },
         {
           id: 'dental',
-          number: '١٠',
-          title: 'طب وصحة الفم والأسنان',
+          title: 'فحص الأسنان',
           subtitle: 'Oral & Dental Health',
           icon: Smile,
           color: 'blue',
-          badge: 'فحص الفم ومؤشر DMFT',
+          badge: 'فحص الفم والأسنان ومؤشر DMFT',
           available: true,
           count: dentalRecords.length
         }
@@ -473,14 +466,13 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
     },
     {
       id: 'demographic',
-      title: 'حسب الفئة العمرية / النوع',
-      subtitle: 'فئات مخصصة',
+      title: 'حسب الفئة العمرية والنوع',
+      subtitle: 'بروتوكولات الفئات المخصصة',
       modules: [
         {
           id: 'child',
-          number: '٥',
-          title: 'صحة ورعاية الطفل والنمو',
-          subtitle: 'Child Health & Growth',
+          title: 'متابعة نمو الطفل والتطعيمات',
+          subtitle: 'Child Growth & Immunizations',
           icon: Baby,
           color: 'emerald',
           badge: isChild ? 'متاح (< 18 سنة)' : 'خاص بالأطفال (< 18 سنة)',
@@ -490,8 +482,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         },
         {
           id: 'maternal',
-          number: '٦',
-          title: 'رعاية الأمومة والحوامل والنفاس',
+          title: 'متابعة الحمل وصحة الأم',
           subtitle: 'Maternal ANC & Postpartum',
           icon: HeartHandshake,
           color: 'rose',
@@ -502,9 +493,8 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         },
         {
           id: 'family_planning',
-          number: '٧',
-          title: 'تنظيم الأسرة والصحة الإنجابية',
-          subtitle: 'Family Planning',
+          title: 'تنظيم الأسرة',
+          subtitle: 'Family Planning & Reproductive Health',
           icon: Sparkles,
           color: 'pink',
           badge: isReproductiveAge ? 'متاح (15 - 49 سنة)' : (isFemale ? 'سن الإنجاب (15-49)' : 'خاص بالإناث'),
@@ -514,9 +504,8 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         },
         {
           id: 'geriatric',
-          number: '٩',
-          title: 'رعاية كبار السن والمسنين',
-          subtitle: 'Geriatric Assessment',
+          title: 'تقييم كبار السن',
+          subtitle: 'Comprehensive Geriatric Assessment',
           icon: Clock,
           color: 'amber',
           badge: isElderly ? 'متاح (≥ 60 سنة)' : 'خاص بالمسنين (≥ 60)',
@@ -528,14 +517,13 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
     },
     {
       id: 'specialized',
-      title: 'خاص',
+      title: 'الفحص والمشورة الخاصة',
       subtitle: 'بروتوكول نوعي',
       modules: [
         {
           id: 'premarital',
-          number: '٨',
-          title: 'فحص المقبلين على الزواج',
-          subtitle: 'Premarital Screening',
+          title: 'فحص ما قبل الزواج',
+          subtitle: 'Premarital Screening & Counseling',
           icon: HeartHandshake,
           color: 'cyan',
           badge: 'مشورة وفحص وراثي',
@@ -617,7 +605,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           </div>
         )}
 
-        {/* 10 Modules Navigation Tabs grouped into 3 categories */}
+        {/* Navigation Tabs grouped into 3 categories */}
         <div className="bg-slate-100/80 border-b border-slate-200 p-2.5 overflow-x-auto shrink-0">
           <div className="flex items-stretch gap-2.5 min-w-max">
             {moduleGroups.map((grp) => (
@@ -652,11 +640,6 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         }`}
                         title={!isAllowed ? mod.reason : mod.title}
                       >
-                        <div className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black shrink-0 ${
-                          isActive ? 'bg-white/20 text-white' : 'bg-white text-slate-700 border border-slate-200'
-                        }`}>
-                          {mod.number}
-                        </div>
                         <Icon size={14} className={isActive ? 'text-white' : 'text-indigo-600 shrink-0'} />
                         <span className="whitespace-nowrap">{mod.title}</span>
                         {mod.count > 0 ? (
@@ -745,14 +728,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
             </div>
           ) : (
             <>
-              {/* ======================= موديول 1: التاريخ المرضي الشامل ======================= */}
+              {/* ======================= التاريخ المرضي والوراثي ======================= */}
               {activeTab === 'history' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-purple-50 border border-purple-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-purple-950 text-base flex items-center gap-2">
                         <Shield size={18} className="text-purple-600" />
-                        ١. موديول التاريخ المرضي والصحي الشامل (Medical & Family History Sheet)
+                        التاريخ المرضي والوراثي (Medical & Family History)
                       </h4>
                       <p className="text-xs text-purple-700 font-bold mt-0.5">
                         يوثق العمليات السابقة، الحجز بالمستشفيات، الأدوية المزمنة، الحساسية، والعادات والتاريخ العائلي
@@ -824,14 +807,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= موديول 2: الأحداث الهامة ======================= */}
+              {/* ======================= الأحداث الطبية الهامة ======================= */}
               {activeTab === 'significant' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-amber-50 border border-amber-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-amber-950 text-base flex items-center gap-2">
                         <ClipboardList size={18} className="text-amber-600" />
-                        ٢. موديول صحيفة الأحداث الطبية الهامة (Significant Data Sheet)
+                        الأحداث الطبية الهامة (Significant Data Sheet)
                       </h4>
                       <p className="text-xs text-amber-800 font-bold mt-0.5">
                         توثيق المحطات والتشخيصات الهامة والأمراض المزمنة في مسيرة المريض الصحية
@@ -897,14 +880,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= موديول 3: الفحص السريري الإكلينيكي ======================= */}
+              {/* ======================= الفحص الإكلينيكي والبدني ======================= */}
               {activeTab === 'clinical' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-indigo-50 border border-indigo-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-indigo-950 text-base flex items-center gap-2">
                         <Activity size={18} className="text-indigo-600" />
-                        ٣. موديول الفحص السريري والعلامات الحيوية (Clinical Findings & Physical Examination)
+                        الفحص الإكلينيكي والبدني (Clinical Findings & Physical Examination)
                       </h4>
                       <p className="text-xs text-indigo-800 font-bold mt-0.5">
                         العلامات الحيوية الكاملة وفحص أجهزة الجسم (القلب، الصدر، البطن، العظام، الأعصاب)
@@ -998,29 +981,23 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= موديول 4: نموذج التردد والزيارات (تجميعي) ======================= */}
+              {/* ======================= سجل الزيارات ======================= */}
               {activeTab === 'visits' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-teal-50 border border-teal-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-teal-950 text-base flex items-center gap-2">
                         <FileText size={18} className="text-teal-600" />
-                        ٤. موديول نموذج التردد والزيارات التجميعي (Visits & Clinical Chronology)
+                        سجل الزيارات (Visits & Clinical Chronology)
                       </h4>
                       <p className="text-xs text-teal-800 font-bold mt-0.5">
-                        عرض مجمّع وتلقائي لكافة مراجعات العيادات، جلسات الكشف، وفحوصات الموديولات العشرة بالترتيب الزمني
+                        عرض مجمّع وتلقائي لكافة مراجعات العيادات، جلسات الكشف، وفحوصات المريض بالترتيب الزمني
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="bg-teal-200/80 text-teal-900 text-xs px-3 py-1.5 rounded-xl font-black border border-teal-300">
-                        إجمالي الترددات: {rollupVisits.length}
+                        إجمالي الزيارات: {rollupVisits.length}
                       </span>
-                      <button
-                        onClick={() => setShowVisitsModal(true)}
-                        className="px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold transition-colors"
-                      >
-                        سجل التردد اليدوي
-                      </button>
                     </div>
                   </div>
 
@@ -1077,14 +1054,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= موديول 5: صحة ورعاية الطفل ======================= */}
+              {/* ======================= متابعة نمو الطفل والتطعيمات ======================= */}
               {activeTab === 'child' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-emerald-50 border border-emerald-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-emerald-950 text-base flex items-center gap-2">
                         <Baby size={18} className="text-emerald-600" />
-                        ٥. موديول صحة ورعاية الطفل والنمو (Child Growth & School Health)
+                        متابعة نمو الطفل والتطعيمات (Child Growth & Immunizations)
                       </h4>
                       <p className="text-xs text-emerald-800 font-bold mt-0.5">
                         متابعة معايير النمو للأطفال دون 5 سنوات (WHO)، والفحص الشامل للسن المدرسي والمراهقين (Form 5D)
@@ -1537,14 +1514,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= موديول 6: رعاية الأمومة والحوامل ======================= */}
+              {/* ======================= متابعة الحمل وصحة الأم ======================= */}
               {activeTab === 'maternal' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-rose-950 text-base flex items-center gap-2">
                         <HeartHandshake size={18} className="text-rose-600" />
-                        ٦. موديول رعاية الأمومة والحوامل والنفاس (Maternal ANC & Postpartum)
+                        متابعة الحمل وصحة الأم (Maternal ANC & Postpartum)
                       </h4>
                       <p className="text-xs text-rose-800 font-bold mt-0.5">
                         بروتوكول متابعة الحمل، التاريخ التوليدي (G/P/A)، تطعيم التيتانوس، السونار، ورعاية ما بعد الولادة
@@ -1769,14 +1746,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= موديول 7: تنظيم الأسرة ======================= */}
+              {/* ======================= تنظيم الأسرة ======================= */}
               {activeTab === 'family_planning' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-pink-50 border border-pink-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-pink-950 text-base flex items-center gap-2">
                         <Sparkles size={18} className="text-pink-600" />
-                        ٧. موديول تنظيم الأسرة والصحة الإنجابية (Family Planning)
+                        تنظيم الأسرة (Family Planning & Reproductive Health)
                       </h4>
                       <p className="text-xs text-pink-800 font-bold mt-0.5">
                         توثيق وسيلة تنظيم الأسرة الحالية والموصوفة، الآثار الجانبية، ومواعيد المتابعة والتجديد
@@ -1956,14 +1933,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= موديول 8: فحص المقبلين على الزواج ======================= */}
+              {/* ======================= فحص ما قبل الزواج ======================= */}
               {activeTab === 'premarital' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-cyan-50 border border-cyan-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-cyan-950 text-base flex items-center gap-2">
                         <HeartHandshake size={18} className="text-cyan-600" />
-                        ٨. موديول الفحص الطبي الشامل للمقبلين على الزواج (Premarital Examination)
+                        فحص ما قبل الزواج (Premarital Screening & Counseling)
                       </h4>
                       <p className="text-xs text-cyan-800 font-bold mt-0.5">
                         الفحص الوراثي والمعدي، فصائل الدم، أنيميا البحر المتوسط، ورقم الشهادة الصحية الرسمية (إجراء عند الطلب)
@@ -2154,14 +2131,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= موديول 9: رعاية كبار السن ======================= */}
+              {/* ======================= تقييم كبار السن ======================= */}
               {activeTab === 'geriatric' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-amber-50 border border-amber-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-amber-950 text-base flex items-center gap-2">
                         <Clock size={18} className="text-amber-600" />
-                        ٩. موديول الرعاية الصحية الشاملة للمسنين (Comprehensive Geriatric Assessment)
+                        تقييم كبار السن (Comprehensive Geriatric Assessment)
                       </h4>
                       <p className="text-xs text-amber-800 font-bold mt-0.5">
                         تقييم متلازمة الوهن والهشاشة، الأنشطة اليومية (ADL)، الذاكرة (Mini-Cog)، وخطر السقوط
@@ -2346,14 +2323,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= موديول 10: صحة الفم والأسنان ======================= */}
+              {/* ======================= فحص الأسنان ======================= */}
               {activeTab === 'dental' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-blue-50 border border-blue-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-blue-950 text-base flex items-center gap-2">
                         <Smile size={18} className="text-blue-600" />
-                        ١٠. موديول طب وصحة الفم والأسنان (Oral & Dental Health Protocol)
+                        فحص الأسنان (Oral & Dental Health Protocol)
                       </h4>
                       <p className="text-xs text-blue-800 font-bold mt-0.5">
                         فحص الأنسجة الرخوة ومفصل الفك (TMJ)، ومؤشر تسوس وحشو وفقد الأسنان (DMFT Index)
@@ -2547,18 +2524,6 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           initialTab={historyExamInitialTab}
           onSaved={() => {
             setShowHistoryExamModal(false);
-            loadAllData();
-            if (onRefresh) onRefresh();
-          }}
-        />
-      )}
-
-      {showVisitsModal && (
-        <VisitsFormModal
-          isOpen={showVisitsModal}
-          onClose={() => setShowVisitsModal(false)}
-          patient={patient}
-          onSaved={() => {
             loadAllData();
             if (onRefresh) onRefresh();
           }}
