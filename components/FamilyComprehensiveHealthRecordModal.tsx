@@ -82,6 +82,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   const [dentalRecords, setDentalRecords] = useState<any[]>([]);
 
   // Sub-forms open state (Add new records)
+  const [childSubTab, setChildSubTab] = useState<'under5' | 'over5'>(isUnder5 ? 'under5' : 'over5');
   const [showAddForm, setShowAddForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -256,6 +257,24 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         status: 'COMPLETED',
         source: 'رعاية طفل',
         sourceColor: 'bg-emerald-100 text-emerald-900 border-emerald-200'
+      });
+    });
+
+    // 3.1 Child over 5 followups (School Age & Adolescents Form 5D)
+    childOver5Records.forEach(c => {
+      all.push({
+        id: `cOver5-${c.id}`,
+        date: c.created_at || new Date().toISOString(),
+        time: '',
+        type: `متابعة صحة السن المدرسي (${c.educational_stage || c.school_stage || 'فوق 5 سنوات'})`,
+        clinicName: 'عيادة الصحة المدرسية ونمو الأطفال',
+        doctor: c.doctor_signature || c.doctor_name,
+        complaint: `الوزن: ${c.weight_kg || '—'} كجم | الطول: ${c.height_cm || '—'} سم | BMI: ${c.bmi || '—'}`,
+        diagnosis: `بصر: ${c.vision_screening || 'سليم'} | سمع: ${c.hearing_screening || 'سليم'} | سلوكي: ${c.psychiatric_behavioral_screening || 'طبيعي'}`,
+        management: `Hb: ${c.hb_level ? `${c.hb_level} g/dL` : '—'} | بول: ${c.urine_analysis_result || '—'} | براز: ${c.stool_analysis_result || '—'}${c.health_education_given ? ` | تثقيف: ${c.health_education_given}` : ''}`,
+        status: 'COMPLETED',
+        source: 'صحة مدرسية',
+        sourceColor: 'bg-teal-100 text-teal-900 border-teal-200'
       });
     });
 
@@ -1065,10 +1084,10 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                     <div>
                       <h4 className="font-black text-emerald-950 text-base flex items-center gap-2">
                         <Baby size={18} className="text-emerald-600" />
-                        ٥. موديول صحة ورعاية الطفل والنمو (Child Growth & Health Care)
+                        ٥. موديول صحة ورعاية الطفل والنمو (Child Growth & School Health)
                       </h4>
                       <p className="text-xs text-emerald-800 font-bold mt-0.5">
-                        متابعة معايير منظمة الصحة العالمية (WHO) للوزن، الطول، محيط الرأس، التطعيمات، والنمو المدرسي
+                        متابعة معايير النمو للأطفال دون 5 سنوات (WHO)، والفحص الشامل للسن المدرسي والمراهقين (Form 5D)
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -1082,182 +1101,438 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         onClick={() => setShowAddForm(!showAddForm)}
                         className="px-3.5 py-2 bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
                       >
-                        <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل فحص مباشرة'}
+                        <Plus size={14} /> {showAddForm ? 'إلغاء' : (childSubTab === 'under5' ? 'تسجيل فحص دون 5 سنوات' : 'تسجيل فحص مدرسي فوق 5 سنوات')}
                       </button>
                     </div>
                   </div>
 
-                  {/* Add form */}
-                  {showAddForm && (
-                    <form
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        setSubmitting(true);
-                        const t = e.target as any;
-                        try {
-                          const saved = await DB.addAccreditationRecord('child_under5_followups', {
-                            patient_id: patient.id,
-                            appointment_id: activeAppointment?.id || null,
-                            age_months: Number(t.age_months.value) || 0,
-                            weight_kg: Number(t.weight_kg.value) || null,
-                            height_cm: Number(t.height_cm.value) || null,
-                            head_circumference_cm: Number(t.head_circumference_cm.value) || null,
-                            feeding_type: t.feeding_type.value || null,
-                            mandatory_vaccines_up_to_date: t.mandatory_vaccines.checked,
-                            vitamin_a_supplement_given: t.vitamin_a.checked,
-                            vitamin_d_supplement_given: t.vitamin_d.checked,
-                            clinical_assessment: t.clinical_assessment.value || null,
-                            doctor_signature: t.doctor_signature.value || null
-                          });
-                          if (!saved || !saved.id) {
-                            throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
-                          }
-                          await handleRecordSaved('child_under5_followups', 'فحص نمو الطفل');
-                        } catch (err: any) {
-                          console.error("Save error child_under5_followups:", err);
-                          const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
-                          const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
-                          showNotification('error', userMsg);
-                          alert(userMsg);
-                        } finally {
-                          setSubmitting(false);
-                        }
+                  {/* Sub-Tabs: Under 5 vs Over 5 */}
+                  <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChildSubTab('under5');
+                        setShowAddForm(false);
                       }}
-                      className="p-5 bg-white border-2 border-emerald-200 rounded-3xl space-y-4 shadow-md"
+                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                        childSubTab === 'under5'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                      }`}
                     >
-                      <h5 className="font-black text-sm text-emerald-950">نموذج فحص نمو الطفل (سجل المتابعة)</h5>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-bold">
-                        <div>
-                          <label className="block mb-1 text-slate-700">العمر بالشهور *</label>
-                          <input name="age_months" type="number" required placeholder="مثال: 6" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">الوزن (كجم)</label>
-                          <input name="weight_kg" type="number" step="0.1" placeholder="مثال: 7.5" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">الطول (سم)</label>
-                          <input name="height_cm" type="number" step="0.5" placeholder="مثال: 68" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">محيط الرأس (سم)</label>
-                          <input name="head_circumference_cm" type="number" step="0.5" placeholder="مثال: 42" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                      </div>
+                      <span>أطفال أقل من 5 سنوات (Form 5A & 5C)</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                        childSubTab === 'under5' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                      }`}>
+                        {childUnder5Records.length}
+                      </span>
+                    </button>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold">
-                        <div>
-                          <label className="block mb-1 text-slate-700">نوع التغذية والرضاعة</label>
-                          <select name="feeding_type" className="w-full p-2.5 border rounded-xl">
-                            <option value="طبيعية مطلقة">طبيعية مطلقة (Exclusive Breastfeeding)</option>
-                            <option value="صناعية">ألبان صناعية بديلة</option>
-                            <option value="مختلطة">مختلطة (طبيعية + صناعية)</option>
-                            <option value="تغذية تكميلية وفطام">بدء التغذية التكميلية والفطام</option>
-                          </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setChildSubTab('over5');
+                        setShowAddForm(false);
+                      }}
+                      className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                        childSubTab === 'over5'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                      }`}
+                    >
+                      <span>السن المدرسي والمراهقين فوق 5 سنوات (Form 5D)</span>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono ${
+                        childSubTab === 'over5' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+                      }`}>
+                        {childOver5Records.length}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Under 5 Content */}
+                  {childSubTab === 'under5' && (
+                    <>
+                      {showAddForm && (
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            setSubmitting(true);
+                            const t = e.target as any;
+                            try {
+                              const saved = await DB.addAccreditationRecord('child_under5_followups', {
+                                patient_id: patient.id,
+                                appointment_id: activeAppointment?.id || null,
+                                age_months: Number(t.age_months.value) || 0,
+                                weight_kg: Number(t.weight_kg.value) || null,
+                                height_cm: Number(t.height_cm.value) || null,
+                                head_circumference_cm: Number(t.head_circumference_cm.value) || null,
+                                feeding_type: t.feeding_type.value || null,
+                                mandatory_vaccines_up_to_date: t.mandatory_vaccines.checked,
+                                vitamin_a_supplement_given: t.vitamin_a.checked,
+                                vitamin_d_supplement_given: t.vitamin_d.checked,
+                                clinical_assessment: t.clinical_assessment.value || null,
+                                doctor_signature: t.doctor_signature.value || null
+                              });
+                              if (!saved || !saved.id) {
+                                throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
+                              }
+                              await handleRecordSaved('child_under5_followups', 'فحص نمو الطفل');
+                            } catch (err: any) {
+                              console.error("Save error child_under5_followups:", err);
+                              const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
+                              const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
+                              showNotification('error', userMsg);
+                              alert(userMsg);
+                            } finally {
+                              setSubmitting(false);
+                            }
+                          }}
+                          className="p-5 bg-white border-2 border-emerald-200 rounded-3xl space-y-4 shadow-md"
+                        >
+                          <h5 className="font-black text-sm text-emerald-950">نموذج فحص نمو الطفل دون 5 سنوات (Form 5A / 5C)</h5>
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-bold">
+                            <div>
+                              <label className="block mb-1 text-slate-700">العمر بالشهور *</label>
+                              <input name="age_months" type="number" required placeholder="مثال: 6" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">الوزن (كجم)</label>
+                              <input name="weight_kg" type="number" step="0.1" placeholder="مثال: 7.5" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">الطول (سم)</label>
+                              <input name="height_cm" type="number" step="0.5" placeholder="مثال: 68" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">محيط الرأس (سم)</label>
+                              <input name="head_circumference_cm" type="number" step="0.5" placeholder="مثال: 42" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold">
+                            <div>
+                              <label className="block mb-1 text-slate-700">نوع التغذية والرضاعة</label>
+                              <select name="feeding_type" className="w-full p-2.5 border rounded-xl">
+                                <option value="طبيعية مطلقة">طبيعية مطلقة (Exclusive Breastfeeding)</option>
+                                <option value="صناعية">ألبان صناعية بديلة</option>
+                                <option value="مختلطة">مختلطة (طبيعية + صناعية)</option>
+                                <option value="تغذية تكميلية وفطام">بدء التغذية التكميلية والفطام</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">اسم الطبيب الفاحص</label>
+                              <input name="doctor_signature" placeholder="اسم الطبيب" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap gap-6 py-2 text-xs font-bold text-slate-800">
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input name="mandatory_vaccines" type="checkbox" defaultChecked className="w-4 h-4 rounded text-emerald-600" />
+                              <span>التطعيمات الإجبارية المقررة مكتملة حسب السن</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input name="vitamin_a" type="checkbox" className="w-4 h-4 rounded text-emerald-600" />
+                              <span>تم إعطاء كبسولة فيتامين (أ) المقررة</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input name="vitamin_d" type="checkbox" defaultChecked className="w-4 h-4 rounded text-emerald-600" />
+                              <span>يتناول جرعات فيتامين (د) الوقائية</span>
+                            </label>
+                          </div>
+
+                          <div>
+                            <label className="block mb-1 text-xs font-bold text-slate-700">التقييم الإكلينيكي وتطور النمو</label>
+                            <textarea name="clinical_assessment" rows={2} placeholder="تطور الحركة، التواصل، الأسنان، ملاحظات الأم..." className="w-full p-2.5 border rounded-xl text-xs" />
+                          </div>
+
+                          <div className="flex justify-end gap-2">
+                            <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">إلغاء</button>
+                            <button type="submit" disabled={submitting} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black shadow-md">
+                              {submitting ? 'جاري الحفظ في قاعدة البيانات...' : 'حفظ الفحص'}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+
+                      {loadError ? (
+                        <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
+                          <AlertCircle className="mx-auto text-red-500" size={28} />
+                          <p className="text-sm font-black">تعذر استرجاع سجلات متابعة نمو الطفل من قاعدة البيانات</p>
+                          <p className="text-xs text-red-600 font-mono">{loadError}</p>
                         </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">اسم الطبيب الفاحص</label>
-                          <input name="doctor_signature" placeholder="اسم الطبيب" className="w-full p-2.5 border rounded-xl" />
+                      ) : childUnder5Records.length === 0 ? (
+                        <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
+                          لا توجد سجلات متابعة نمو مسجلة للطفل دون 5 سنوات حتى الآن. اضغط على الزر أعلاه لإضافة فحص.
                         </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-6 py-2 text-xs font-bold text-slate-800">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input name="mandatory_vaccines" type="checkbox" defaultChecked className="w-4 h-4 rounded text-emerald-600" />
-                          <span>التطعيمات الإجبارية المقررة مكتملة حسب السن</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input name="vitamin_a" type="checkbox" className="w-4 h-4 rounded text-emerald-600" />
-                          <span>تم إعطاء كبسولة فيتامين (أ) المقررة</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input name="vitamin_d" type="checkbox" defaultChecked className="w-4 h-4 rounded text-emerald-600" />
-                          <span>يتناول جرعات فيتامين (د) الوقائية</span>
-                        </label>
-                      </div>
-
-                      <div>
-                        <label className="block mb-1 text-xs font-bold text-slate-700">التقييم الإكلينيكي وتطور النمو</label>
-                        <textarea name="clinical_assessment" rows={2} placeholder="تطور الحركة، التواصل، الأسنان، ملاحظات الأم..." className="w-full p-2.5 border rounded-xl text-xs" />
-                      </div>
-
-                      <div className="flex justify-end gap-2">
-                        <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">إلغاء</button>
-                        <button type="submit" disabled={submitting} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black shadow-md">
-                          {submitting ? 'جاري الحفظ في قاعدة البيانات...' : 'حفظ الفحص'}
-                        </button>
-                      </div>
-                    </form>
+                      ) : (
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                          <table className="w-full text-right text-xs">
+                            <thead className="bg-emerald-50 border-b border-emerald-100 text-emerald-950 font-black">
+                              <tr>
+                                <th className="p-3">تاريخ الفحص</th>
+                                <th className="p-3">العمر</th>
+                                <th className="p-3">الوزن / الطول / الرأس</th>
+                                <th className="p-3">الرضاعة والتغذية</th>
+                                <th className="p-3">التطعيمات والفيتامينات</th>
+                                <th className="p-3">التقييم والتوقيع</th>
+                                <th className="p-3 text-center">إجراءات</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-bold">
+                              {childUnder5Records.map((c) => (
+                                <tr key={c.id} className="hover:bg-emerald-50/20">
+                                  <td className="p-3 font-mono text-slate-600">
+                                    {new Date(c.created_at).toLocaleDateString('ar-EG')}
+                                  </td>
+                                  <td className="p-3">
+                                    <span className="bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded font-black">
+                                      {c.age_months} شهر
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-slate-800">
+                                    <div>وزن: {c.weight_kg ? `${c.weight_kg} كجم` : '—'}</div>
+                                    <div>طول: {c.height_cm ? `${c.height_cm} سم` : '—'}</div>
+                                    <div className="text-slate-500">رأس: {c.head_circumference_cm ? `${c.head_circumference_cm} سم` : '—'}</div>
+                                  </td>
+                                  <td className="p-3 text-slate-700">{c.feeding_type || '—'}</td>
+                                  <td className="p-3">
+                                    <div className={c.mandatory_vaccines_up_to_date ? 'text-emerald-700' : 'text-amber-700'}>
+                                      تطعيمات: {c.mandatory_vaccines_up_to_date ? 'مكتملة ✓' : 'غير مكتملة'}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500">
+                                      فيتامين أ: {c.vitamin_a_supplement_given ? 'نعم' : 'لا'} | فيتامين د: {c.vitamin_d_supplement_given ? 'نعم' : 'لا'}
+                                    </div>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="text-slate-900">{c.clinical_assessment || 'سليم'}</div>
+                                    <div className="text-slate-500 text-[11px]">{c.doctor_signature ? `د/ ${c.doctor_signature}` : ''}</div>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteRecord('child_under5_followups', c.id, 'فحص نمو الطفل')}
+                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                      title="حذف السجل"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
                   )}
 
-                  {loadError ? (
-                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
-                      <AlertCircle className="mx-auto text-red-500" size={28} />
-                      <p className="text-sm font-black">تعذر استرجاع سجلات متابعة نمو الطفل من قاعدة البيانات</p>
-                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
-                    </div>
-                  ) : childUnder5Records.length === 0 ? (
-                    <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
-                      لا توجد سجلات متابعة نمو مسجلة للطفل حتى الآن. اضغط على الزر أعلاه لإضافة فحص.
-                    </div>
-                  ) : (
-                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                      <table className="w-full text-right text-xs">
-                        <thead className="bg-emerald-50 border-b border-emerald-100 text-emerald-950 font-black">
-                          <tr>
-                            <th className="p-3">تاريخ الفحص</th>
-                            <th className="p-3">العمر</th>
-                            <th className="p-3">الوزن / الطول / الرأس</th>
-                            <th className="p-3">الرضاعة والتغذية</th>
-                            <th className="p-3">التطعيمات والفيتامينات</th>
-                            <th className="p-3">التقييم والتوقيع</th>
-                            <th className="p-3 text-center">إجراءات</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-bold">
-                          {childUnder5Records.map((c) => (
-                            <tr key={c.id} className="hover:bg-emerald-50/20">
-                              <td className="p-3 font-mono text-slate-600">
-                                {new Date(c.created_at).toLocaleDateString('ar-EG')}
-                              </td>
-                              <td className="p-3">
-                                <span className="bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded font-black">
-                                  {c.age_months} شهر
-                                </span>
-                              </td>
-                              <td className="p-3 text-slate-800">
-                                <div>وزن: {c.weight_kg ? `${c.weight_kg} كجم` : '—'}</div>
-                                <div>طول: {c.height_cm ? `${c.height_cm} سم` : '—'}</div>
-                                <div className="text-slate-500">رأس: {c.head_circumference_cm ? `${c.head_circumference_cm} سم` : '—'}</div>
-                              </td>
-                              <td className="p-3 text-slate-700">{c.feeding_type || '—'}</td>
-                              <td className="p-3">
-                                <div className={c.mandatory_vaccines_up_to_date ? 'text-emerald-700' : 'text-amber-700'}>
-                                  تطعيمات: {c.mandatory_vaccines_up_to_date ? 'مكتملة ✓' : 'غير مكتملة'}
-                                </div>
-                                <div className="text-[11px] text-slate-500">
-                                  فيتامين أ: {c.vitamin_a_supplement_given ? 'نعم' : 'لا'} | فيتامين د: {c.vitamin_d_supplement_given ? 'نعم' : 'لا'}
-                                </div>
-                              </td>
-                              <td className="p-3">
-                                <div className="text-slate-900">{c.clinical_assessment || 'سليم'}</div>
-                                <div className="text-slate-500 text-[11px]">{c.doctor_signature ? `د/ ${c.doctor_signature}` : ''}</div>
-                              </td>
-                              <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteRecord('child_under5_followups', c.id, 'فحص نمو الطفل')}
-                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                  title="حذف السجل"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                  {/* Over 5 (School Age & Adolescent Form 5D) Content */}
+                  {childSubTab === 'over5' && (
+                    <>
+                      {showAddForm && (
+                        <form
+                          onSubmit={async (e) => {
+                            e.preventDefault();
+                            setSubmitting(true);
+                            const t = e.target as any;
+                            const weight = Number(t.weight_kg.value) || null;
+                            const height = Number(t.height_cm.value) || null;
+                            let computedBmi = Number(t.bmi.value) || null;
+                            if (!computedBmi && weight && height && height > 0) {
+                              const heightInMeters = height / 100;
+                              computedBmi = Number((weight / (heightInMeters * heightInMeters)).toFixed(1));
+                            }
+                            try {
+                              const saved = await DB.addAccreditationRecord('child_over5_followups', {
+                                patient_id: patient.id,
+                                appointment_id: activeAppointment?.id || null,
+                                educational_stage: t.educational_stage.value || null,
+                                weight_kg: weight,
+                                height_cm: height,
+                                bmi: computedBmi,
+                                vision_screening: t.vision_screening.value || null,
+                                hearing_screening: t.hearing_screening.value || null,
+                                school_achievement_concerns: t.school_achievement_concerns.checked,
+                                psychiatric_behavioral_screening: t.psychiatric_behavioral_screening.value || null,
+                                hb_level: Number(t.hb_level.value) || null,
+                                urine_analysis_result: t.urine_analysis_result.value || null,
+                                stool_analysis_result: t.stool_analysis_result.value || null,
+                                health_education_given: t.health_education_given.value || null,
+                                doctor_signature: t.doctor_signature.value || null
+                              });
+                              if (!saved || !saved.id) {
+                                throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
+                              }
+                              await handleRecordSaved('child_over5_followups', 'فحص السن المدرسي والمراهقين');
+                            } catch (err: any) {
+                              console.error("Save error child_over5_followups:", err);
+                              const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
+                              const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
+                              showNotification('error', userMsg);
+                              alert(userMsg);
+                            } finally {
+                              setSubmitting(false);
+                            }
+                          }}
+                          className="p-5 bg-white border-2 border-emerald-200 rounded-3xl space-y-4 shadow-md"
+                        >
+                          <h5 className="font-black text-sm text-emerald-950">نموذج فحص الصحة المدرسية والمراهقين فوق 5 سنوات (Form 5D)</h5>
+                          
+                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-bold">
+                            <div>
+                              <label className="block mb-1 text-slate-700">المرحلة التعليمية</label>
+                              <select name="educational_stage" className="w-full p-2.5 border rounded-xl">
+                                <option value="رياض أطفال (KG)">رياض أطفال (KG)</option>
+                                <option value="ابتدائي (Primary)">المرحلة الابتدائية (Primary)</option>
+                                <option value="إعدادي (Preparatory)">المرحلة الإعدادية (Preparatory)</option>
+                                <option value="ثانوي (Secondary)">المرحلة الثانوية (Secondary)</option>
+                                <option value="غير ملتحق / متسرب">غير ملتحق / متسرب من التعليم</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">الوزن (كجم)</label>
+                              <input name="weight_kg" type="number" step="0.1" placeholder="مثال: 28" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">الطول (سم)</label>
+                              <input name="height_cm" type="number" step="0.5" placeholder="مثال: 125" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">مؤشر كتلة الجسم (BMI)</label>
+                              <input name="bmi" type="number" step="0.1" placeholder="يُحسب آلياً إن ترك فارغاً" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold">
+                            <div>
+                              <label className="block mb-1 text-slate-700">فحص وقوة الإبصار (Vision Screening)</label>
+                              <input name="vision_screening" defaultValue="6/6 بالعينين - سليم" placeholder="مثال: 6/6 أو ضعف إبصار / يرتدي نظارة" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">فحص السمع (Hearing Screening)</label>
+                              <input name="hearing_screening" defaultValue="طبيعي وسليم" placeholder="مثال: طبيعي أو فحص الشوكة الرنانة طبيعي" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                          </div>
+
+                          <div className="p-3 bg-emerald-50/60 rounded-2xl border border-emerald-100 space-y-3 text-xs font-bold">
+                            <span className="text-emerald-950 block font-black">التحاليل والفحوصات المخبرية الإلزامية:</span>
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                              <div>
+                                <label className="block mb-1 text-slate-700">نسبة الهيموجلوبين Hb (g/dL)</label>
+                                <input name="hb_level" type="number" step="0.1" placeholder="مثال: 12.5" className="w-full p-2.5 border rounded-xl bg-white" />
+                              </div>
+                              <div>
+                                <label className="block mb-1 text-slate-700">تحليل البول (Urine Analysis)</label>
+                                <input name="urine_analysis_result" placeholder="سليم، خالٍ من السكر والزلال" className="w-full p-2.5 border rounded-xl bg-white" />
+                              </div>
+                              <div>
+                                <label className="block mb-1 text-slate-700">تحليل البراز (Stool Analysis)</label>
+                                <input name="stool_analysis_result" placeholder="خالٍ من الطفيليات والديدان" className="w-full p-2.5 border rounded-xl bg-white" />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold">
+                            <div>
+                              <label className="block mb-1 text-slate-700">الفحص النفسي والسلوكي (Behavioral Screening)</label>
+                              <input name="psychiatric_behavioral_screening" defaultValue="لا توجد اضطرابات سلوكية أو انفعالية" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">التثقيف الصحي الموجه للطفل وولي الأمر</label>
+                              <input name="health_education_given" defaultValue="التغذية السليمة، نظافة الفم والأسنان، النشاط البدني" className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center justify-between gap-4 pt-1 text-xs font-bold">
+                            <label className="flex items-center gap-2 cursor-pointer text-slate-800">
+                              <input name="school_achievement_concerns" type="checkbox" className="w-4 h-4 rounded text-emerald-600" />
+                              <span>يوجد شكوى من صعوبات تعلم أو تأخر تحصيلي دراسي</span>
+                            </label>
+
+                            <div className="flex items-center gap-2 w-full sm:w-auto">
+                              <label className="text-slate-700 whitespace-nowrap">طبيب الصحة المدرسية:</label>
+                              <input name="doctor_signature" placeholder="اسم الطبيب" className="p-2 border rounded-xl text-xs w-full sm:w-48" />
+                            </div>
+                          </div>
+
+                          <div className="flex justify-end gap-2 pt-2">
+                            <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">إلغاء</button>
+                            <button type="submit" disabled={submitting} className="px-6 py-2 bg-emerald-600 text-white rounded-xl text-xs font-black shadow-md">
+                              {submitting ? 'جاري الحفظ في قاعدة البيانات...' : 'حفظ الفحص المدرسي'}
+                            </button>
+                          </div>
+                        </form>
+                      )}
+
+                      {loadError ? (
+                        <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
+                          <AlertCircle className="mx-auto text-red-500" size={28} />
+                          <p className="text-sm font-black">تعذر استرجاع سجلات الصحة المدرسية من قاعدة البيانات</p>
+                          <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                        </div>
+                      ) : childOver5Records.length === 0 ? (
+                        <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
+                          لا توجد فحوصات سن مدرسي ومراهقين مسجلة حتى الآن. اضغط على الزر أعلاه لإضافة فحص.
+                        </div>
+                      ) : (
+                        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+                          <table className="w-full text-right text-xs">
+                            <thead className="bg-emerald-50 border-b border-emerald-100 text-emerald-950 font-black">
+                              <tr>
+                                <th className="p-3">تاريخ الفحص</th>
+                                <th className="p-3">المرحلة والنمو</th>
+                                <th className="p-3">الفحص الحسي والسلوكي</th>
+                                <th className="p-3">المختبر (Hb / بول / براز)</th>
+                                <th className="p-3">التثقيف والتوقيع</th>
+                                <th className="p-3 text-center">إجراءات</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-bold">
+                              {childOver5Records.map((c) => (
+                                <tr key={c.id} className="hover:bg-emerald-50/20">
+                                  <td className="p-3 font-mono text-slate-600">
+                                    {new Date(c.created_at).toLocaleDateString('ar-EG')}
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="text-emerald-950 font-black">{c.educational_stage || c.school_stage || 'السن المدرسي'}</div>
+                                    <div className="text-slate-500 text-[11px]">
+                                      وزن: {c.weight_kg ? `${c.weight_kg} كجم` : '—'} | طول: {c.height_cm ? `${c.height_cm} سم` : '—'} | BMI: {c.bmi || '—'}
+                                    </div>
+                                  </td>
+                                  <td className="p-3 text-slate-700">
+                                    <div>بصر: {c.vision_screening || 'سليم'} | سمع: {c.hearing_screening || 'سليم'}</div>
+                                    <div className="text-slate-500 text-[11px]">
+                                      سلوك: {c.psychiatric_behavioral_screening || 'طبيعي'}
+                                      {c.school_achievement_concerns && <span className="text-amber-700 mr-1">(صعوبات تعلم ⚠️)</span>}
+                                    </div>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="font-mono text-slate-900">Hb: {c.hb_level ? `${c.hb_level} g/dL` : '—'}</div>
+                                    <div className="text-[11px] text-slate-600">
+                                      بول: {c.urine_analysis_result || '—'} | براز: {c.stool_analysis_result || '—'}
+                                    </div>
+                                  </td>
+                                  <td className="p-3">
+                                    <div className="text-slate-800">{c.health_education_given || 'تثقيف روتيني'}</div>
+                                    <div className="text-slate-500 text-[11px]">{c.doctor_signature ? `د/ ${c.doctor_signature}` : ''}</div>
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteRecord('child_over5_followups', c.id, 'فحص السن المدرسي')}
+                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                      title="حذف السجل"
+                                    >
+                                      <Trash2 size={14} />
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               )}

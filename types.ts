@@ -557,18 +557,27 @@ export interface ChildOver5Followup {
   encounter_id?: string;
   appointment_id?: string;
   visit_date?: string;
+  educational_stage?: string;
   school_stage?: string;
-  scholastic_performance?: string;
-  height_cm?: number;
   weight_kg?: number;
+  height_cm?: number;
   bmi?: number;
   vision_screening?: string;
   hearing_screening?: string;
-  pubertal_stage?: string;
+  school_achievement_concerns?: boolean;
+  scholastic_performance?: string;
+  psychiatric_behavioral_screening?: string;
   psychosocial_evaluation?: string;
+  pubertal_stage?: string;
+  hb_level?: number;
+  urine_analysis_result?: string;
+  stool_analysis_result?: string;
+  health_education_given?: string;
   clinical_notes?: string;
+  doctor_signature?: string;
   doctor_name?: string;
   created_at?: string;
+  updated_at?: string;
 }
 
 export interface FamilyPlanningFollowup {
