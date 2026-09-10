@@ -4,12 +4,14 @@ import { AR, BLOOD_TYPES, calculateAge, ROOMS } from '../constants.ts';
 import { DB } from '../store.ts';
 import PatientTimeline from '../components/PatientTimeline.tsx';
 import FamilyComprehensiveHealthRecordModal from '../components/FamilyComprehensiveHealthRecordModal.tsx';
-import { Patient, FundingEntity, DialysisSession, Service, Store } from '../types.ts';
+import QuickClinicBookingModal from '../components/QuickClinicBookingModal.tsx';
+import { calculatePatientSuggestedFollowups } from '../services/followupSuggestions.ts';
+import { Patient, FundingEntity, DialysisSession, Service, Store, SuggestedFollowup } from '../types.ts';
 import { 
   Plus, Search, UserPlus, History, Phone, FileText, Loader2, 
   Calendar as CalendarIcon, X, User, Activity, MapPin, 
   Droplets, CreditCard, ShieldCheck, HeartPulse, Clock, FilePlus, Scale, CheckCircle, Package, ListChecks,
-  Users, Info, Stethoscope
+  Users, Info, Stethoscope, AlertCircle, CalendarCheck, Sparkles, ChevronRight
 } from 'lucide-react';
 
 const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab }) => {
@@ -17,6 +19,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
   const [patients, setPatients] = useState<Patient[]>([]);
   const [fundingEntities, setFundingEntities] = useState<FundingEntity[]>([]);
   const [familyFiles, setFamilyFiles] = useState<any[]>([]);
+  const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -25,6 +28,12 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
   const [showComprehensiveModal, setShowComprehensiveModal] = useState(false);
   const [comprehensivePatient, setComprehensivePatient] = useState<Patient | null>(null);
   const [comprehensiveFamilyFile, setComprehensiveFamilyFile] = useState<any | null>(null);
+  const [comprehensiveInitialModule, setComprehensiveInitialModule] = useState<string>('history');
+
+  // Quick Booking State
+  const [quickBookingPatient, setQuickBookingPatient] = useState<Patient | null>(null);
+  const [quickBookingModule, setQuickBookingModule] = useState<any>(undefined);
+  const [quickBookingReason, setQuickBookingReason] = useState<string>('');
 
   // Family Files linking states
   const [addToFamilyFile, setAddToFamilyFile] = useState(false);
@@ -39,23 +48,26 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
   const loadData = async () => {
     setLoading(true);
     try {
-      const [p, fe, ff] = await Promise.all([
+      const [p, fe, ff, appts] = await Promise.all([
         DB.getPatients(),
         DB.getFundingEntities(),
-        DB.getFamilyFiles()
+        DB.getFamilyFiles(),
+        DB.getClinicAppointments ? DB.getClinicAppointments() : Promise.resolve([])
       ]);
       setPatients(p || []);
       setFundingEntities(fe || []);
       setFamilyFiles(ff || []);
+      setAppointments(appts || []);
     } catch (err) { console.error(err); } finally { setLoading(false); }
   };
 
-  const handleOpenComprehensiveRecord = (p: Patient) => {
+  const handleOpenComprehensiveRecord = (p: Patient, initialModule: string = 'history') => {
     const linkedFile = familyFiles.find(ff => 
       ff.members?.some((m: any) => m.patient_id === p.id || m.patients?.id === p.id)
     );
     setComprehensivePatient(p);
     setComprehensiveFamilyFile(linkedFile || null);
+    setComprehensiveInitialModule(initialModule);
     setShowComprehensiveModal(true);
   };
 
@@ -159,17 +171,61 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
                       ff.members?.some((m: any) => m.patient_id === p.id || m.patients?.id === p.id)
                     );
 
+                    const suggestions = calculatePatientSuggestedFollowups(p, { appointments });
+                    const hasHighUrgency = suggestions.some(s => s.urgency === 'high');
+
                     return (
                       <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                         <td className="px-6 py-4">
-                          <button 
-                            onClick={() => handleOpenComprehensiveRecord(p)}
-                            className="font-black text-slate-900 text-sm hover:text-indigo-600 transition-colors text-right flex flex-col items-start"
-                            title="فتح الملف الصحي الشامل"
-                          >
-                            <span>{p.name}</span>
-                            <span className="text-[11px] text-slate-400 font-mono mt-0.5">{p.national_id || '—'}</span>
-                          </button>
+                          <div className="flex items-start gap-2">
+                            <button 
+                              onClick={() => handleOpenComprehensiveRecord(p)}
+                              className="font-black text-slate-900 text-sm hover:text-indigo-600 transition-colors text-right flex flex-col items-start"
+                              title="فتح الملف الصحي الشامل"
+                            >
+                              <span>{p.name}</span>
+                              <span className="text-[11px] text-slate-400 font-mono mt-0.5">{p.national_id || '—'}</span>
+                            </button>
+
+                            {/* شارة التنبيه بالاقتراحات المستحقة */}
+                            {suggestions.length > 0 && (
+                              <div className="flex flex-col gap-1 items-start mt-0.5">
+                                {suggestions.map(s => {
+                                  // خريطة أسماء الموديولات للمودال
+                                  const tabMap: Record<string, string> = {
+                                    child_followup: 'child',
+                                    maternal_care: 'maternal',
+                                    family_planning: 'family_planning',
+                                    geriatric_care: 'geriatric',
+                                    dental: 'dental',
+                                    premarital: 'premarital'
+                                  };
+                                  const targetTab = tabMap[s.module_type] || 'history';
+
+                                  return (
+                                    <button
+                                      key={s.id}
+                                      onClick={() => {
+                                        setQuickBookingPatient(p);
+                                        setQuickBookingModule(targetTab);
+                                        setQuickBookingReason(s.reason);
+                                      }}
+                                      className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md border transition-all cursor-pointer shadow-xs ${
+                                        s.urgency === 'high'
+                                          ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 animate-pulse'
+                                          : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                      }`}
+                                      title={`${s.reason} - اضغط لحجز العيادة المقترحة فوراً`}
+                                    >
+                                      <AlertCircle size={10} className={s.urgency === 'high' ? 'text-rose-600' : 'text-amber-600'} />
+                                      <span>{s.title}</span>
+                                      <CalendarCheck size={10} className="mr-0.5 opacity-80" />
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
                         </td>
                         <td className="px-6 py-4 font-mono text-xs text-slate-600">{p.phone}</td>
                         <td className="px-6 py-4 text-xs font-bold text-primary-600">
@@ -373,6 +429,26 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
           }}
           patient={comprehensivePatient}
           familyFile={comprehensiveFamilyFile || undefined}
+          initialModule={comprehensiveInitialModule}
+        />
+      )}
+
+      {/* مودال حجز العيادة السريع المقترح */}
+      {quickBookingPatient && (
+        <QuickClinicBookingModal
+          isOpen={!!quickBookingPatient}
+          onClose={() => {
+            setQuickBookingPatient(null);
+            setQuickBookingModule(undefined);
+            setQuickBookingReason('');
+          }}
+          patient={quickBookingPatient}
+          initialModule={quickBookingModule}
+          prefilledReason={quickBookingReason}
+          onBookingSuccess={(appointment) => {
+            alert(`تم حجز العيادة بنجاح للمريض ${quickBookingPatient.name} برقم حجز #${appointment.id.slice(0, 8)}`);
+            loadData();
+          }}
         />
       )}
     </div>

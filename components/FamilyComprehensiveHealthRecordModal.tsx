@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, User, Calendar, Shield, Activity, FileText, ClipboardList, 
   Baby, HeartHandshake, Sparkles, Smile, Clock, CheckCircle2, 
   AlertCircle, Plus, Trash2, Printer, ArrowRight, Stethoscope,
   ChevronDown, ChevronUp, ExternalLink, Save, Check, Filter,
-  Eye, Droplets, Info
+  Eye, Droplets, Info, CalendarCheck, CheckCircle
 } from 'lucide-react';
 import { DB } from '../store.ts';
 import { calculateAge, BLOOD_TYPES } from '../constants.ts';
+import { LinkedModuleType } from '../types.ts';
 import HistoryPhysicalModal from './HistoryPhysicalModal.tsx';
 import VisitsFormModal from './VisitsFormModal.tsx';
+import { QuickClinicBookingModal } from './QuickClinicBookingModal.tsx';
 
 interface Props {
   isOpen: boolean;
@@ -18,6 +20,8 @@ interface Props {
   familyFile?: any;
   initialModule?: string;
   initialModuleId?: string;
+  activeAppointment?: any;
+  onAppointmentCompleted?: (appointmentId: string) => void;
   onRefresh?: () => void;
 }
 
@@ -28,6 +32,8 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   familyFile,
   initialModule,
   initialModuleId,
+  activeAppointment,
+  onAppointmentCompleted,
   onRefresh
 }) => {
   if (!isOpen || !patient) return null;
@@ -59,9 +65,11 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   const [showHistoryExamModal, setShowHistoryExamModal] = useState(false);
   const [historyExamInitialTab, setHistoryExamInitialTab] = useState<'history' | 'significant' | 'clinical' | 'full'>('full');
   const [showVisitsModal, setShowVisitsModal] = useState(false);
+  const [quickBookingState, setQuickBookingState] = useState<{ module: LinkedModuleType; reason: string } | null>(null);
 
   // Data states for modules
   const [loading, setLoading] = useState(true);
+  const [clinicAppointments, setClinicAppointments] = useState<any[]>([]);
   const [physicalExams, setPhysicalExams] = useState<any[]>([]);
   const [visits, setVisits] = useState<any[]>([]);
   const [ancRecords, setAncRecords] = useState<any[]>([]);
@@ -88,6 +96,23 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
     }
   };
 
+  const handleRecordSaved = async (tableName: string, label: string) => {
+    showNotification('success', `تم حفظ ${label} بنجاح في قاعدة البيانات.`);
+    if (activeAppointment?.id) {
+      try {
+        await DB.updateAppointmentStatus(activeAppointment.id, 'COMPLETED');
+        if (onAppointmentCompleted) {
+          onAppointmentCompleted(activeAppointment.id);
+        }
+      } catch (err) {
+        console.error("Error updating appointment status:", err);
+      }
+    }
+    setShowAddForm(false);
+    loadAllData();
+    if (onRefresh) onRefresh();
+  };
+
   const handleDeleteRecord = async (tableName: string, id: string, recordLabel: string) => {
     if (!window.confirm(`هل أنت متأكد من حذف ${recordLabel} نهائياً من قاعدة البيانات المركزية؟`)) return;
     try {
@@ -111,6 +136,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
       const [
         examsData,
         visitsData,
+        apptsData,
         ancData,
         postpartumData,
         cUnder5Data,
@@ -122,6 +148,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
       ] = await Promise.all([
         DB.getPhysicalExams(patient.id),
         DB.getPatientVisits(patient.id),
+        DB.getClinicAppointments(undefined, undefined, undefined, patient.id),
         DB.getAccreditationRecords('maternal_antenatal_followups', patient.id),
         DB.getAccreditationRecords('maternal_postpartum_followups', patient.id),
         DB.getAccreditationRecords('child_under5_followups', patient.id),
@@ -134,6 +161,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
 
       setPhysicalExams(examsData || []);
       setVisits(visitsData || []);
+      setClinicAppointments(apptsData || []);
       setAncRecords(ancData || []);
       setPostpartumRecords(postpartumData || []);
       setChildUnder5Records(cUnder5Data || []);
@@ -172,6 +200,193 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
       return sum;
     }
   }, 0);
+
+  // Rollup all clinical events, clinic appointments, and examinations into a unified chronology
+  const rollupVisits = useMemo(() => {
+    const all: any[] = [];
+
+    // 1. Clinic appointments
+    clinicAppointments.forEach(a => {
+      all.push({
+        id: `appt-${a.id}`,
+        date: a.date,
+        time: a.time,
+        type: 'حجز ومراجعة عيادة',
+        clinicName: a.clinics?.name || 'عيادة تخصصية',
+        doctor: a.doctors?.name,
+        complaint: a.notes,
+        diagnosis: a.diagnosis,
+        management: a.prescription,
+        status: a.status,
+        source: 'حجز عيادة',
+        sourceColor: 'bg-indigo-100 text-indigo-900 border-indigo-200'
+      });
+    });
+
+    // 2. Physical comprehensive exams
+    physicalExams.forEach(e => {
+      all.push({
+        id: `exam-${e.id}`,
+        date: e.exam_date || e.created_at,
+        time: '',
+        type: 'فحص سريري وتاريخ مرضي شامل',
+        clinicName: 'عيادة طب الأسرة',
+        doctor: e.doctor_name,
+        complaint: e.hospitalization ? `دخول مستشفى: ${e.hospitalization}` : 'فحص شامل دوري',
+        diagnosis: e.current_medications ? `أدوية مستمرة: ${e.current_medications}` : 'فحص سريري مكتمل',
+        management: e.adverse_drug_reactions ? `حساسية: ${e.adverse_drug_reactions}` : 'تم الفحص',
+        status: 'COMPLETED',
+        source: 'فحص شامل',
+        sourceColor: 'bg-purple-100 text-purple-900 border-purple-200'
+      });
+    });
+
+    // 3. Child under 5 followups
+    childUnder5Records.forEach(c => {
+      all.push({
+        id: `c5-${c.id}`,
+        date: c.created_at,
+        time: '',
+        type: `متابعة نمو طفل (${c.age_months} شهر)`,
+        clinicName: 'عيادة رعاية الطفل والنمو',
+        doctor: c.doctor_signature,
+        complaint: `الوزن: ${c.weight_kg || '—'} كجم | الطول: ${c.height_cm || '—'} سم | المحيط: ${c.head_circumference_cm || '—'} سم`,
+        diagnosis: c.clinical_assessment || 'نمو طبيعي متطابق مع المعايير',
+        management: c.feeding_type ? `الرضاعة: ${c.feeding_type}` : 'متابعة دورية',
+        status: 'COMPLETED',
+        source: 'رعاية طفل',
+        sourceColor: 'bg-emerald-100 text-emerald-900 border-emerald-200'
+      });
+    });
+
+    // 4. Maternal Antenatal (ANC)
+    ancRecords.forEach(m => {
+      all.push({
+        id: `anc-${m.id}`,
+        date: m.created_at,
+        time: '',
+        type: `متابعة حمل (G${m.gravida || 0} P${m.para || 0})`,
+        clinicName: 'عيادة رعاية الأمومة والحوامل',
+        doctor: m.doctor_signature,
+        complaint: m.complications_concerns || 'متابعة حمل روتينية',
+        diagnosis: m.fundal_height_cm ? `ارتفاع الرحم: ${m.fundal_height_cm} سم | نبض: ${m.fetal_heart_sound || 'طبيعي'}` : 'فحص سليم',
+        management: m.next_visit_date ? `الموعد القادم: ${m.next_visit_date}` : 'متابعة دورية',
+        status: 'COMPLETED',
+        source: 'رعاية أمومة',
+        sourceColor: 'bg-rose-100 text-rose-900 border-rose-200'
+      });
+    });
+
+    // 5. Maternal Postpartum
+    postpartumRecords.forEach(p => {
+      all.push({
+        id: `pp-${p.id}`,
+        date: p.created_at,
+        time: '',
+        type: 'متابعة ورعاية النفاس',
+        clinicName: 'عيادة رعاية النفاس والأمومة',
+        doctor: p.doctor_signature,
+        complaint: `ولادة: ${p.delivery_mode || 'طبيعي'} | صحة المولود: ${p.delivery_outcome || 'سليم'}`,
+        diagnosis: p.maternal_concerns || 'فحص نفاس سليم',
+        management: p.contraception_method ? `تنظيم مقترح: ${p.contraception_method}` : 'تشجيع الرضاعة الطبيعية',
+        status: 'COMPLETED',
+        source: 'رعاية نفاس',
+        sourceColor: 'bg-rose-100 text-rose-900 border-rose-200'
+      });
+    });
+
+    // 6. Family planning
+    familyPlanningRecords.forEach(f => {
+      all.push({
+        id: `fp-${f.id}`,
+        date: f.created_at,
+        time: '',
+        type: `تنظيم أسرة (${f.current_method || f.new_method_prescribed || 'استشارة'})`,
+        clinicName: 'عيادة تنظيم الأسرة والصحة الإنجابية',
+        doctor: f.doctor_signature,
+        complaint: f.visit_reason || 'صرف وتجديد وسيلة',
+        diagnosis: f.side_effects ? `آثار: ${f.side_effects}` : 'طمث منتظم',
+        management: f.new_method_prescribed ? `الموصوف: ${f.new_method_prescribed}` : 'استمرار على الوسيلة',
+        status: 'COMPLETED',
+        source: 'تنظيم أسرة',
+        sourceColor: 'bg-pink-100 text-pink-900 border-pink-200'
+      });
+    });
+
+    // 7. Geriatric
+    geriatricRecords.forEach(g => {
+      all.push({
+        id: `ger-${g.id}`,
+        date: g.created_at,
+        time: '',
+        type: 'تقييم صحي شامل للمسنين',
+        clinicName: 'عيادة رعاية كبار السن',
+        doctor: g.doctor_signature,
+        complaint: `الأنشطة اليومية: ${g.basic_adls_score || 'مستقل'} | الذاكرة: ${g.mini_cog_score !== null ? `${g.mini_cog_score}/5` : '—'}`,
+        diagnosis: `سقوط: ${g.fall_risk_timed_up_go || 'طبيعي'} | ${g.depression_mood_assessment || 'المزاج جيد'}`,
+        management: g.management_plan || 'خطة متابعة دورية',
+        status: 'COMPLETED',
+        source: 'كبار سن',
+        sourceColor: 'bg-amber-100 text-amber-900 border-amber-200'
+      });
+    });
+
+    // 8. Dental
+    dentalRecords.forEach(d => {
+      all.push({
+        id: `den-${d.id}`,
+        date: d.created_at,
+        time: '',
+        type: 'فحص وصحة الفم والأسنان',
+        clinicName: 'عيادة طب الفم والأسنان',
+        doctor: d.doctor_signature,
+        complaint: `مؤشر DMFT (تسوس: ${d.dmft_decayed || 0}, فقد: ${d.dmft_missing || 0}, حشو: ${d.dmft_filled || 0})`,
+        diagnosis: d.tmj_clicking ? 'صوت طقطقة بمفصل الفك TMJ' : 'فحص سليم',
+        management: d.treatment_plan || 'تنظيف وإرشادات',
+        status: 'COMPLETED',
+        source: 'طب أسنان',
+        sourceColor: 'bg-blue-100 text-blue-900 border-blue-200'
+      });
+    });
+
+    // 9. Premarital
+    premaritalRecords.forEach(p => {
+      all.push({
+        id: `prem-${p.id}`,
+        date: p.created_at,
+        time: '',
+        type: 'فحص المشورة للمقبلين على الزواج',
+        clinicName: 'عيادة الفحص قبل الزواج',
+        doctor: p.doctor_signature,
+        complaint: `الطرف الآخر: ${p.partner_name || '—'} (قرابة: ${p.consanguinity_with_partner ? 'نعم' : 'لا'})`,
+        diagnosis: p.certificate_status || 'لائق للزواج',
+        management: p.certificate_number ? `شهادة رقم: ${p.certificate_number}` : 'تم استلام المشورة',
+        status: 'COMPLETED',
+        source: 'قبل الزواج',
+        sourceColor: 'bg-cyan-100 text-cyan-900 border-cyan-200'
+      });
+    });
+
+    // 10. Legacy visits
+    visits.forEach(v => {
+      all.push({
+        id: `vis-${v.id}`,
+        date: v.visit_date || v.created_at,
+        time: '',
+        type: v.visit_type_name || v.visit_type || 'زيارة عيادة',
+        clinicName: 'عيادة طب الأسرة',
+        doctor: v.doctor_signature,
+        complaint: v.patient_complaint,
+        diagnosis: v.diagnosis,
+        management: v.management_plan,
+        status: 'COMPLETED',
+        source: 'سجل تردد',
+        sourceColor: 'bg-teal-100 text-teal-900 border-teal-200'
+      });
+    });
+
+    return all.sort((a, b) => new Date(b.date || '2000-01-01').getTime() - new Date(a.date || '2000-01-01').getTime());
+  }, [clinicAppointments, physicalExams, childUnder5Records, childOver5Records, ancRecords, postpartumRecords, familyPlanningRecords, geriatricRecords, dentalRecords, premaritalRecords, visits]);
 
   // 3 Organized Groups for the 10 Clinical Modules
   const moduleGroups = [
@@ -216,13 +431,13 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         {
           id: 'visits',
           number: '٤',
-          title: 'نموذج التردد والزيارات',
-          subtitle: 'Patient Visits Form',
+          title: 'نموذج التردد والزيارات (تجميعي)',
+          subtitle: 'Visits Rollup View',
           icon: FileText,
           color: 'teal',
-          badge: 'سجل العيادة اليومي',
+          badge: 'سجل مجمّع للتردد والعيادات',
           available: true,
-          count: visits.length
+          count: rollupVisits.length
         },
         {
           id: 'dental',
@@ -333,6 +548,15 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                     ملف الأسرة: {familyFile.family_code} ({familyFile.head_name})
                   </span>
                 )}
+                {activeAppointment ? (
+                  <span className="bg-emerald-500 text-slate-950 text-xs px-3 py-1 rounded-full font-black shadow-md flex items-center gap-1.5 animate-pulse">
+                    <CalendarCheck size={14} /> وضع جلسة كشف نشطة (معتمد)
+                  </span>
+                ) : (
+                  <span className="bg-slate-800 text-slate-300 text-xs px-2.5 py-0.5 rounded-full font-bold border border-slate-700">
+                    وضع استعراض الملف (سجل تراكمي)
+                  </span>
+                )}
               </div>
               <p className="text-xs text-indigo-200 font-bold mt-1">
                 الرقم القومي: <span className="font-mono">{patient.national_id || '—'}</span> | الهاتف: <span className="font-mono">{patient.phone || '—'}</span> | فصيلة الدم: <span className="text-amber-300 font-black">{patient.blood_type || '—'}</span>
@@ -356,6 +580,23 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
             </button>
           </div>
         </div>
+
+        {/* Active Appointment Banner */}
+        {activeAppointment && (
+          <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-3 flex items-center justify-between gap-4 text-xs shrink-0">
+            <div className="flex items-center gap-2 text-emerald-950 font-bold">
+              <CheckCircle className="text-emerald-600" size={16} />
+              <span>
+                جلسة كشف نشطة للعيادة: <strong className="text-emerald-900 font-black">{activeAppointment.clinics?.name || 'عيادة تخصصية'}</strong>
+                {activeAppointment.doctors?.name && ` • الطبيب: د/ ${activeAppointment.doctors.name}`}
+                {` • تاريخ الحجز: ${activeAppointment.date || 'اليوم'}`}
+              </span>
+            </div>
+            <div className="text-[11px] font-black text-emerald-800 bg-emerald-100/80 px-2.5 py-1 rounded-lg border border-emerald-200">
+              أي فحص يتم حفظه سيُربط آلياً بهذه الزيارة وتُعتمد كزيارة مكتملة (COMPLETED)
+            </div>
+          </div>
+        )}
 
         {/* 10 Modules Navigation Tabs grouped into 3 categories */}
         <div className="bg-slate-100/80 border-b border-slate-200 p-2.5 overflow-x-auto shrink-0">
@@ -738,64 +979,75 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= موديول 4: نموذج التردد والزيارات ======================= */}
+              {/* ======================= موديول 4: نموذج التردد والزيارات (تجميعي) ======================= */}
               {activeTab === 'visits' && (
                 <div className="space-y-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-teal-50 border border-teal-100 rounded-2xl">
                     <div>
                       <h4 className="font-black text-teal-950 text-base flex items-center gap-2">
                         <FileText size={18} className="text-teal-600" />
-                        ٤. موديول نموذج التردد والزيارات (Visits Form)
+                        ٤. موديول نموذج التردد والزيارات التجميعي (Visits & Clinical Chronology)
                       </h4>
                       <p className="text-xs text-teal-800 font-bold mt-0.5">
-                        سجل الترددات الطبية اليومية، الشكوى، التشخيص، وخطة العلاج والفحوصات
+                        عرض مجمّع وتلقائي لكافة مراجعات العيادات، جلسات الكشف، وفحوصات الموديولات العشرة بالترتيب الزمني
                       </p>
                     </div>
-                    <button
-                      onClick={() => setShowVisitsModal(true)}
-                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-black shadow-md shadow-teal-600/20 flex items-center gap-1.5 self-start sm:self-auto shrink-0"
-                    >
-                      <Plus size={14} /> إضافة / فتح جدول التردد
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <span className="bg-teal-200/80 text-teal-900 text-xs px-3 py-1.5 rounded-xl font-black border border-teal-300">
+                        إجمالي الترددات: {rollupVisits.length}
+                      </span>
+                      <button
+                        onClick={() => setShowVisitsModal(true)}
+                        className="px-3 py-1.5 bg-teal-700 hover:bg-teal-800 text-white rounded-xl text-xs font-bold transition-colors"
+                      >
+                        سجل التردد اليدوي
+                      </button>
+                    </div>
                   </div>
 
-                  {visits.length === 0 ? (
+                  {rollupVisits.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
-                      لا توجد زيارات مسجلة للمريض حتى الآن.
+                      لا توجد سجلات تردد أو زيارات عيادات مسجلة للمريض حتى الآن.
                     </div>
                   ) : (
                     <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
                       <table className="w-full text-right text-xs">
                         <thead className="bg-teal-50/70 border-b border-teal-100 text-teal-950 font-black">
                           <tr>
-                            <th className="p-3">تاريخ الزيارة</th>
-                            <th className="p-3">نوع الزيارة</th>
-                            <th className="p-3">الشكوى والتشخيص</th>
-                            <th className="p-3">العلاج والفحوصات</th>
+                            <th className="p-3">التاريخ / المصدر</th>
+                            <th className="p-3">نوع النشاط / العيادة</th>
+                            <th className="p-3">البيانات الإكلينيكية / الشكوى</th>
+                            <th className="p-3">التشخيص / التقييم</th>
+                            <th className="p-3">الإجراء / الخطة</th>
                             <th className="p-3">الطبيب</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-bold">
-                          {visits.map((v) => (
-                            <tr key={v.id} className="hover:bg-teal-50/20">
-                              <td className="p-3 font-mono text-slate-600">
-                                {new Date(v.visit_date || v.created_at).toLocaleDateString('ar-EG')}
-                              </td>
+                          {rollupVisits.map((item) => (
+                            <tr key={item.id} className="hover:bg-teal-50/30 transition-colors">
                               <td className="p-3">
-                                <span className="bg-teal-100 text-teal-900 px-2 py-0.5 rounded text-[11px] font-black">
-                                  {v.visit_type_name || v.visit_type || 'زيارة'}
+                                <div className="font-mono text-slate-800 font-black">
+                                  {item.date ? new Date(item.date).toLocaleDateString('ar-EG') : '—'}
+                                </div>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-md border inline-block mt-1 ${item.sourceColor}`}>
+                                  {item.source}
                                 </span>
                               </td>
                               <td className="p-3">
-                                <div className="text-slate-900">شكوى: {v.patient_complaint || '—'}</div>
-                                <div className="text-teal-800 font-black">تشخيص: {v.diagnosis || '—'}</div>
+                                <div className="text-slate-900 font-black">{item.type}</div>
+                                <div className="text-slate-500 text-[11px]">{item.clinicName}</div>
                               </td>
-                              <td className="p-3">
-                                <div className="text-slate-800">علاج: {v.management_plan || '—'}</div>
-                                <div className="text-slate-500 text-[11px]">فحوصات: {v.investigations_requested || '—'}</div>
+                              <td className="p-3 text-slate-700 max-w-xs">
+                                {item.complaint || '—'}
                               </td>
-                              <td className="p-3 text-slate-700">
-                                {v.doctor_signature ? `د/ ${v.doctor_signature}` : '—'}
+                              <td className="p-3 text-teal-900 font-black max-w-xs">
+                                {item.diagnosis || '—'}
+                              </td>
+                              <td className="p-3 text-slate-800 max-w-xs">
+                                {item.management || '—'}
+                              </td>
+                              <td className="p-3 text-slate-600">
+                                {item.doctor ? `د/ ${item.doctor}` : '—'}
                               </td>
                             </tr>
                           ))}
@@ -819,12 +1071,20 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         متابعة معايير منظمة الصحة العالمية (WHO) للوزن، الطول، محيط الرأس، التطعيمات، والنمو المدرسي
                       </p>
                     </div>
-                    <button
-                      onClick={() => setShowAddForm(!showAddForm)}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-600/20 flex items-center gap-1.5 self-start sm:self-auto shrink-0"
-                    >
-                      <Plus size={14} /> {showAddForm ? 'إلغاء النموذج' : 'تسجيل متابعة نمو طفل جديدة'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setQuickBookingState({ module: 'child', reason: 'متابعة وفحص نمو وتطعيمات الطفل' })}
+                        className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                      >
+                        <CalendarCheck size={14} /> حجز عيادة الأطفال
+                      </button>
+                      <button
+                        onClick={() => setShowAddForm(!showAddForm)}
+                        className="px-3.5 py-2 bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
+                      >
+                        <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل فحص مباشرة'}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Add form */}
@@ -837,6 +1097,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         try {
                           const saved = await DB.addAccreditationRecord('child_under5_followups', {
                             patient_id: patient.id,
+                            appointment_id: activeAppointment?.id || null,
                             age_months: Number(t.age_months.value) || 0,
                             weight_kg: Number(t.weight_kg.value) || null,
                             height_cm: Number(t.height_cm.value) || null,
@@ -851,10 +1112,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           if (!saved || !saved.id) {
                             throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
                           }
-                          showNotification('success', "تم حفظ فحص نمو الطفل بنجاح في قاعدة البيانات المركزية.");
-                          setShowAddForm(false);
-                          loadAllData();
-                          if (onRefresh) onRefresh();
+                          await handleRecordSaved('child_under5_followups', 'فحص نمو الطفل');
                         } catch (err: any) {
                           console.error("Save error child_under5_followups:", err);
                           const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
@@ -1017,12 +1275,20 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         بروتوكول متابعة الحمل، التاريخ التوليدي (G/P/A)، تطعيم التيتانوس، السونار، ورعاية ما بعد الولادة
                       </p>
                     </div>
-                    <button
-                      onClick={() => setShowAddForm(!showAddForm)}
-                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black shadow-md shadow-rose-600/20 flex items-center gap-1.5 self-start sm:self-auto shrink-0"
-                    >
-                      <Plus size={14} /> {showAddForm ? 'إلغاء النموذج' : 'تسجيل متابعة حمل جديدة (ANC)'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setQuickBookingState({ module: 'maternal', reason: 'متابعة رعاية حوامل / ما بعد الولادة' })}
+                        className="px-3.5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                      >
+                        <CalendarCheck size={14} /> حجز عيادة الحوامل والأمومة
+                      </button>
+                      <button
+                        onClick={() => setShowAddForm(!showAddForm)}
+                        className="px-3.5 py-2 bg-white text-rose-800 border border-rose-300 hover:bg-rose-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
+                      >
+                        <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل متابعة مباشرة'}
+                      </button>
+                    </div>
                   </div>
 
                   {/* ANC Add Form */}
@@ -1035,6 +1301,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         try {
                           const saved = await DB.addAccreditationRecord('maternal_antenatal_followups', {
                             patient_id: patient.id,
+                            appointment_id: activeAppointment?.id || null,
                             gravida: Number(t.gravida.value) || 0,
                             para: Number(t.para.value) || 0,
                             abortions: Number(t.abortions.value) || 0,
@@ -1054,10 +1321,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           if (!saved || !saved.id) {
                             throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
                           }
-                          showNotification('success', "تم حفظ سجل متابعة الحمل (ANC) بنجاح في قاعدة البيانات المركزية.");
-                          setShowAddForm(false);
-                          loadAllData();
-                          if (onRefresh) onRefresh();
+                          await handleRecordSaved('maternal_antenatal_followups', 'سجل متابعة الحمل (ANC)');
                         } catch (err: any) {
                           console.error("Save error maternal_antenatal_followups:", err);
                           const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
@@ -1243,12 +1507,20 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         توثيق وسيلة تنظيم الأسرة الحالية والموصوفة، الآثار الجانبية، ومواعيد المتابعة والتجديد
                       </p>
                     </div>
-                    <button
-                      onClick={() => setShowAddForm(!showAddForm)}
-                      className="px-4 py-2 bg-pink-600 hover:bg-pink-700 text-white rounded-xl text-xs font-black shadow-md shadow-pink-600/20 flex items-center gap-1.5 self-start sm:self-auto shrink-0"
-                    >
-                      <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل متابعة تنظيم أسرة'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setQuickBookingState({ module: 'family_planning', reason: 'استشارة ومتابعة تنظيم الأسرة' })}
+                        className="px-3.5 py-2 bg-pink-700 hover:bg-pink-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                      >
+                        <CalendarCheck size={14} /> حجز عيادة تنظيم الأسرة
+                      </button>
+                      <button
+                        onClick={() => setShowAddForm(!showAddForm)}
+                        className="px-3.5 py-2 bg-white text-pink-800 border border-pink-300 hover:bg-pink-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
+                      >
+                        <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل متابعة مباشرة'}
+                      </button>
+                    </div>
                   </div>
 
                   {showAddForm && (
@@ -1260,6 +1532,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         try {
                           const saved = await DB.addAccreditationRecord('family_planning_followups', {
                             patient_id: patient.id,
+                            appointment_id: activeAppointment?.id || null,
                             visit_reason: t.visit_reason.value || 'متابعة دورية',
                             current_method: t.current_method.value || null,
                             method_duration: t.method_duration.value || null,
@@ -1272,10 +1545,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           if (!saved || !saved.id) {
                             throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
                           }
-                          showNotification('success', "تم حفظ سجل تنظيم الأسرة بنجاح في قاعدة البيانات المركزية.");
-                          setShowAddForm(false);
-                          loadAllData();
-                          if (onRefresh) onRefresh();
+                          await handleRecordSaved('family_planning_followups', 'سجل تنظيم الأسرة');
                         } catch (err: any) {
                           console.error("Save error family_planning_followups:", err);
                           const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
@@ -1421,15 +1691,23 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         ٨. موديول الفحص الطبي الشامل للمقبلين على الزواج (Premarital Examination)
                       </h4>
                       <p className="text-xs text-cyan-800 font-bold mt-0.5">
-                        الفحص الوراثي والمعدي، فصائل الدم، أنيميا البحر المتوسط، ورقم الشهادة الصحية الرسمية
+                        الفحص الوراثي والمعدي، فصائل الدم، أنيميا البحر المتوسط، ورقم الشهادة الصحية الرسمية (إجراء عند الطلب)
                       </p>
                     </div>
-                    <button
-                      onClick={() => setShowAddForm(!showAddForm)}
-                      className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl text-xs font-black shadow-md shadow-cyan-600/20 flex items-center gap-1.5 self-start sm:self-auto shrink-0"
-                    >
-                      <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل فحص زواج جديد'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setQuickBookingState({ module: 'premarital', reason: 'فحص واستشارة المشورة للمقبلين على الزواج' })}
+                        className="px-3.5 py-2 bg-cyan-700 hover:bg-cyan-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                      >
+                        <CalendarCheck size={14} /> حجز عيادة الزواج
+                      </button>
+                      <button
+                        onClick={() => setShowAddForm(!showAddForm)}
+                        className="px-3.5 py-2 bg-white text-cyan-800 border border-cyan-300 hover:bg-cyan-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
+                      >
+                        <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل فحص مباشرة'}
+                      </button>
+                    </div>
                   </div>
 
                   {showAddForm && (
@@ -1441,6 +1719,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         try {
                           const saved = await DB.addAccreditationRecord('premarital_assessments', {
                             patient_id: patient.id,
+                            appointment_id: activeAppointment?.id || null,
                             partner_name: t.partner_name.value,
                             partner_national_id: t.partner_national_id.value || null,
                             consanguinity_with_partner: t.consanguinity.checked,
@@ -1455,10 +1734,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           if (!saved || !saved.id) {
                             throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
                           }
-                          showNotification('success', "تم حفظ سجل فحص ما قبل الزواج بنجاح في قاعدة البيانات المركزية.");
-                          setShowAddForm(false);
-                          loadAllData();
-                          if (onRefresh) onRefresh();
+                          await handleRecordSaved('premarital_assessments', 'فحص ما قبل الزواج');
                         } catch (err: any) {
                           console.error("Save error premarital_assessments:", err);
                           const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
@@ -1616,12 +1892,20 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         تقييم متلازمة الوهن والهشاشة، الأنشطة اليومية (ADL)، الذاكرة (Mini-Cog)، وخطر السقوط
                       </p>
                     </div>
-                    <button
-                      onClick={() => setShowAddForm(!showAddForm)}
-                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black shadow-md shadow-amber-600/20 flex items-center gap-1.5 self-start sm:self-auto shrink-0"
-                    >
-                      <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل تقييم مسنين جديد'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setQuickBookingState({ module: 'geriatric', reason: 'تقييم شامل لطب ورعاية كبار السن' })}
+                        className="px-3.5 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                      >
+                        <CalendarCheck size={14} /> حجز عيادة كبار السن
+                      </button>
+                      <button
+                        onClick={() => setShowAddForm(!showAddForm)}
+                        className="px-3.5 py-2 bg-white text-amber-800 border border-amber-300 hover:bg-amber-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
+                      >
+                        <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل تقييم مباشرة'}
+                      </button>
+                    </div>
                   </div>
 
                   {showAddForm && (
@@ -1633,6 +1917,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         try {
                           const saved = await DB.addAccreditationRecord('geriatric_assessments', {
                             patient_id: patient.id,
+                            appointment_id: activeAppointment?.id || null,
                             weight_loss: t.weight_loss.checked,
                             weakness_reported: t.weakness.checked,
                             basic_adls_score: t.adls_score.value || 'مستقل تماماً',
@@ -1645,10 +1930,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           if (!saved || !saved.id) {
                             throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
                           }
-                          showNotification('success', "تم حفظ تقييم المسن بنجاح في قاعدة البيانات المركزية.");
-                          setShowAddForm(false);
-                          loadAllData();
-                          if (onRefresh) onRefresh();
+                          await handleRecordSaved('geriatric_assessments', 'تقييم المسن');
                         } catch (err: any) {
                           console.error("Save error geriatric_assessments:", err);
                           const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
@@ -1802,12 +2084,20 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         فحص الأنسجة الرخوة ومفصل الفك (TMJ)، ومؤشر تسوس وحشو وفقد الأسنان (DMFT Index)
                       </p>
                     </div>
-                    <button
-                      onClick={() => setShowAddForm(!showAddForm)}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black shadow-md shadow-blue-600/20 flex items-center gap-1.5 self-start sm:self-auto shrink-0"
-                    >
-                      <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل فحص أسنان جديد'}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setQuickBookingState({ module: 'dental', reason: 'فحص وطب علاج الأسنان واللثة' })}
+                        className="px-3.5 py-2 bg-blue-700 hover:bg-blue-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                      >
+                        <CalendarCheck size={14} /> حجز عيادة الأسنان
+                      </button>
+                      <button
+                        onClick={() => setShowAddForm(!showAddForm)}
+                        className="px-3.5 py-2 bg-white text-blue-800 border border-blue-300 hover:bg-blue-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
+                      >
+                        <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل فحص مباشرة'}
+                      </button>
+                    </div>
                   </div>
 
                   {showAddForm && (
@@ -1819,6 +2109,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         try {
                           const saved = await DB.addAccreditationRecord('dental_assessments', {
                             patient_id: patient.id,
+                            appointment_id: activeAppointment?.id || null,
                             tmj_clicking: t.tmj_clicking.checked,
                             tmj_tenderness: t.tmj_tenderness.checked,
                             dmft_decayed: Number(t.decayed.value) || 0,
@@ -1830,10 +2121,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           if (!saved || !saved.id) {
                             throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
                           }
-                          showNotification('success', "تم حفظ فحص الأسنان بنجاح في قاعدة البيانات المركزية.");
-                          setShowAddForm(false);
-                          loadAllData();
-                          if (onRefresh) onRefresh();
+                          await handleRecordSaved('dental_assessments', 'فحص الأسنان');
                         } catch (err: any) {
                           console.error("Save error dental_assessments:", err);
                           const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
@@ -1996,6 +2284,22 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           onClose={() => setShowVisitsModal(false)}
           patient={patient}
           onSaved={() => {
+            loadAllData();
+            if (onRefresh) onRefresh();
+          }}
+        />
+      )}
+
+      {/* Quick Clinic Booking Modal */}
+      {quickBookingState && (
+        <QuickClinicBookingModal
+          isOpen={!!quickBookingState}
+          onClose={() => setQuickBookingState(null)}
+          patient={patient}
+          initialModule={quickBookingState.module}
+          prefilledReason={quickBookingState.reason}
+          onBookingSuccess={(appointment) => {
+            showNotification('success', `تم حجز عيادة المريض بنجاح برقم حجز #${appointment.id.slice(0, 8)}`);
             loadAllData();
             if (onRefresh) onRefresh();
           }}

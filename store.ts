@@ -223,9 +223,14 @@ export class DB {
   }
   static async addDoctor(d: any) { const { data, error } = await supabase.from('doctors').insert([d]).select(); if (error) return handleError(error, "فشل إضافة الطبيب"); return data?.[0]; }
 
-  static async getClinicAppointments() { 
+  static async getClinicAppointments(clinicId?: string, doctorId?: string, date?: string, patientId?: string) { 
     try {
-      const { data, error } = await supabase.from('clinic_appointments').select('*, patients(*), doctors(*), clinics(*)').order('date', { ascending: false }); 
+      let query = supabase.from('clinic_appointments').select('*, patients(*), doctors(*), clinics(*)').order('date', { ascending: false }); 
+      if (clinicId) query = query.eq('clinic_id', clinicId);
+      if (doctorId) query = query.eq('doctor_id', doctorId);
+      if (date) query = query.eq('date', date);
+      if (patientId) query = query.eq('patient_id', patientId);
+      const { data, error } = await query;
       if (error) {
         if (['42P01', 'PGRST116'].includes(error.code) || error.message.includes('schema cache')) return [];
         return handleError(error, "فشل جلب المواعيد"); 

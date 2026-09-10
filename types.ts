@@ -175,11 +175,40 @@ export interface LabTest {
   date: string;
 }
 
+export type LinkedModuleType = 
+  | 'child_followup' 
+  | 'maternal_care' 
+  | 'family_planning' 
+  | 'geriatric_care' 
+  | 'dental' 
+  | 'premarital' 
+  | 'visits'
+  | 'history'
+  | 'general' 
+  | null;
+
+export type AppointmentTriggerType = 
+  | 'staff_scheduled' 
+  | 'system_suggested' 
+  | 'patient_request';
+
+export interface SuggestedFollowup {
+  id: string;
+  patient_id: string;
+  module_type: LinkedModuleType;
+  title: string;
+  reason: string;
+  urgency: 'high' | 'medium' | 'low';
+  due_date?: string;
+  suggested_clinic_name?: string;
+}
+
 export interface Clinic {
   id: string;
   name: string;
   specialty: string;
   room?: string;
+  linked_module?: LinkedModuleType;
 }
 
 export interface Doctor {
@@ -202,6 +231,11 @@ export interface ClinicAppointment {
   diagnosis?: string;
   prescription?: string;
   encounter_id?: string;
+  triggered_by?: AppointmentTriggerType;
+  // joined relations
+  patients?: Patient;
+  doctors?: Doctor;
+  clinics?: Clinic;
 }
 
 // ============================================================================
@@ -458,7 +492,8 @@ export interface ChronicFollowup {
 export interface AncFollowup {
   id: string;
   patient_id: string;
-  encounter_id: string;
+  encounter_id?: string;
+  appointment_id?: string;
   pregnancy_order?: number;
   lmp_date?: string;
   edd_date?: string;
@@ -478,12 +513,14 @@ export interface AncFollowup {
   health_education_given?: string;
   next_visit_date?: string;
   doctor_signature?: string;
+  created_at?: string;
 }
 
 export interface PostpartumFollowup {
   id: string;
   patient_id: string;
-  encounter_id: string;
+  encounter_id?: string;
+  appointment_id?: string;
   delivery_date?: string;
   delivery_mode?: string;
   delivery_outcome?: string;
@@ -494,12 +531,14 @@ export interface PostpartumFollowup {
   maternal_concerns?: string;
   contraception_method?: string;
   doctor_signature?: string;
+  created_at?: string;
 }
 
 export interface ChildUnder5Followup {
   id: string;
   patient_id: string;
-  encounter_id: string;
+  encounter_id?: string;
+  appointment_id?: string;
   age_months: number;
   weight_kg?: number;
   height_cm?: number;
@@ -509,12 +548,52 @@ export interface ChildUnder5Followup {
   parental_concerns?: string;
   clinical_assessment?: string;
   doctor_signature?: string;
+  created_at?: string;
+}
+
+export interface ChildOver5Followup {
+  id: string;
+  patient_id: string;
+  encounter_id?: string;
+  appointment_id?: string;
+  visit_date?: string;
+  school_stage?: string;
+  scholastic_performance?: string;
+  height_cm?: number;
+  weight_kg?: number;
+  bmi?: number;
+  vision_screening?: string;
+  hearing_screening?: string;
+  pubertal_stage?: string;
+  psychosocial_evaluation?: string;
+  clinical_notes?: string;
+  doctor_name?: string;
+  created_at?: string;
+}
+
+export interface FamilyPlanningFollowup {
+  id: string;
+  patient_id: string;
+  encounter_id?: string;
+  appointment_id?: string;
+  method_chosen?: string;
+  previous_methods_used?: string;
+  parity?: number;
+  living_children_count?: number;
+  medical_eligibility_criteria_met?: boolean;
+  side_effects_reported?: string;
+  pelvic_exam_normal?: boolean;
+  blood_pressure?: string;
+  next_appointment_date?: string;
+  doctor_signature?: string;
+  created_at?: string;
 }
 
 export interface ChildMilestone {
   id: string;
   patient_id: string;
-  encounter_id: string;
+  encounter_id?: string;
+  appointment_id?: string;
   milestone_category: string;
   age_bracket_months: string;
   milestone_description: string;
@@ -525,7 +604,8 @@ export interface ChildMilestone {
 export interface PremaritalAssessment {
   id: string;
   patient_id: string;
-  encounter_id: string;
+  encounter_id?: string;
+  appointment_id?: string;
   partner_name?: string;
   partner_national_id?: string;
   consanguinity_with_partner?: boolean;
@@ -537,12 +617,14 @@ export interface PremaritalAssessment {
   certificate_status?: string;
   mutual_consent_signed?: boolean;
   doctor_signature?: string;
+  created_at?: string;
 }
 
 export interface GeriatricAssessment {
   id: string;
   patient_id: string;
-  encounter_id: string;
+  encounter_id?: string;
+  appointment_id?: string;
   weight_loss?: boolean;
   weakness_reported?: boolean;
   basic_adls_score?: string;
@@ -551,12 +633,14 @@ export interface GeriatricAssessment {
   mini_cog_score?: number;
   management_plan?: string;
   doctor_signature?: string;
+  created_at?: string;
 }
 
 export interface DentalAssessment {
   id: string;
   patient_id: string;
-  encounter_id: string;
+  encounter_id?: string;
+  appointment_id?: string;
   tmj_clicking?: boolean;
   tmj_tenderness?: boolean;
   periodontal_index_cpi?: number;
@@ -565,6 +649,7 @@ export interface DentalAssessment {
   dmft_filled?: number;
   treatment_plan?: string;
   doctor_signature?: string;
+  created_at?: string;
 }
 
 export interface PatientDeath {
@@ -582,6 +667,7 @@ export interface PatientDeath {
 export interface HistoryPhysicalExam {
   id: string;
   patient_id: string;
+  appointment_id?: string;
   exam_date: string;
   hospitalization?: string;
   previous_operations?: string;
@@ -612,6 +698,7 @@ export interface HistoryPhysicalExam {
 export interface PatientVisit {
   id: string;
   patient_id: string;
+  appointment_id?: string;
   visit_date: string;
   visit_type: string;
   visit_code?: number;

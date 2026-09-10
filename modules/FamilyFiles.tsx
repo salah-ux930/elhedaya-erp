@@ -6,6 +6,8 @@ import HistoryPhysicalModal from "../components/HistoryPhysicalModal.tsx";
 import PatientTimeline from "../components/PatientTimeline.tsx";
 import VisitsFormModal from "../components/VisitsFormModal.tsx";
 import FamilyComprehensiveHealthRecordModal from "../components/FamilyComprehensiveHealthRecordModal.tsx";
+import QuickClinicBookingModal from "../components/QuickClinicBookingModal.tsx";
+import { calculatePatientSuggestedFollowups } from "../services/followupSuggestions.ts";
 import {
   FolderOpen,
   Users,
@@ -49,6 +51,8 @@ import {
   CheckCircle2,
   Stethoscope,
   BarChart2,
+  AlertCircle,
+  CalendarCheck,
 } from "lucide-react";
 
 // تفتيت وحفظ الدور والملاحظات مدمجة لعدم كسر الهيكل الحالي لقاعدة البيانات
@@ -166,6 +170,12 @@ const FamilyFilesModule: React.FC = () => {
   const [selectedClinicalMemberId, setSelectedClinicalMemberId] =
     useState<string>("");
 
+  // Quick Clinic Booking state
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [quickBookingPatient, setQuickBookingPatient] = useState<Patient | null>(null);
+  const [quickBookingModule, setQuickBookingModule] = useState<any>(undefined);
+  const [quickBookingReason, setQuickBookingReason] = useState<string>('');
+
   // Form error state
   const [formError, setFormError] = useState<string | null>(null);
 
@@ -204,7 +214,7 @@ const FamilyFilesModule: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [f, p, fe, probs, deaths, exams, visits] = await Promise.all([
+      const [f, p, fe, probs, deaths, exams, visits, appts] = await Promise.all([
         DB.getFamilyFiles(),
         DB.getPatients(),
         DB.getFundingEntities(),
@@ -212,6 +222,7 @@ const FamilyFilesModule: React.FC = () => {
         DB.getPatientDeaths(),
         DB.getPhysicalExams(),
         DB.getPatientVisits(),
+        DB.getClinicAppointments ? DB.getClinicAppointments() : Promise.resolve([])
       ]);
       setFamilyFiles(f);
       setPatients(p);
@@ -220,6 +231,7 @@ const FamilyFilesModule: React.FC = () => {
       setPatientDeaths(deaths);
       setPhysicalExams(exams);
       setPatientVisits(visits || []);
+      setAppointments(appts || []);
     } catch (err) {
       console.error(err);
     } finally {
@@ -1352,6 +1364,18 @@ const FamilyFilesModule: React.FC = () => {
                           (d) => d.patient_id === member.patient_id,
                         );
 
+                        const fullPatient =
+                          patients.find((p) => p.id === member.patient_id) ||
+                          member.patients || {
+                            id: member.patient_id,
+                            name: member.patients?.name,
+                            national_id: member.patients?.national_id,
+                            date_of_birth: member.patients?.date_of_birth,
+                            gender: member.patients?.gender,
+                          };
+
+                        const memberSuggestions = calculatePatientSuggestedFollowups(fullPatient, { appointments });
+
                         return (
                           <tr
                             key={member.id}
@@ -1364,19 +1388,9 @@ const FamilyFilesModule: React.FC = () => {
                               </span>
                             </td>
                             <td className="p-4">
-                            <div className="flex flex-col">
+                            <div className="flex flex-col items-start gap-1">
                               <button
                                 onClick={() => {
-                                  const fullPatient = patients.find(
-                                    (p) => p.id === member.patient_id,
-                                  ) ||
-                                    member.patients || {
-                                      id: member.patient_id,
-                                      name: member.patients?.name,
-                                      national_id: member.patients?.national_id,
-                                      date_of_birth:
-                                        member.patients?.date_of_birth,
-                                    };
                                   setTimelinePatient(fullPatient);
                                 }}
                                 className="text-right group flex items-center gap-1.5 hover:underline cursor-pointer"
@@ -1396,6 +1410,55 @@ const FamilyFilesModule: React.FC = () => {
                                   className="text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity"
                                 />
                               </button>
+
+                              {/* شارة التنبيه بالاقتراحات السريرية المستحقة لفرد الأسرة */}
+                              {memberSuggestions.length > 0 && !isDeceased && (
+                                <div className="flex flex-col gap-1 items-start mt-0.5">
+                                  {memberSuggestions.map((s) => {
+                                    const tabMap: Record<string, string> = {
+                                      child_followup: "child",
+                                      maternal_care: "maternal",
+                                      family_planning: "family_planning",
+                                      geriatric_care: "geriatric",
+                                      dental: "dental",
+                                      premarital: "premarital",
+                                    };
+                                    const targetTab = tabMap[s.module_type] || "history";
+
+                                    return (
+                                      <button
+                                        key={s.id}
+                                        onClick={() => {
+                                          setQuickBookingPatient(fullPatient);
+                                          setQuickBookingModule(targetTab);
+                                          setQuickBookingReason(s.reason);
+                                        }}
+                                        className={`inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-md border transition-all cursor-pointer shadow-xs ${
+                                          s.urgency === "high"
+                                            ? "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100 animate-pulse"
+                                            : "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100"
+                                        }`}
+                                        title={`${s.reason} - اضغط لحجز العيادة المقترحة فوراً`}
+                                      >
+                                        <AlertCircle
+                                          size={10}
+                                          className={
+                                            s.urgency === "high"
+                                              ? "text-rose-600"
+                                              : "text-amber-600"
+                                          }
+                                        />
+                                        <span>{s.title}</span>
+                                        <CalendarCheck
+                                          size={10}
+                                          className="mr-0.5 opacity-80"
+                                        />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
                               {isDeceased && (
                                 <span className="inline-flex items-center gap-1 mt-1 text-[10px] font-black text-red-600 bg-red-50 border border-red-100 px-2 py-0.5 rounded-md w-fit">
                                   <span>متوفى</span>
@@ -4581,7 +4644,26 @@ const FamilyFilesModule: React.FC = () => {
           }}
           patient={comprehensiveModalPatient}
           familyFile={selectedFamilyFile || undefined}
-          initialModuleId={comprehensiveInitialModule}
+          initialModule={comprehensiveInitialModule}
+        />
+      )}
+
+      {/* مودال حجز العيادة السريع المقترح لأفراد الأسرة */}
+      {quickBookingPatient && (
+        <QuickClinicBookingModal
+          isOpen={!!quickBookingPatient}
+          onClose={() => {
+            setQuickBookingPatient(null);
+            setQuickBookingModule(undefined);
+            setQuickBookingReason('');
+          }}
+          patient={quickBookingPatient}
+          initialModule={quickBookingModule}
+          prefilledReason={quickBookingReason}
+          onBookingSuccess={(appointment) => {
+            alert(`تم حجز العيادة بنجاح لفرد الأسرة ${quickBookingPatient.name} برقم حجز #${appointment.id.slice(0, 8)}`);
+            loadData();
+          }}
         />
       )}
 
