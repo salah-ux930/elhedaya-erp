@@ -9,6 +9,7 @@ import {
   ClipboardList, Stethoscope, Save, UserPlus, Loader2, X, History,
   FolderOpen, MapPin, Phone, FileText, Info
 } from 'lucide-react';
+import { ClinicExaminationModal } from '../components/ClinicExaminationModal.tsx';
 
 const ClinicsModule: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'appointments' | 'doctors' | 'clinics' | 'clinic_history'>('appointments');
@@ -106,23 +107,6 @@ const ClinicsModule: React.FC = () => {
       loadData();
     } catch (err) {
       alert("خطأ في تحديث الحالة");
-    }
-  };
-
-  const handleDiagnosisSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const target = e.target as any;
-    try {
-      await DB.updateAppointmentStatus(
-        selectedAppointment.id, 
-        'COMPLETED', 
-        target.diagnosis.value, 
-        target.prescription.value
-      );
-      setSelectedAppointment(null);
-      loadData();
-    } catch (err) {
-      alert("خطأ في حفظ البيانات الطبية");
     }
   };
 
@@ -489,33 +473,15 @@ const ClinicsModule: React.FC = () => {
       )}
 
       {selectedAppointment && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95">
-             <div className="p-6 bg-primary-700 text-white flex justify-between items-center rounded-t-2xl">
-                <div>
-                   <h3 className="font-bold text-xl">تسجيل الكشف الطبي</h3>
-                   <p className="text-xs opacity-75 mt-1">{selectedAppointment.patients?.name} | د/ {selectedAppointment.doctors?.name}</p>
-                </div>
-                <button onClick={() => setSelectedAppointment(null)}><X size={24} /></button>
-             </div>
-             <form onSubmit={handleDiagnosisSubmit} className="p-8 space-y-6 overflow-y-auto">
-                <div className="space-y-2">
-                   <label className="text-sm font-bold text-gray-600">التشخيص (Diagnosis)</label>
-                   <textarea name="diagnosis" rows={4} required className="w-full border rounded-xl p-4 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="اكتب التشخيص هنا..."></textarea>
-                </div>
-                <div className="space-y-2">
-                   <label className="text-sm font-bold text-gray-600">العلاج الموصوف (Prescription)</label>
-                   <textarea name="prescription" rows={6} className="w-full border rounded-xl p-4 bg-gray-50 focus:ring-2 focus:ring-primary-500 outline-none" placeholder="الأدوية والجرعات..."></textarea>
-                </div>
-                <div className="flex gap-4 pt-6 border-t">
-                   <button type="button" onClick={() => setSelectedAppointment(null)} className="flex-1 py-4 bg-gray-100 rounded-xl font-bold text-gray-600">إلغاء</button>
-                   <button type="submit" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg flex items-center justify-center gap-2">
-                      <Save size={20} /> إنهاء الكشف وحفظ البيانات
-                   </button>
-                </div>
-             </form>
-          </div>
-        </div>
+        <ClinicExaminationModal
+          isOpen={!!selectedAppointment}
+          onClose={() => setSelectedAppointment(null)}
+          appointment={selectedAppointment}
+          onSaved={() => {
+            setSelectedAppointment(null);
+            loadData();
+          }}
+        />
       )}
 
 

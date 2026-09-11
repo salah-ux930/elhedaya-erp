@@ -640,6 +640,83 @@ export class DB {
     }
   }
 
+  static async getPhysicalExamForAppointment(appointmentId?: string, patientId?: string) {
+    try {
+      if (appointmentId) {
+        const { data, error } = await supabase
+          .from('history_physical_exams')
+          .select('*')
+          .eq('appointment_id', appointmentId)
+          .maybeSingle();
+        if (!error && data) return data;
+      }
+      if (patientId) {
+        const today = new Date().toISOString().split('T')[0];
+        const { data, error } = await supabase
+          .from('history_physical_exams')
+          .select('*')
+          .eq('patient_id', patientId)
+          .eq('exam_date', today)
+          .order('created_at', { ascending: false })
+          .limit(1);
+        if (!error && data && data.length > 0) return data[0];
+      }
+      return null;
+    } catch (e) {
+      console.warn("Exception fetching physical exam for appointment:", e);
+      return null;
+    }
+  }
+
+  static async saveClinicPhysicalExam(examData: any) {
+    // Check if an existing record matches appointment_id or (patient_id AND exam_date)
+    let existingId: string | null = null;
+    if (examData.appointment_id) {
+      const { data: byAppt, error: errAppt } = await supabase
+        .from('history_physical_exams')
+        .select('id')
+        .eq('appointment_id', examData.appointment_id)
+        .maybeSingle();
+      if (!errAppt && byAppt?.id) {
+        existingId = byAppt.id;
+      }
+    }
+
+    if (!existingId && examData.patient_id && examData.exam_date) {
+      const { data: byPatientDate, error: errDate } = await supabase
+        .from('history_physical_exams')
+        .select('id')
+        .eq('patient_id', examData.patient_id)
+        .eq('exam_date', examData.exam_date)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (!errDate && byPatientDate && byPatientDate.length > 0) {
+        existingId = byPatientDate[0].id;
+      }
+    }
+
+    if (existingId) {
+      const { data, error } = await supabase
+        .from('history_physical_exams')
+        .update(examData)
+        .eq('id', existingId)
+        .select();
+      if (error) {
+        return handleError(error, "فشل تحديث بيانات الفحص والتاريخ الطبي");
+      }
+      return data?.[0];
+    } else {
+      const { data, error } = await supabase
+        .from('history_physical_exams')
+        .insert([examData])
+        .select();
+      if (error) {
+        return handleError(error, "فشل حفظ بيانات الفحص والتاريخ الطبي");
+      }
+      return data?.[0];
+    }
+  }
+
   static async addPhysicalExam(exam: any) {
     try {
       const { data, error } = await supabase.from('history_physical_exams').insert([exam]).select();
