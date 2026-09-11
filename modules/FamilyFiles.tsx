@@ -52,6 +52,8 @@ import {
   BarChart2,
   AlertCircle,
   CalendarCheck,
+  ScrollText,
+  Square,
 } from "lucide-react";
 
 // تفتيت وحفظ الدور والملاحظات مدمجة لعدم كسر الهيكل الحالي لقاعدة البيانات
@@ -150,6 +152,7 @@ const FamilyFilesModule: React.FC = () => {
   const [patientVisits, setPatientVisits] = useState<any[]>([]);
 
   // States for Comprehensive Health Record
+  const [fileViewMode, setFileViewMode] = useState<"continuous" | "single">("continuous");
   const [familyDetailTab, setFamilyDetailTab] = useState<
     "members" | "clinical" | "housing" | "social" | "deaths"
   >("members");
@@ -161,6 +164,25 @@ const FamilyFilesModule: React.FC = () => {
     useState<string>("history");
   const [selectedClinicalMemberId, setSelectedClinicalMemberId] =
     useState<string>("");
+
+  const scrollToSection = (targetId: string) => {
+    setTimeout(() => {
+      const el = document.getElementById(targetId);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "start" });
+        el.classList.add(
+          "ring-4",
+          "ring-primary-500",
+          "ring-offset-2",
+          "transition-all",
+          "duration-500"
+        );
+        setTimeout(() => {
+          el.classList.remove("ring-4", "ring-primary-500", "ring-offset-2");
+        }, 1800);
+      }
+    }, 60);
+  };
 
   const openComprehensiveForMember = (member: any, initialModule: string = "history") => {
     const fullPatient =
@@ -1069,6 +1091,9 @@ const FamilyFilesModule: React.FC = () => {
                             selectedFamilyFile.members[0];
                           setSelectedClinicalMemberId(headMember.patient_id);
                         }
+                        if (fileViewMode === "continuous") {
+                          scrollToSection(`section-${sec}`);
+                        }
                       }}
                       onSelectClinicalModule={(modId) => {
                         setFamilyDetailTab("clinical");
@@ -1082,6 +1107,9 @@ const FamilyFilesModule: React.FC = () => {
                             selectedFamilyFile.members.find((m: any) => m.is_head) ||
                             selectedFamilyFile.members[0];
                           setSelectedClinicalMemberId(headMember.patient_id);
+                        }
+                        if (fileViewMode === "continuous") {
+                          scrollToSection(`section-clinical-${modId}`);
                         }
                       }}
                       membersCount={selectedFamilyFile.members?.length || 0}
@@ -1104,6 +1132,7 @@ const FamilyFilesModule: React.FC = () => {
                       completedModulesCount={completedClinicalCount}
                       totalModulesCount={10}
                       activeMemberName={activePatient?.name}
+                      viewMode={fileViewMode}
                     />
                   </div>
 
@@ -1111,8 +1140,8 @@ const FamilyFilesModule: React.FC = () => {
                   <div className="lg:col-span-8 xl:col-span-9 min-w-0 space-y-6">
 
           {/* بيان حالة المسكن والبيئة السكنية */}
-          {familyDetailTab === "housing" && (
-            <div className="bg-slate-50 border border-slate-200/60 p-6 rounded-3xl space-y-4 shadow-sm animate-in fade-in duration-300">
+          {(fileViewMode === "continuous" || familyDetailTab === "housing") && (
+            <div id="section-housing" className="bg-slate-50 border border-slate-200/60 p-6 rounded-3xl space-y-4 shadow-sm animate-in fade-in duration-300 scroll-mt-6">
               <div className="flex justify-between items-center pb-3 border-b border-slate-200/60">
                 <h4 className="font-bold text-lg text-slate-800 flex items-center gap-2">
                   <Home size={20} className="text-slate-600" />
@@ -1286,8 +1315,8 @@ const FamilyFilesModule: React.FC = () => {
         )}
 
         {/* بيان البحث الاجتماعي والتمكين */}
-        {familyDetailTab === "social" && (
-          <div className="bg-sky-50/50 border border-sky-100 p-6 rounded-3xl space-y-4 shadow-sm animate-in fade-in duration-300">
+        {(fileViewMode === "continuous" || familyDetailTab === "social") && (
+          <div id="section-social" className="bg-sky-50/50 border border-sky-100 p-6 rounded-3xl space-y-4 shadow-sm animate-in fade-in duration-300 scroll-mt-6">
             <div className="flex justify-between items-center pb-3 border-b border-sky-100">
               <h4 className="font-bold text-lg text-sky-900 flex items-center gap-2">
                 <Users size={20} className="text-sky-700" />
@@ -1451,8 +1480,8 @@ const FamilyFilesModule: React.FC = () => {
         )}
 
         {/* سجل أفراد الأسرة */}
-        {familyDetailTab === "members" && (
-          <div className="space-y-4 animate-in fade-in duration-300">
+        {(fileViewMode === "continuous" || familyDetailTab === "members") && (
+          <div id="section-members" className="space-y-4 animate-in fade-in duration-300 scroll-mt-6">
             <div className="flex justify-between items-center">
               <h4 className="font-bold text-lg text-gray-800 flex items-center gap-2">
                 <Users size={20} className="text-primary-600" /> أفراد العائلة
@@ -1882,32 +1911,8 @@ const FamilyFilesModule: React.FC = () => {
         )}
 
         {/* موديولات الملف الصحي الشامل المعتمدة (10 أقسام إكلينيكية) */}
-        {familyDetailTab === "clinical" && (
-          <div className="space-y-8 animate-in fade-in duration-300">
-            {/* بطاقة عنوان الموديول الصحي المعتمد */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 p-6 bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white rounded-3xl shadow-lg">
-              <div className="space-y-1.5">
-                <div className="flex items-center gap-2">
-                  <span className="bg-purple-500/30 text-purple-200 border border-purple-400/30 text-[10px] font-black px-2.5 py-0.5 rounded-full">
-                    معايير الهيئة العامة للاعتماد والرقابة الصحية GAHAR
-                  </span>
-                  <span className="bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 text-[10px] font-black px-2.5 py-0.5 rounded-full">
-                    منظومة التأمين الصحي الشامل
-                  </span>
-                </div>
-                <h4 className="font-black text-xl flex items-center gap-2.5">
-                  <Activity size={24} className="text-purple-300" />
-                  الملف الصحي العائلي الشامل
-                </h4>
-                <p className="text-xs text-purple-200 font-medium max-w-3xl leading-relaxed">
-                  نظام التوثيق الطبي الموحد لملف طب الأسرة: يشمل التاريخ المرضي،
-                  الأحداث الهامة، الفحص السريري، التردد والزيارات، صحة الطفل
-                  والتطعيمات، رعاية الأمومة، تنظيم الأسرة، فحص المقبلين على
-                  الزواج، الرعاية الشاملة لكبار السن، وطب الفم والأسنان.
-                </p>
-              </div>
-            </div>
-
+        {(fileViewMode === "continuous" || familyDetailTab === "clinical") && (
+          <div id="section-clinical" className="space-y-8 animate-in fade-in duration-300 scroll-mt-6">
             {/* محدد أفراد الأسرة لاختيار المريض المراد توثيق ملفه */}
             {(() => {
               const membersList = selectedFamilyFile.members || [];
@@ -2191,106 +2196,152 @@ const FamilyFilesModule: React.FC = () => {
                   </div>
 
                   {/* بطاقة النموذج المعتمد للفرد المحدد */}
-                  {activePatient ? (
-                    <div
-                      className={`p-6 rounded-3xl border ${currentMod.borderClass} bg-gradient-to-br ${currentMod.bgClass} bg-white shadow-sm space-y-4`}
-                    >
-                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div className="flex items-start gap-3.5">
-                          <div
-                            className={`w-12 h-12 rounded-2xl ${currentMod.btnClass} flex items-center justify-center font-black shadow-md shrink-0`}
-                          >
-                            <CurrentModIcon size={24} />
-                          </div>
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <h4 className="font-black text-base md:text-lg text-gray-900">
-                                {currentMod.title}
-                              </h4>
-                              <span
-                                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
-                                  currentMod.eligible
-                                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                    : "bg-gray-100 text-gray-600 border border-gray-200"
-                                }`}
-                              >
-                                {currentMod.badge}
-                              </span>
-                              <span className="text-xs text-gray-400 font-mono font-bold">
-                                [{currentMod.sub}]
-                              </span>
+                  {fileViewMode === "single" ? (
+                    activePatient ? (
+                      <div
+                        className={`p-6 rounded-3xl border ${currentMod.borderClass} bg-gradient-to-br ${currentMod.bgClass} bg-white shadow-sm space-y-4`}
+                      >
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                          <div className="flex items-start gap-3.5">
+                            <div
+                              className={`w-12 h-12 rounded-2xl ${currentMod.btnClass} flex items-center justify-center font-black shadow-md shrink-0`}
+                            >
+                              <CurrentModIcon size={24} />
                             </div>
-                            <p className="text-xs text-gray-700 font-medium leading-relaxed max-w-3xl">
-                              {currentMod.desc}
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <h4 className="font-black text-base md:text-lg text-gray-900">
+                                  {currentMod.title}
+                                </h4>
+                                <span
+                                  className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                                    currentMod.eligible
+                                      ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                      : "bg-gray-100 text-gray-600 border border-gray-200"
+                                  }`}
+                                >
+                                  {currentMod.badge}
+                                </span>
+                                <span className="text-xs text-gray-400 font-mono font-bold">
+                                  [{currentMod.sub}]
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-700 font-medium leading-relaxed max-w-3xl">
+                                {currentMod.desc}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setComprehensiveModalPatient(activePatient);
+                                setComprehensiveInitialModule(currentMod.id);
+                                setShowComprehensiveModal(true);
+                              }}
+                              className={`py-2.5 px-4 ${currentMod.btnClass} rounded-xl font-black text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer`}
+                            >
+                              <Activity size={16} />
+                              <span>فتح وتوثيق السجل في الملف الشامل</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setQuickBookingPatient(activePatient);
+                                setQuickBookingModule(currentMod.id as any);
+                                setQuickBookingReason(
+                                  `متابعة وفحص (${currentMod.title}) بالملف العائلي`,
+                                );
+                              }}
+                              className="py-2.5 px-3.5 bg-white hover:bg-gray-50 text-gray-800 rounded-xl font-black text-xs flex items-center gap-2 transition-all border border-gray-300 shadow-xs cursor-pointer"
+                            >
+                              <CalendarCheck
+                                size={16}
+                                className="text-primary-600"
+                              />
+                              <span>حجز موعد عيادة سريعة</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center bg-gray-50 rounded-3xl border border-gray-200">
+                        <p className="text-sm font-bold text-gray-500">
+                          الرجاء اختيار فرد من الأسرة لعرض وتوثيق سجلاته الصحية
+                          في هذا النموذج.
+                        </p>
+                      </div>
+                    )
+                  ) : (
+                    activePatient ? (
+                      <div className="p-5 rounded-3xl border border-purple-200/80 bg-gradient-to-r from-purple-50 via-indigo-50/40 to-white shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-start gap-3.5">
+                          <div className="w-11 h-11 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-black shadow-xs shrink-0">
+                            <Activity size={22} />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-black text-base text-gray-900">
+                                الملف الصحي الشامل لـ: <span className="text-purple-700 font-black">{activePatient.name}</span>
+                              </h4>
+                              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200">
+                                {activeMember?.relationship_to_head || "فرد أسرة"}
+                              </span>
+                              {activeAge !== null && (
+                                <span className="text-xs font-mono font-bold text-gray-500">
+                                  {activeAge} سنة
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-600 mt-1">
+                              تُعرض أدناه جميع النماذج السريرية الـ 10 الخاصة بالأسرة وفردها المحدد. اضغط على أي نموذج في القائمة الجانبية للتمرير الفوري إليه مباشرة.
                             </p>
                           </div>
                         </div>
-
-                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <div className="flex items-center gap-2 shrink-0">
                           <button
                             type="button"
                             onClick={() => {
                               setComprehensiveModalPatient(activePatient);
-                              setComprehensiveInitialModule(currentMod.id);
+                              setComprehensiveInitialModule(clinicalModelTab || "history");
                               setShowComprehensiveModal(true);
                             }}
-                            className={`py-2.5 px-4 ${currentMod.btnClass} rounded-xl font-black text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer`}
+                            className="py-2.5 px-4 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-black text-xs flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
                           >
-                            <Activity size={16} />
-                            <span>فتح وتوثيق السجل في الملف الشامل</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setQuickBookingPatient(activePatient);
-                              setQuickBookingModule(currentMod.id as any);
-                              setQuickBookingReason(
-                                `متابعة وفحص (${currentMod.title}) بالملف العائلي`,
-                              );
-                            }}
-                            className="py-2.5 px-3.5 bg-white hover:bg-gray-50 text-gray-800 rounded-xl font-black text-xs flex items-center gap-2 transition-all border border-gray-300 shadow-xs cursor-pointer"
-                          >
-                            <CalendarCheck
-                              size={16}
-                              className="text-primary-600"
-                            />
-                            <span>حجز موعد عيادة سريعة</span>
+                            <Activity size={15} />
+                            <span>فتح وتوثيق ملف {activePatient.name} الشامل</span>
                           </button>
                         </div>
                       </div>
-                    </div>
-                  ) : (
-                    <div className="p-8 text-center bg-gray-50 rounded-3xl border border-gray-200">
-                      <p className="text-sm font-bold text-gray-500">
-                        الرجاء اختيار فرد من الأسرة لعرض وتوثيق سجلاته الصحية
-                        في هذا النموذج.
-                      </p>
-                    </div>
+                    ) : null
                   )}
 
                   {/* عنوان جدول وسجلات النموذج النشط */}
-                  <div className="pt-2 border-t border-gray-200/80">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-black text-base text-gray-800 flex items-center gap-2">
-                        <FileSpreadsheet
-                          size={18}
-                          className="text-purple-600"
-                        />
-                        بيانات وجدول السجلات الطبية لنموذج ({currentMod.title})
-                      </h4>
-                      <span className="text-xs text-purple-700 font-bold bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-100">
-                        النموذج المعروض: {currentMod.title}
-                      </span>
+                  {fileViewMode === "single" && (
+                    <div className="pt-2 border-t border-gray-200/80">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-black text-base text-gray-800 flex items-center gap-2">
+                          <FileSpreadsheet
+                            size={18}
+                            className="text-purple-600"
+                          />
+                          بيانات وجدول السجلات الطبية لنموذج ({currentMod.title})
+                        </h4>
+                        <span className="text-xs text-purple-700 font-bold bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-100">
+                          النموذج المعروض: {currentMod.title}
+                        </span>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               );
             })()}
 
             {/* ---------------- 1. جدول موديول التاريخ المرضي والصحي ---------------- */}
-            {clinicalModelTab === "history" && (
-              <div className="bg-white border border-purple-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
+            {(fileViewMode === "continuous" || clinicalModelTab === "history") && (
+              <div id="section-clinical-history" className="bg-white border border-purple-100 rounded-3xl overflow-hidden shadow-sm space-y-3 scroll-mt-6">
               <div className="p-4 bg-gradient-to-r from-purple-50 via-white to-purple-50/30 border-b border-purple-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black shadow-md shadow-purple-200">
@@ -2467,8 +2518,8 @@ const FamilyFilesModule: React.FC = () => {
             )}
 
             {/* ---------------- 2. جدول موديول ملخص الأحداث الطبية الهامة ---------------- */}
-            {clinicalModelTab === "significant" && (
-              <div className="bg-white border border-amber-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
+            {(fileViewMode === "continuous" || clinicalModelTab === "significant") && (
+              <div id="section-clinical-significant" className="bg-white border border-amber-100 rounded-3xl overflow-hidden shadow-sm space-y-3 scroll-mt-6">
               <div className="p-4 bg-gradient-to-r from-amber-50 via-white to-amber-50/30 border-b border-amber-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center font-black shadow-md shadow-amber-200">
@@ -2649,8 +2700,8 @@ const FamilyFilesModule: React.FC = () => {
             )}
 
             {/* ---------------- 3. جدول موديول الفحص السريري الإكلينيكي ---------------- */}
-            {clinicalModelTab === "clinical" && (
-              <div className="bg-white border border-indigo-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
+            {(fileViewMode === "continuous" || clinicalModelTab === "clinical") && (
+              <div id="section-clinical-clinical" className="bg-white border border-indigo-100 rounded-3xl overflow-hidden shadow-sm space-y-3 scroll-mt-6">
               <div className="p-4 bg-gradient-to-r from-indigo-50 via-white to-indigo-50/30 border-b border-indigo-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-md shadow-indigo-200">
@@ -2875,8 +2926,8 @@ const FamilyFilesModule: React.FC = () => {
             )}
 
             {/* ---------------- 4. سجل الزيارات والتردد (Visits Form) ---------------- */}
-            {clinicalModelTab === "visits" && (
-              <div className="bg-white border border-teal-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
+            {(fileViewMode === "continuous" || clinicalModelTab === "visits") && (
+              <div id="section-clinical-visits" className="bg-white border border-teal-100 rounded-3xl overflow-hidden shadow-sm space-y-3 scroll-mt-6">
               <div className="p-4 bg-gradient-to-r from-teal-50 via-white to-teal-50/30 border-b border-teal-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center font-black shadow-md shadow-teal-200">
@@ -3042,8 +3093,8 @@ const FamilyFilesModule: React.FC = () => {
             )}
 
             {/* ---------------- 5. سجل صحة ورعاية الطفل والتطعيمات ---------------- */}
-            {clinicalModelTab === "child" && (
-              <div className="bg-white border border-cyan-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+            {(fileViewMode === "continuous" || clinicalModelTab === "child") && (
+              <div id="section-clinical-child" className="bg-white border border-cyan-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200 scroll-mt-6">
                 <div className="p-4 bg-gradient-to-r from-cyan-50 via-white to-cyan-50/30 border-b border-cyan-100 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-cyan-600 text-white flex items-center justify-center font-black shadow-md shadow-cyan-200">
@@ -3207,8 +3258,8 @@ const FamilyFilesModule: React.FC = () => {
             )}
 
             {/* ---------------- 6. سجل رعاية الأمومة ومتابعة الحمل والنفاس ---------------- */}
-            {clinicalModelTab === "maternal" && (
-              <div className="bg-white border border-rose-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+            {(fileViewMode === "continuous" || clinicalModelTab === "maternal") && (
+              <div id="section-clinical-maternal" className="bg-white border border-rose-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200 scroll-mt-6">
                 <div className="p-4 bg-gradient-to-r from-rose-50 via-white to-rose-50/30 border-b border-rose-100 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center font-black shadow-md shadow-rose-200">
@@ -3364,8 +3415,8 @@ const FamilyFilesModule: React.FC = () => {
             )}
 
             {/* ---------------- 7. سجل تنظيم الأسرة والصحة الإنجابية ---------------- */}
-            {clinicalModelTab === "family_planning" && (
-              <div className="bg-white border border-fuchsia-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+            {(fileViewMode === "continuous" || clinicalModelTab === "family_planning") && (
+              <div id="section-clinical-family_planning" className="bg-white border border-fuchsia-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200 scroll-mt-6">
                 <div className="p-4 bg-gradient-to-r from-fuchsia-50 via-white to-fuchsia-50/30 border-b border-fuchsia-100 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-fuchsia-600 text-white flex items-center justify-center font-black shadow-md shadow-fuchsia-200">
@@ -3507,8 +3558,8 @@ const FamilyFilesModule: React.FC = () => {
             )}
 
             {/* ---------------- 8. سجل الفحص الطبي الشامل للمقبلين على الزواج ---------------- */}
-            {clinicalModelTab === "premarital" && (
-              <div className="bg-white border border-emerald-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+            {(fileViewMode === "continuous" || clinicalModelTab === "premarital") && (
+              <div id="section-clinical-premarital" className="bg-white border border-emerald-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200 scroll-mt-6">
                 <div className="p-4 bg-gradient-to-r from-emerald-50 via-white to-emerald-50/30 border-b border-emerald-100 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-200">
@@ -3638,8 +3689,8 @@ const FamilyFilesModule: React.FC = () => {
             )}
 
             {/* ---------------- 9. سجل الرعاية الشاملة لكبار السن ---------------- */}
-            {clinicalModelTab === "geriatric" && (
-              <div className="bg-white border border-amber-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+            {(fileViewMode === "continuous" || clinicalModelTab === "geriatric") && (
+              <div id="section-clinical-geriatric" className="bg-white border border-amber-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200 scroll-mt-6">
                 <div className="p-4 bg-gradient-to-r from-amber-50 via-white to-amber-50/30 border-b border-amber-100 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center font-black shadow-md shadow-amber-200">
@@ -3776,8 +3827,8 @@ const FamilyFilesModule: React.FC = () => {
             )}
 
             {/* ---------------- 10. سجل طب وجراحة الفم والأسنان ---------------- */}
-            {clinicalModelTab === "dental" && (
-              <div className="bg-white border border-blue-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+            {(fileViewMode === "continuous" || clinicalModelTab === "dental") && (
+              <div id="section-clinical-dental" className="bg-white border border-blue-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200 scroll-mt-6">
                 <div className="p-4 bg-gradient-to-r from-blue-50 via-white to-blue-50/30 border-b border-blue-100 flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
                     <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shadow-md shadow-blue-200">
@@ -3898,8 +3949,8 @@ const FamilyFilesModule: React.FC = () => {
         )}
 
         {/* بيان الوفيات بالملف العائلي */}
-        {familyDetailTab === "deaths" && (
-          <div className="space-y-4 animate-in fade-in duration-300">
+        {(fileViewMode === "continuous" || familyDetailTab === "deaths") && (
+          <div id="section-deaths" className="space-y-4 animate-in fade-in duration-300 scroll-mt-6">
           {(() => {
             const familyMemberIds = (selectedFamilyFile.members || []).map(
               (m: any) => m.patient_id,
