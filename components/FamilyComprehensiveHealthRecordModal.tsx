@@ -4,13 +4,15 @@ import {
   Baby, HeartHandshake, Sparkles, Smile, Clock, CheckCircle2, 
   AlertCircle, Plus, Trash2, Printer, ArrowRight, Stethoscope,
   ChevronDown, ChevronUp, ExternalLink, Save, Check, Filter,
-  Eye, Droplets, Info, CalendarCheck, CheckCircle
+  Eye, Droplets, Info, CalendarCheck, CheckCircle, AlertTriangle
 } from 'lucide-react';
 import { DB } from '../store.ts';
 import { calculateAge, BLOOD_TYPES } from '../constants.ts';
 import { LinkedModuleType } from '../types.ts';
 import HistoryPhysicalModal from './HistoryPhysicalModal.tsx';
 import { QuickClinicBookingModal } from './QuickClinicBookingModal.tsx';
+import { ModuleProgressRing, UnsavedChangesModal } from './clinical-record/ClinicalFormComponents.tsx';
+import { MaternalAncPoCView } from './clinical-record/MaternalAncPoCView.tsx';
 
 interface Props {
   isOpen: boolean;
@@ -84,7 +86,33 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   const [showAddForm, setShowAddForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [tableErrors, setTableErrors] = useState<Record<string, string>>({});
   const [statusBanner, setStatusBanner] = useState<{ type: 'error' | 'success', message: string } | null>(null);
+
+  // Form dirty state & Unsaved changes confirmation dialog
+  const [isFormDirty, setIsFormDirty] = useState(false);
+  const [pendingTabSwitch, setPendingTabSwitch] = useState<string | null>(null);
+  const [showUnsavedConfirm, setShowUnsavedConfirm] = useState(false);
+
+  const handleTabClick = (targetTabId: string) => {
+    if (activeTab === targetTabId) return;
+    if (isFormDirty) {
+      setPendingTabSwitch(targetTabId);
+      setShowUnsavedConfirm(true);
+    } else {
+      setActiveTab(targetTabId);
+      setShowAddForm(false);
+    }
+  };
+
+  const handleCloseModal = () => {
+    if (isFormDirty) {
+      setPendingTabSwitch('CLOSE_MODAL');
+      setShowUnsavedConfirm(true);
+    } else {
+      onClose();
+    }
+  };
 
   const showNotification = (type: 'error' | 'success', message: string) => {
     setStatusBanner({ type, message });
@@ -131,20 +159,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   const loadAllData = async () => {
     setLoading(true);
     setLoadError(null);
+    setTableErrors({});
     try {
-      const [
-        examsData,
-        visitsData,
-        apptsData,
-        ancData,
-        postpartumData,
-        cUnder5Data,
-        cOver5Data,
-        fpData,
-        premaritalData,
-        geriatricData,
-        dentalData
-      ] = await Promise.all([
+      const results = await Promise.allSettled([
         DB.getPhysicalExams(patient.id),
         DB.getPatientVisits(patient.id),
         DB.getClinicAppointments(undefined, undefined, undefined, patient.id),
@@ -158,17 +175,59 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         DB.getAccreditationRecords('dental_assessments', patient.id)
       ]);
 
-      setPhysicalExams(examsData || []);
-      setVisits(visitsData || []);
-      setClinicAppointments(apptsData || []);
-      setAncRecords(ancData || []);
-      setPostpartumRecords(postpartumData || []);
-      setChildUnder5Records(cUnder5Data || []);
-      setChildOver5Records(cOver5Data || []);
-      setFamilyPlanningRecords(fpData || []);
-      setPremaritalRecords(premaritalData || []);
-      setGeriatricRecords(geriatricData || []);
-      setDentalRecords(dentalData || []);
+      const [
+        examsRes,
+        visitsRes,
+        apptsRes,
+        ancRes,
+        postpartumRes,
+        cUnder5Res,
+        cOver5Res,
+        fpRes,
+        premaritalRes,
+        geriatricRes,
+        dentalRes
+      ] = results;
+
+      if (examsRes.status === 'fulfilled') setPhysicalExams(examsRes.value || []);
+      if (visitsRes.status === 'fulfilled') setVisits(visitsRes.value || []);
+      if (apptsRes.status === 'fulfilled') setClinicAppointments(apptsRes.value || []);
+      if (ancRes.status === 'fulfilled') setAncRecords(ancRes.value || []);
+      if (postpartumRes.status === 'fulfilled') setPostpartumRecords(postpartumRes.value || []);
+      if (cUnder5Res.status === 'fulfilled') setChildUnder5Records(cUnder5Res.value || []);
+      if (cOver5Res.status === 'fulfilled') setChildOver5Records(cOver5Res.value || []);
+      if (fpRes.status === 'fulfilled') setFamilyPlanningRecords(fpRes.value || []);
+      if (premaritalRes.status === 'fulfilled') setPremaritalRecords(premaritalRes.value || []);
+      if (geriatricRes.status === 'fulfilled') setGeriatricRecords(geriatricRes.value || []);
+      if (dentalRes.status === 'fulfilled') setDentalRecords(dentalRes.value || []);
+
+      const errMap: Record<string, string> = {};
+      const missingTableNames: string[] = [];
+
+      const recordResError = (res: PromiseSettledResult<any>, tableName: string) => {
+        if (res.status === 'rejected') {
+          const msg = res.reason?.message || String(res.reason);
+          errMap[tableName] = msg;
+          missingTableNames.push(tableName);
+        }
+      };
+
+      recordResError(examsRes, 'history_physical_exams');
+      recordResError(visitsRes, 'patient_visits');
+      recordResError(apptsRes, 'clinic_appointments');
+      recordResError(ancRes, 'maternal_antenatal_followups');
+      recordResError(postpartumRes, 'maternal_postpartum_followups');
+      recordResError(cUnder5Res, 'child_under5_followups');
+      recordResError(cOver5Res, 'child_over5_followups');
+      recordResError(fpRes, 'family_planning_followups');
+      recordResError(premaritalRes, 'premarital_assessments');
+      recordResError(geriatricRes, 'geriatric_assessments');
+      recordResError(dentalRes, 'dental_assessments');
+
+      setTableErrors(errMap);
+      if (missingTableNames.length > 0) {
+        setLoadError(`تم استرجاع السجلات المتاحة بنجاح. تنبيه: الجداول (${missingTableNames.join('، ')}) غير متوفرة حالياً في Schema Cache لقاعدة البيانات.`);
+      }
     } catch (e: any) {
       console.error("Error loading patient comprehensive record:", e);
       const msg = e?.message || "تعذر الاتصال بقاعدة البيانات لتحميل السجلات.";
@@ -534,6 +593,10 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
     }
   ];
 
+  const activeTabModule = useMemo(() => {
+    return moduleGroups.flatMap(g => g.modules).find(m => m.id === activeTab);
+  }, [moduleGroups, activeTab]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200" dir="rtl">
       <div className="bg-slate-50 w-full max-w-6xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh]">
@@ -551,7 +614,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                   {patient.gender || 'غير محدد'} • {age !== null ? `${age} سنة` : 'تاريخ الميلاد غير مدون'}
                 </span>
                 {familyFile && (
-                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-0.5 rounded-full font-bold">
+                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-0.5 rounded-full font-bold font-mono">
                     ملف الأسرة: {familyFile.family_code} ({familyFile.head_name})
                   </span>
                 )}
@@ -566,7 +629,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 )}
               </div>
               <p className="text-xs text-indigo-200 font-bold mt-1">
-                الرقم القومي: <span className="font-mono">{patient.national_id || '—'}</span> | الهاتف: <span className="font-mono">{patient.phone || '—'}</span> | فصيلة الدم: <span className="text-amber-300 font-black">{patient.blood_type || '—'}</span>
+                الرقم القومي: <span className="font-mono" dir="ltr">{patient.national_id || '—'}</span> | الهاتف: <span className="font-mono" dir="ltr">{patient.phone || '—'}</span> | فصيلة الدم: <span className="text-amber-300 font-black">{patient.blood_type || '—'}</span>
               </p>
             </div>
           </div>
@@ -574,14 +637,15 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
             <button
               onClick={handlePrint}
-              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all border border-white/10"
+              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all border border-white/10 cursor-pointer"
               title="طباعة السجل الصحي الشامل"
             >
               <Printer size={14} /> طباعة
             </button>
             <button
-              onClick={onClose}
-              className="w-9 h-9 rounded-xl bg-white/10 hover:bg-red-500 text-white flex items-center justify-center transition-all"
+              onClick={handleCloseModal}
+              className="w-9 h-9 rounded-xl bg-white/10 hover:bg-red-500 text-white flex items-center justify-center transition-all cursor-pointer"
+              title="إغلاق السجل"
             >
               <X size={20} />
             </button>
@@ -592,83 +656,166 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         {activeAppointment && (
           <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-3 flex items-center justify-between gap-4 text-xs shrink-0">
             <div className="flex items-center gap-2 text-emerald-950 font-bold">
-              <CheckCircle className="text-emerald-600" size={16} />
+              <CheckCircle className="text-emerald-600 shrink-0" size={16} />
               <span>
                 جلسة كشف نشطة للعيادة: <strong className="text-emerald-900 font-black">{activeAppointment.clinics?.name || 'عيادة تخصصية'}</strong>
                 {activeAppointment.doctors?.name && ` • الطبيب: د/ ${activeAppointment.doctors.name}`}
                 {` • تاريخ الحجز: ${activeAppointment.date || 'اليوم'}`}
               </span>
             </div>
-            <div className="text-[11px] font-black text-emerald-800 bg-emerald-100/80 px-2.5 py-1 rounded-lg border border-emerald-200">
+            <div className="text-[11px] font-black text-emerald-800 bg-emerald-100/80 px-2.5 py-1 rounded-lg border border-emerald-200 shrink-0">
               أي فحص يتم حفظه سيُربط آلياً بهذه الزيارة وتُعتمد كزيارة مكتملة (COMPLETED)
             </div>
           </div>
         )}
 
-        {/* Navigation Tabs grouped into 3 categories */}
-        <div className="bg-slate-100/80 border-b border-slate-200 p-2.5 overflow-x-auto shrink-0">
-          <div className="flex items-stretch gap-2.5 min-w-max">
-            {moduleGroups.map((grp) => (
-              <div key={grp.id} className="bg-white rounded-2xl border border-slate-200/90 p-2 flex flex-col gap-1.5 shadow-sm">
-                <div className="flex items-center justify-between px-2 text-[10px] font-black text-slate-500">
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
-                    {grp.title}
-                  </span>
-                  <span className="text-[9px] text-slate-400 font-bold">{grp.subtitle}</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  {grp.modules.map((mod) => {
-                    const Icon = mod.icon;
-                    const isActive = activeTab === mod.id;
-                    const isAllowed = mod.available;
+        {/* Navigation Tabs grouped into 3 distinctive visual clusters */}
+        <div className="bg-slate-100/90 border-b border-slate-200 p-3 overflow-x-auto shrink-0">
+          <div className="flex items-stretch gap-3 min-w-max">
+            {moduleGroups.map((grp, gIdx) => {
+              const clusterStyles: Record<string, { container: string; badge: string; dot: string }> = {
+                general: {
+                  container: 'bg-gradient-to-b from-indigo-50/70 via-indigo-50/30 to-white border-2 border-indigo-200/90',
+                  badge: 'bg-indigo-100/80 text-indigo-900 border-indigo-200',
+                  dot: 'bg-indigo-600'
+                },
+                demographic: {
+                  container: 'bg-gradient-to-b from-emerald-50/70 via-emerald-50/30 to-white border-2 border-emerald-200/90',
+                  badge: 'bg-emerald-100/80 text-emerald-900 border-emerald-200',
+                  dot: 'bg-emerald-600'
+                },
+                specialized: {
+                  container: 'bg-gradient-to-b from-purple-50/70 via-purple-50/30 to-white border-2 border-purple-200/90',
+                  badge: 'bg-purple-100/80 text-purple-900 border-purple-200',
+                  dot: 'bg-purple-600'
+                }
+              };
+              const c = clusterStyles[grp.id] || clusterStyles.general;
 
-                    return (
-                      <button
-                        key={mod.id}
-                        disabled={!isAllowed}
-                        onClick={() => {
-                          setActiveTab(mod.id);
-                          setShowAddForm(false);
-                        }}
-                        className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 ${
-                          isActive
-                            ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20 scale-[1.02]'
-                            : isAllowed
-                            ? 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200/70'
-                            : 'bg-slate-100/50 text-slate-400 opacity-60 cursor-not-allowed border border-transparent'
-                        }`}
-                        title={!isAllowed ? mod.reason : mod.title}
-                      >
-                        <Icon size={14} className={isActive ? 'text-white' : 'text-indigo-600 shrink-0'} />
-                        <span className="whitespace-nowrap">{mod.title}</span>
-                        {mod.count > 0 ? (
-                          <span className={`text-[10px] font-mono font-black px-1.5 py-0.2 rounded-full ${
-                            isActive ? 'bg-white/30 text-white' : 'bg-indigo-100 text-indigo-800'
-                          }`}>
-                            ({mod.count})
-                          </span>
-                        ) : (
-                          <span className="text-[10px] font-mono text-slate-300">
-                            (0)
-                          </span>
-                        )}
-                        {!isAllowed && (
-                          <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-normal shrink-0">
-                            غير منطبق
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
+              return (
+                <div key={grp.id} className={`rounded-2xl p-2.5 flex flex-col gap-2 shadow-sm ${c.container}`}>
+                  <div className="flex items-center justify-between px-1 text-[10px] font-black">
+                    <span className="flex items-center gap-1.5 text-slate-800">
+                      <span className={`w-2 h-2 rounded-full ${c.dot}`}></span>
+                      <span>{grp.title}</span>
+                    </span>
+                    <span className={`text-[9px] font-bold px-2 py-0.2 rounded-full border ${c.badge}`}>
+                      {grp.subtitle}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-1.5">
+                    {grp.modules.map((mod) => {
+                      const Icon = mod.icon;
+                      const isActive = activeTab === mod.id;
+                      const isAllowed = mod.available;
+
+                      return (
+                        <button
+                          key={mod.id}
+                          disabled={!isAllowed}
+                          onClick={() => handleTabClick(mod.id)}
+                          className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
+                            isActive
+                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 scale-[1.02]'
+                              : isAllowed
+                              ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 hover:border-slate-300'
+                              : 'bg-slate-100/60 text-slate-400 opacity-50 cursor-not-allowed border border-transparent'
+                          }`}
+                          title={!isAllowed ? mod.reason : mod.title}
+                        >
+                          <ModuleProgressRing
+                            percent={mod.count > 0 ? 100 : 0}
+                            hasData={mod.count > 0}
+                            size={16}
+                            strokeWidth={2.5}
+                            color={isActive ? '#ffffff' : (mod.id === 'maternal' ? '#e11d48' : '#4f46e5')}
+                          />
+
+                          <Icon size={14} className={isActive ? 'text-white' : 'text-slate-600 shrink-0'} />
+                          <span className="whitespace-nowrap">{mod.title}</span>
+
+                          {mod.id === 'maternal' && (
+                            <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold shrink-0 ${
+                              isActive ? 'bg-rose-400/90 text-white' : 'bg-rose-100 text-rose-800 border border-rose-200'
+                            }`}>
+                              PoC ✨
+                            </span>
+                          )}
+
+                          {mod.count > 0 ? (
+                            <span className={`text-[10px] font-mono font-black px-1.5 py-0.2 rounded-full ${
+                              isActive ? 'bg-white/30 text-white' : 'bg-slate-100 text-slate-700'
+                            }`}>
+                              ({mod.count})
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-mono text-slate-300">
+                              (0)
+                            </span>
+                          )}
+
+                          {!isAllowed && (
+                            <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-normal shrink-0">
+                              غير منطبق
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        {/* Module Content Body */}
+        {/* Module Content Body with Sticky Clinical Header */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-6">
+          
+          {/* Sticky Clinical Header Bar */}
+          <div className="sticky -top-4 sm:-top-6 -mx-4 sm:-mx-6 px-4 sm:px-6 py-2.5 bg-slate-900/95 backdrop-blur-md text-white border-b border-slate-800 z-10 flex items-center justify-between gap-3 shadow-md">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {activeTabModule && (
+                <div className="w-8 h-8 rounded-xl bg-white/10 text-white flex items-center justify-center font-black shrink-0 border border-white/10">
+                  <activeTabModule.icon size={16} className="text-white" />
+                </div>
+              )}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs sm:text-sm font-black text-white truncate">
+                    {activeTabModule?.title}
+                  </span>
+                  <span className="text-[10px] text-slate-300 font-bold bg-white/10 px-2 py-0.5 rounded-full border border-white/10">
+                    المريض: {patient.name}
+                  </span>
+                  {familyFile && (
+                    <span className="text-[10px] text-emerald-300 font-mono font-bold bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full hidden md:inline-block">
+                      ملف الأسرة: {familyFile.family_code}
+                    </span>
+                  )}
+                  {activeTab === 'maternal' && (
+                    <span className="text-[10px] bg-rose-500/30 text-rose-200 border border-rose-400/40 px-2 py-0.5 rounded-full font-bold">
+                      نموذج مطوّر (PoC) ✨
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              {isFormDirty && (
+                <span className="text-[10px] bg-amber-500 text-slate-950 font-black px-2.5 py-1 rounded-full animate-pulse flex items-center gap-1 shadow-sm">
+                  <AlertTriangle size={12} />
+                  <span className="hidden sm:inline">تعديلات غير محفوظة</span>
+                </span>
+              )}
+              <div className="text-[11px] font-bold text-slate-300 bg-white/10 px-2.5 py-1 rounded-xl border border-white/10 flex items-center gap-1.5">
+                <span className={`w-2 h-2 rounded-full ${activeTabModule && activeTabModule.count > 0 ? 'bg-emerald-400' : 'bg-slate-400'}`}></span>
+                <span>{activeTabModule && activeTabModule.count > 0 ? `${activeTabModule.count} سجلات مسجلة` : 'لا توجد سجلات بعد'}</span>
+              </div>
+            </div>
+          </div>
           {/* Status Message Notification Banner */}
           {statusBanner && (
             <div
@@ -701,21 +848,23 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
             </div>
           )}
 
-          {/* Persistent Database Load Error Banner */}
+          {/* Persistent Database Load Status Banner */}
           {loadError && (
-            <div className="p-4 bg-red-50 border-2 border-red-300 rounded-2xl text-red-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
+            <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl text-amber-950 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-sm">
               <div className="flex items-start gap-2.5">
-                <AlertCircle className="text-red-600 shrink-0 mt-0.5" size={20} />
+                <AlertCircle className="text-amber-600 shrink-0 mt-0.5" size={20} />
                 <div>
-                  <p className="font-black text-sm">تعذر استرجاع بيانات السجل الطبي من قاعدة البيانات المركزية</p>
-                  <p className="text-xs text-red-800 font-mono mt-0.5">{loadError}</p>
-                  <p className="text-[11px] text-red-600 mt-1 font-bold">تم إيقاف العرض المحلي تفادياً لعرض بيانات غير متزامنة مع السيرفر.</p>
+                  <p className="font-black text-sm">تنبيه المزامنة مع قاعدة البيانات المركزية</p>
+                  <p className="text-xs text-amber-900 font-mono mt-0.5">{loadError}</p>
+                  <p className="text-[11px] text-amber-800 mt-1 font-bold">
+                    تم استرجاع السجلات المتاحة بنجاح. النماذج المرتبطة بالجداول غير المفعلة تتطلب تطبيق ملف Migration في Supabase.
+                  </p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={loadAllData}
-                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black shadow transition-all shrink-0 cursor-pointer"
+                className="px-4 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-black shadow transition-all shrink-0 cursor-pointer"
               >
                 إعادة المحاولة
               </button>
@@ -1231,11 +1380,11 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         </form>
                       )}
 
-                      {loadError ? (
-                        <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
-                          <AlertCircle className="mx-auto text-red-500" size={28} />
+                      {tableErrors['child_under5_followups'] ? (
+                        <div className="p-8 text-center bg-amber-50/70 rounded-2xl border border-amber-200 text-amber-800 font-bold space-y-2">
+                          <AlertCircle className="mx-auto text-amber-600" size={28} />
                           <p className="text-sm font-black">تعذر استرجاع سجلات متابعة نمو الطفل من قاعدة البيانات</p>
-                          <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                          <p className="text-xs text-amber-700 font-mono">{tableErrors['child_under5_followups']}</p>
                         </div>
                       ) : childUnder5Records.length === 0 ? (
                         <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
@@ -1441,11 +1590,11 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                         </form>
                       )}
 
-                      {loadError ? (
-                        <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
-                          <AlertCircle className="mx-auto text-red-500" size={28} />
+                      {tableErrors['child_over5_followups'] ? (
+                        <div className="p-8 text-center bg-amber-50/70 rounded-2xl border border-amber-200 text-amber-800 font-bold space-y-2">
+                          <AlertCircle className="mx-auto text-amber-600" size={28} />
                           <p className="text-sm font-black">تعذر استرجاع سجلات الصحة المدرسية من قاعدة البيانات</p>
-                          <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                          <p className="text-xs text-amber-700 font-mono">{tableErrors['child_over5_followups']}</p>
                         </div>
                       ) : childOver5Records.length === 0 ? (
                         <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
@@ -1514,236 +1663,25 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                 </div>
               )}
 
-              {/* ======================= متابعة الحمل وصحة الأم ======================= */}
+              {/* ======================= متابعة الحمل وصحة الأم (PoC) ======================= */}
               {activeTab === 'maternal' && (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 bg-rose-50 border border-rose-100 rounded-2xl">
-                    <div>
-                      <h4 className="font-black text-rose-950 text-base flex items-center gap-2">
-                        <HeartHandshake size={18} className="text-rose-600" />
-                        متابعة الحمل وصحة الأم (Maternal ANC & Postpartum)
-                      </h4>
-                      <p className="text-xs text-rose-800 font-bold mt-0.5">
-                        بروتوكول متابعة الحمل، التاريخ التوليدي (G/P/A)، تطعيم التيتانوس، السونار، ورعاية ما بعد الولادة
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={() => setQuickBookingState({ module: 'maternal', reason: 'متابعة رعاية حوامل / ما بعد الولادة' })}
-                        className="px-3.5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
-                      >
-                        <CalendarCheck size={14} /> حجز عيادة الحوامل والأمومة
-                      </button>
-                      <button
-                        onClick={() => setShowAddForm(!showAddForm)}
-                        className="px-3.5 py-2 bg-white text-rose-800 border border-rose-300 hover:bg-rose-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
-                      >
-                        <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل متابعة مباشرة'}
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* ANC Add Form */}
-                  {showAddForm && (
-                    <form
-                      onSubmit={async (e) => {
-                        e.preventDefault();
-                        setSubmitting(true);
-                        const t = e.target as any;
-                        try {
-                          const saved = await DB.addAccreditationRecord('maternal_antenatal_followups', {
-                            patient_id: patient.id,
-                            appointment_id: activeAppointment?.id || null,
-                            gravida: Number(t.gravida.value) || 0,
-                            para: Number(t.para.value) || 0,
-                            abortions: Number(t.abortions.value) || 0,
-                            lmp_date: t.lmp_date.value || null,
-                            edd_date: t.edd_date.value || null,
-                            fundal_height_cm: Number(t.fundal_height_cm.value) || null,
-                            fetal_heart_sound: t.fetal_heart_sound.value || null,
-                            fetal_movement: t.fetal_movement.value || null,
-                            blood_glucose: Number(t.blood_glucose.value) || null,
-                            hb_result: Number(t.hb_result.value) || null,
-                            urine_albumin: t.urine_albumin.checked,
-                            supplements_prescribed: t.supplements.checked,
-                            health_education_given: t.health_education.value || null,
-                            next_visit_date: t.next_visit_date.value || null,
-                            doctor_signature: t.doctor_signature.value || null
-                          });
-                          if (!saved || !saved.id) {
-                            throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
-                          }
-                          await handleRecordSaved('maternal_antenatal_followups', 'سجل متابعة الحمل (ANC)');
-                        } catch (err: any) {
-                          console.error("Save error maternal_antenatal_followups:", err);
-                          const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
-                          const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
-                          showNotification('error', userMsg);
-                          alert(userMsg);
-                        } finally {
-                          setSubmitting(false);
-                        }
-                      }}
-                      className="p-5 bg-white border-2 border-rose-200 rounded-3xl space-y-4 shadow-md"
-                    >
-                      <h5 className="font-black text-sm text-rose-950">نموذج فحص ومتابعة الحامل (Antenatal Care - Form 6A)</h5>
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-bold">
-                        <div>
-                          <label className="block mb-1 text-slate-700">عدد مرات الحمل (Gravida)</label>
-                          <input name="gravida" type="number" defaultValue="1" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">عدد الولادات (Para)</label>
-                          <input name="para" type="number" defaultValue="0" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">عدد الإجهاضات (Abortions)</label>
-                          <input name="abortions" type="number" defaultValue="0" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">تاريخ أول يوم بآخر دورة (LMP)</label>
-                          <input name="lmp_date" type="date" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-bold">
-                        <div>
-                          <label className="block mb-1 text-slate-700">التاريخ المتوقع للولادة (EDD)</label>
-                          <input name="edd_date" type="date" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">ارتفاع قاع الرحم (سم)</label>
-                          <input name="fundal_height_cm" type="number" step="0.5" placeholder="Fundal height" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">نبض الجنين (FHS)</label>
-                          <input name="fetal_heart_sound" placeholder="مثال: 140 / دقيقة إيجابي" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">حركة الجنين</label>
-                          <input name="fetal_movement" placeholder="مثال: جيدة ونشطة" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-bold">
-                        <div>
-                          <label className="block mb-1 text-slate-700">الهيموجلوبين (Hb g/dL)</label>
-                          <input name="hb_result" type="number" step="0.1" placeholder="مثال: 11.8" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">سكر الدم (mg/dL)</label>
-                          <input name="blood_glucose" type="number" placeholder="مثال: 95" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">موعد الزيارة القادمة</label>
-                          <input name="next_visit_date" type="date" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                      </div>
-
-                      <div className="flex flex-wrap gap-6 py-2 text-xs font-bold text-slate-800">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input name="urine_albumin" type="checkbox" className="w-4 h-4 rounded text-rose-600" />
-                          <span>وجود زلال بالبول (Albuminuria)</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input name="supplements" type="checkbox" defaultChecked className="w-4 h-4 rounded text-rose-600" />
-                          <span>تم صرف مكملات الحمل (حديد + حمض فوليك + كالسيوم)</span>
-                        </label>
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold">
-                        <div>
-                          <label className="block mb-1 text-slate-700">التوعية الصحية والملاحظات</label>
-                          <input name="health_education" placeholder="تغذية الحامل، علامات الخطر، الرضاعة..." className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                        <div>
-                          <label className="block mb-1 text-slate-700">توقيع الطبيب الفاحص</label>
-                          <input name="doctor_signature" placeholder="د/ الطبيب" className="w-full p-2.5 border rounded-xl" />
-                        </div>
-                      </div>
-
-                      <div className="flex justify-end gap-2">
-                        <button type="button" onClick={() => setShowAddForm(false)} className="px-4 py-2 border rounded-xl text-xs font-bold text-slate-600">إلغاء</button>
-                        <button type="submit" disabled={submitting} className="px-6 py-2 bg-rose-600 text-white rounded-xl text-xs font-black shadow-md">
-                          {submitting ? 'جاري الحفظ في قاعدة البيانات...' : 'حفظ سجل الحمل'}
-                        </button>
-                      </div>
-                    </form>
-                  )}
-
-                  {loadError ? (
-                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
-                      <AlertCircle className="mx-auto text-red-500" size={28} />
-                      <p className="text-sm font-black">تعذر استرجاع سجلات متابعة الحمل من قاعدة البيانات</p>
-                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
-                    </div>
-                  ) : ancRecords.length === 0 ? (
-                    <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
-                      لا توجد زيارات متابعة حمل مسجلة حتى الآن.
-                    </div>
-                  ) : (
-                    <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-                      <table className="w-full text-right text-xs">
-                        <thead className="bg-rose-50 border-b border-rose-100 text-rose-950 font-black">
-                          <tr>
-                            <th className="p-3">تاريخ الزيارة</th>
-                            <th className="p-3">G / P / A</th>
-                            <th className="p-3">LMP / EDD</th>
-                            <th className="p-3">ارتفاع الرحم ونبض الجنين</th>
-                            <th className="p-3">تحاليل (Hb / سكر / زلال)</th>
-                            <th className="p-3">الزيارة القادمة والطبيب</th>
-                            <th className="p-3 text-center">إجراءات</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-bold">
-                          {ancRecords.map((r) => (
-                            <tr key={r.id} className="hover:bg-rose-50/20">
-                              <td className="p-3 font-mono text-slate-600">
-                                {new Date(r.created_at).toLocaleDateString('ar-EG')}
-                              </td>
-                              <td className="p-3">
-                                <span className="bg-rose-100 text-rose-900 px-2 py-0.5 rounded font-black">
-                                  G{r.gravida} P{r.para} A{r.abortions}
-                                </span>
-                              </td>
-                              <td className="p-3 text-slate-800">
-                                <div>LMP: {r.lmp_date || '—'}</div>
-                                <div className="text-rose-800">EDD: {r.edd_date || '—'}</div>
-                              </td>
-                              <td className="p-3">
-                                <div>قاع الرحم: {r.fundal_height_cm ? `${r.fundal_height_cm} سم` : '—'}</div>
-                                <div className="text-slate-600">نبض الجنين: {r.fetal_heart_sound || '—'}</div>
-                              </td>
-                              <td className="p-3">
-                                <div>Hb: {r.hb_result ? `${r.hb_result} g/dL` : '—'}</div>
-                                <div>سكر: {r.blood_glucose ? `${r.blood_glucose} mg` : '—'}</div>
-                                <div className={r.urine_albumin ? 'text-red-600' : 'text-slate-500'}>
-                                  زلال: {r.urine_albumin ? 'إيجابي ⚠️' : 'سلبي'}
-                                </div>
-                              </td>
-                              <td className="p-3">
-                                <div className="text-rose-900 font-black">
-                                  {r.next_visit_date ? `القادمة: ${r.next_visit_date}` : '—'}
-                                </div>
-                                <div className="text-slate-500 text-[11px]">{r.doctor_signature ? `د/ ${r.doctor_signature}` : ''}</div>
-                              </td>
-                              <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteRecord('maternal_antenatal_followups', r.id, 'متابعة الحمل')}
-                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                  title="حذف السجل"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
-                </div>
+                <MaternalAncPoCView
+                  patient={patient}
+                  activeAppointment={activeAppointment}
+                  ancRecords={ancRecords}
+                  tableError={tableErrors['maternal_antenatal_followups']}
+                  isFormDirty={isFormDirty}
+                  setIsFormDirty={setIsFormDirty}
+                  onBookClinic={() => setQuickBookingState({ module: 'maternal', reason: 'متابعة رعاية حوامل / ما بعد الولادة' })}
+                  onDeleteRecord={(id, label) => handleDeleteRecord('maternal_antenatal_followups', id, label)}
+                  onSaveRecord={async (payload) => {
+                    const saved = await DB.addAccreditationRecord('maternal_antenatal_followups', payload);
+                    if (!saved || !saved.id) {
+                      throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
+                    }
+                    await handleRecordSaved('maternal_antenatal_followups', 'سجل متابعة الحمل (ANC)');
+                  }}
+                />
               )}
 
               {/* ======================= تنظيم الأسرة ======================= */}
@@ -1873,11 +1811,11 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                     </form>
                   )}
 
-                  {loadError ? (
-                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
-                      <AlertCircle className="mx-auto text-red-500" size={28} />
-                      <p className="text-sm font-black">تعذر استرجاع سجلات تنظيم الأسرة من قاعدة البيانات</p>
-                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                  {tableErrors['family_planning_followups'] ? (
+                    <div className="p-8 text-center bg-amber-50/70 rounded-2xl border border-amber-200 text-amber-800 font-bold space-y-2">
+                      <AlertCircle className="mx-auto text-amber-600" size={28} />
+                      <p className="text-sm font-black">جدول تنظيم الأسرة (family_planning_followups) غير متوفر في قاعدة البيانات</p>
+                      <p className="text-xs text-amber-700 font-mono">{tableErrors['family_planning_followups']}</p>
                     </div>
                   ) : familyPlanningRecords.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
@@ -2066,11 +2004,11 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                     </form>
                   )}
 
-                  {loadError ? (
-                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
-                      <AlertCircle className="mx-auto text-red-500" size={28} />
+                  {tableErrors['premarital_assessments'] ? (
+                    <div className="p-8 text-center bg-amber-50/70 rounded-2xl border border-amber-200 text-amber-800 font-bold space-y-2">
+                      <AlertCircle className="mx-auto text-amber-600" size={28} />
                       <p className="text-sm font-black">تعذر استرجاع سجلات فحص ما قبل الزواج من قاعدة البيانات</p>
-                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                      <p className="text-xs text-amber-700 font-mono">{tableErrors['premarital_assessments']}</p>
                     </div>
                   ) : premaritalRecords.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
@@ -2259,11 +2197,11 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                     </form>
                   )}
 
-                  {loadError ? (
-                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
-                      <AlertCircle className="mx-auto text-red-500" size={28} />
+                  {tableErrors['geriatric_assessments'] ? (
+                    <div className="p-8 text-center bg-amber-50/70 rounded-2xl border border-amber-200 text-amber-800 font-bold space-y-2">
+                      <AlertCircle className="mx-auto text-amber-600" size={28} />
                       <p className="text-sm font-black">تعذر استرجاع سجلات تقييم المسنين من قاعدة البيانات</p>
-                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                      <p className="text-xs text-amber-700 font-mono">{tableErrors['geriatric_assessments']}</p>
                     </div>
                   ) : geriatricRecords.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
@@ -2437,11 +2375,11 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                     </form>
                   )}
 
-                  {loadError ? (
-                    <div className="p-8 text-center bg-red-50/50 rounded-2xl border border-red-200 text-red-700 font-bold space-y-2">
-                      <AlertCircle className="mx-auto text-red-500" size={28} />
-                      <p className="text-sm font-black">تعذر استرجاع سجلات فحص الأسنان من قاعدة البيانات</p>
-                      <p className="text-xs text-red-600 font-mono">{loadError}</p>
+                  {tableErrors['dental_assessments'] ? (
+                    <div className="p-8 text-center bg-amber-50/70 rounded-2xl border border-amber-200 text-amber-800 font-bold space-y-2">
+                      <AlertCircle className="mx-auto text-amber-600" size={28} />
+                      <p className="text-sm font-black">جدول فحص الأسنان (dental_assessments) غير متوفر في قاعدة البيانات</p>
+                      <p className="text-xs text-amber-700 font-mono">{tableErrors['dental_assessments']}</p>
                     </div>
                   ) : dentalRecords.length === 0 ? (
                     <div className="p-12 text-center bg-white rounded-2xl border border-slate-200 text-slate-400 font-bold">
@@ -2545,6 +2483,26 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           }}
         />
       )}
+      {/* Unsaved Changes Confirmation Modal */}
+      <UnsavedChangesModal
+        isOpen={showUnsavedConfirm}
+        tabTitle={activeTabModule?.title}
+        onStay={() => {
+          setShowUnsavedConfirm(false);
+          setPendingTabSwitch(null);
+        }}
+        onDiscard={() => {
+          setIsFormDirty(false);
+          setShowUnsavedConfirm(false);
+          if (pendingTabSwitch === 'CLOSE_MODAL') {
+            onClose();
+          } else if (pendingTabSwitch) {
+            setActiveTab(pendingTabSwitch);
+            setShowAddForm(false);
+          }
+          setPendingTabSwitch(null);
+        }}
+      />
     </div>
   );
 };

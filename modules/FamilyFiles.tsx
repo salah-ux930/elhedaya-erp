@@ -5,6 +5,7 @@ import { FamilyFile, Patient, FamilyFileMember } from "../types.ts";
 import PatientTimeline from "../components/PatientTimeline.tsx";
 import FamilyComprehensiveHealthRecordModal from "../components/FamilyComprehensiveHealthRecordModal.tsx";
 import QuickClinicBookingModal from "../components/QuickClinicBookingModal.tsx";
+import FamilyUnifiedNavigationTree, { ClinicalModuleItem } from "../components/FamilyUnifiedNavigationTree.tsx";
 import { calculatePatientSuggestedFollowups } from "../services/followupSuggestions.ts";
 import {
   FolderOpen,
@@ -770,7 +771,7 @@ const FamilyFilesModule: React.FC = () => {
             )}
           </div>
 
-          {/* إحصائيات ديموغرافية وسريعة لتركيب الأسرة */}
+          {/* إحصائيات ديموغرافية وسريعة لتركيب الأسرة وشجرة التنقل الموحدة */}
           {(() => {
             const membersList = selectedFamilyFile.members || [];
             const totalMembers = membersList.length;
@@ -799,174 +800,315 @@ const FamilyFilesModule: React.FC = () => {
               return isMember || headNameMatches;
             });
 
+            const activeMember =
+              membersList.find(
+                (m: any) => m.patient_id === selectedClinicalMemberId,
+              ) ||
+              membersList.find((m: any) => m.is_head) ||
+              membersList[0];
+            const activePatient =
+              (activeMember &&
+                (patients.find((p) => p.id === activeMember.patient_id) ||
+                  activeMember.patients)) ||
+              null;
+            const activeAge = activePatient
+              ? calculateAge(activePatient.date_of_birth)
+              : null;
+            const activeGender = activePatient?.gender || "";
+            const isFemale =
+              activeGender === "أنثى" || activeGender === "female";
+            const isChild = activeAge !== null && activeAge < 18;
+            const isElderly = activeAge !== null && activeAge >= 60;
+            const currentPatientId = activePatient?.id || (activeMember ? activeMember.patient_id : null);
+
+            // حساب حالة اكتمال كل نموذج من النماذج العشرة للفرد المختار
+            const hasHistory = currentPatientId
+              ? physicalExams.some(e => e.patient_id === currentPatientId && (e.allergy || e.previous_operations || e.current_medications || e.family_history || e.surgical_history))
+              : false;
+            const hasSignificant = currentPatientId
+              ? patientProblems.some(p => p.patient_id === currentPatientId)
+              : false;
+            const hasClinicalExam = currentPatientId
+              ? physicalExams.some(e => e.patient_id === currentPatientId && (e.blood_pressure || e.pulse_rate || e.temperature || e.weight || e.height || e.heart_exam || e.chest_exam || e.abdomen_exam))
+              : false;
+            const hasVisits = currentPatientId
+              ? (patientVisits || []).some((v: any) => v.patient_id === currentPatientId)
+              : false;
+            const hasChildHealth = currentPatientId
+              ? (isChild && physicalExams.some(e => e.patient_id === currentPatientId))
+              : false;
+            const hasMaternal = currentPatientId
+              ? (isFemale && appointments.some((a: any) => a.patient_id === currentPatientId && a.module === "maternal"))
+              : false;
+            const hasFamilyPlanning = currentPatientId
+              ? (isFemale && appointments.some((a: any) => a.patient_id === currentPatientId && a.module === "family_planning"))
+              : false;
+            const hasPremarital = currentPatientId
+              ? appointments.some((a: any) => a.patient_id === currentPatientId && a.module === "premarital")
+              : false;
+            const hasGeriatric = currentPatientId
+              ? (isElderly && physicalExams.some(e => e.patient_id === currentPatientId))
+              : false;
+            const hasDental = currentPatientId
+              ? appointments.some((a: any) => a.patient_id === currentPatientId && a.module === "dental")
+              : false;
+
+            const clinicalModulesStatusList: ClinicalModuleItem[] = [
+              {
+                id: "history",
+                num: "١",
+                title: "التاريخ المرضي والفحص الشامل",
+                subTitle: "Medical History",
+                icon: Shield,
+                color: "purple",
+                isCompleted: !!hasHistory,
+              },
+              {
+                id: "significant",
+                num: "٢",
+                title: "صحيفة الأحداث الطبية الهامة",
+                subTitle: "Significant Events",
+                icon: ClipboardList,
+                color: "amber",
+                isCompleted: !!hasSignificant,
+              },
+              {
+                id: "clinical",
+                num: "٣",
+                title: "الفحص السريري الشامل لطب الأسرة",
+                subTitle: "Physical Exam",
+                icon: Stethoscope,
+                color: "indigo",
+                isCompleted: !!hasClinicalExam,
+              },
+              {
+                id: "visits",
+                num: "٤",
+                title: "سجل التردد والزيارات الطبية",
+                subTitle: "Patient Visits",
+                icon: CalendarCheck,
+                color: "teal",
+                isCompleted: !!hasVisits,
+              },
+              {
+                id: "child",
+                num: "٥",
+                title: "رعاية صحة الطفل والتطعيمات",
+                subTitle: "Child Health",
+                icon: Baby,
+                color: "emerald",
+                isCompleted: !!hasChildHealth,
+              },
+              {
+                id: "maternal",
+                num: "٦",
+                title: "متابعة رعاية الحوامل وصحة الأم",
+                subTitle: "Maternal Care",
+                icon: Heart,
+                color: "rose",
+                isCompleted: !!hasMaternal,
+              },
+              {
+                id: "family_planning",
+                num: "٧",
+                title: "تنظيم الأسرة والصحة الإنجابية",
+                subTitle: "Family Planning",
+                icon: Users,
+                color: "fuchsia",
+                isCompleted: !!hasFamilyPlanning,
+              },
+              {
+                id: "premarital",
+                num: "٨",
+                title: "فحص المقبلين على الزواج",
+                subTitle: "Premarital Screening",
+                icon: CheckCircle2,
+                color: "cyan",
+                isCompleted: !!hasPremarital,
+              },
+              {
+                id: "geriatric",
+                num: "٩",
+                title: "الرعاية الصحية لكبار السن",
+                subTitle: "Geriatric Care",
+                icon: Award,
+                color: "orange",
+                isCompleted: !!hasGeriatric,
+              },
+              {
+                id: "dental",
+                num: "١٠",
+                title: "طب وجراحة الفم والأسنان",
+                subTitle: "Dental Health",
+                icon: Smile,
+                color: "blue",
+                isCompleted: !!hasDental,
+              },
+            ];
+
+            const completedClinicalCount = clinicalModulesStatusList.filter(
+              (m) => m.isCompleted,
+            ).length;
+
             return (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                <div className="bg-primary-50/60 border border-primary-100 p-3.5 rounded-2xl flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-primary-600 text-white flex items-center justify-center font-black shadow-sm">
-                    <Users size={18} />
+              <div className="space-y-6">
+                {/* إحصائيات ديموغرافية وسريعة لتركيب الأسرة (صف مدمج ومضغوط أعلى الصفحة) */}
+                <div className="bg-slate-50/90 border border-slate-200/80 p-3 rounded-2xl flex items-center justify-between gap-2 flex-wrap sm:flex-nowrap shadow-2xs">
+                  <div className="flex items-center gap-2.5 pr-1">
+                    <div className="w-8 h-8 rounded-xl bg-primary-600 text-white flex items-center justify-center font-black shrink-0 shadow-2xs">
+                      <Users size={16} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block leading-tight">
+                        إجمالي الأفراد
+                      </span>
+                      <span className="text-base font-black text-slate-900 font-mono leading-none">
+                        {totalMembers}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-gray-500 block">
-                      إجمالي الأفراد
-                    </span>
-                    <span className="text-lg font-black text-primary-950 font-mono">
-                      {totalMembers}
-                    </span>
+
+                  <div className="h-7 w-[1px] bg-slate-200 hidden sm:block"></div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center font-black shrink-0">
+                      <User size={15} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block leading-tight">
+                        الذكور
+                      </span>
+                      <span className="text-sm font-black text-blue-900 font-mono leading-none">
+                        {maleCount}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="h-7 w-[1px] bg-slate-200 hidden sm:block"></div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-pink-100 text-pink-700 flex items-center justify-center font-black shrink-0">
+                      <Heart size={15} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block leading-tight">
+                        الإناث
+                      </span>
+                      <span className="text-sm font-black text-pink-900 font-mono leading-none">
+                        {femaleCount}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="h-7 w-[1px] bg-slate-200 hidden sm:block"></div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-700 flex items-center justify-center font-black shrink-0">
+                      <Baby size={15} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block leading-tight">
+                        أطفال (&lt;18)
+                      </span>
+                      <span className="text-sm font-black text-amber-900 font-mono leading-none">
+                        {childCount}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="h-7 w-[1px] bg-slate-200 hidden sm:block"></div>
+
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-black shrink-0">
+                      <Award size={15} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block leading-tight">
+                        كبار سن (≥60)
+                      </span>
+                      <span className="text-sm font-black text-purple-900 font-mono leading-none">
+                        {elderlyCount}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="h-7 w-[1px] bg-slate-200 hidden sm:block"></div>
+
+                  <div className="flex items-center gap-2 pl-1">
+                    <div className="w-7 h-7 rounded-lg bg-red-100 text-red-700 flex items-center justify-center font-black shrink-0">
+                      <ShieldAlert size={15} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-bold text-slate-500 block leading-tight">
+                        وفيات مسجلة
+                      </span>
+                      <span className="text-sm font-black text-red-900 font-mono leading-none">
+                        {familyDeaths.length}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="bg-blue-50/60 border border-blue-100 p-3.5 rounded-2xl flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shadow-sm">
-                    <User size={18} />
+                {/* تخطيط الأقسام وشجرة التنقل الرأسية الموحدة */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start pt-1">
+                  {/* العمود الجانبي: شجرة التنقل الرأسية الموحدة (Vertical Accordion Tree) */}
+                  <div className="lg:col-span-4 xl:col-span-3 sticky top-4 z-10">
+                    <FamilyUnifiedNavigationTree
+                      activeSection={familyDetailTab}
+                      activeClinicalModule={clinicalModelTab}
+                      onSelectSection={(sec) => {
+                        setFamilyDetailTab(sec);
+                        if (
+                          sec === "clinical" &&
+                          !selectedClinicalMemberId &&
+                          selectedFamilyFile.members &&
+                          selectedFamilyFile.members.length > 0
+                        ) {
+                          const headMember =
+                            selectedFamilyFile.members.find((m: any) => m.is_head) ||
+                            selectedFamilyFile.members[0];
+                          setSelectedClinicalMemberId(headMember.patient_id);
+                        }
+                      }}
+                      onSelectClinicalModule={(modId) => {
+                        setFamilyDetailTab("clinical");
+                        setClinicalModelTab(modId);
+                        if (
+                          !selectedClinicalMemberId &&
+                          selectedFamilyFile.members &&
+                          selectedFamilyFile.members.length > 0
+                        ) {
+                          const headMember =
+                            selectedFamilyFile.members.find((m: any) => m.is_head) ||
+                            selectedFamilyFile.members[0];
+                          setSelectedClinicalMemberId(headMember.patient_id);
+                        }
+                      }}
+                      membersCount={selectedFamilyFile.members?.length || 0}
+                      hasHousingData={
+                        !!(
+                          selectedFamilyFile.housing_condition ||
+                          selectedFamilyFile.total_rooms ||
+                          selectedFamilyFile.water_source
+                        )
+                      }
+                      hasSocialData={
+                        !!(
+                          selectedFamilyFile.monthly_income ||
+                          selectedFamilyFile.income_nature ||
+                          selectedFamilyFile.eligible_for_free_service !== undefined
+                        )
+                      }
+                      deathsCount={familyDeaths.length}
+                      clinicalModules={clinicalModulesStatusList}
+                      completedModulesCount={completedClinicalCount}
+                      totalModulesCount={10}
+                      activeMemberName={activePatient?.name}
+                    />
                   </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-gray-500 block">
-                      الذكور
-                    </span>
-                    <span className="text-lg font-black text-blue-950 font-mono">
-                      {maleCount}
-                    </span>
-                  </div>
-                </div>
 
-                <div className="bg-pink-50/60 border border-pink-100 p-3.5 rounded-2xl flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-pink-600 text-white flex items-center justify-center font-black shadow-sm">
-                    <Heart size={18} />
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-gray-500 block">
-                      الإناث
-                    </span>
-                    <span className="text-lg font-black text-pink-950 font-mono">
-                      {femaleCount}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-amber-50/60 border border-amber-100 p-3.5 rounded-2xl flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-amber-600 text-white flex items-center justify-center font-black shadow-sm">
-                    <Baby size={18} />
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-gray-500 block">
-                      أطفال دون 18
-                    </span>
-                    <span className="text-lg font-black text-amber-950 font-mono">
-                      {childCount}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-purple-50/60 border border-purple-100 p-3.5 rounded-2xl flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black shadow-sm">
-                    <Award size={18} />
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-gray-500 block">
-                      كبار سن (≥60)
-                    </span>
-                    <span className="text-lg font-black text-purple-950 font-mono">
-                      {elderlyCount}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="bg-red-50/60 border border-red-100 p-3.5 rounded-2xl flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-red-600 text-white flex items-center justify-center font-black shadow-sm">
-                    <ShieldAlert size={18} />
-                  </div>
-                  <div>
-                    <span className="text-[11px] font-bold text-gray-500 block">
-                      وفيات مسجلة
-                    </span>
-                    <span className="text-lg font-black text-red-950 font-mono">
-                      {familyDeaths.length}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* شريط تبويبات موديول الملف الصحي العائلي الشامل */}
-          <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 pb-3 pt-2">
-            <button
-              onClick={() => setFamilyDetailTab("members")}
-              className={`px-4 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 transition-all cursor-pointer ${
-                familyDetailTab === "members"
-                  ? "bg-primary-600 text-white shadow-md shadow-primary-200"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              <Users size={18} />
-              <span>
-                سجل أفراد الأسرة ({selectedFamilyFile.members?.length || 0})
-              </span>
-            </button>
-
-            <button
-              onClick={() => {
-                setFamilyDetailTab("clinical");
-                if (
-                  !selectedClinicalMemberId &&
-                  selectedFamilyFile.members &&
-                  selectedFamilyFile.members.length > 0
-                ) {
-                  const headMember =
-                    selectedFamilyFile.members.find((m: any) => m.is_head) ||
-                    selectedFamilyFile.members[0];
-                  setSelectedClinicalMemberId(headMember.patient_id);
-                }
-              }}
-              className={`px-4 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 transition-all cursor-pointer ${
-                familyDetailTab === "clinical"
-                  ? "bg-gradient-to-r from-purple-700 to-indigo-700 text-white shadow-md shadow-purple-200"
-                  : "bg-purple-50 text-purple-800 hover:bg-purple-100 border border-purple-200"
-              }`}
-            >
-              <Activity size={18} className="text-purple-300" />
-              <span>الملف الصحي الشامل</span>
-              <span className="bg-white/25 text-white text-[10px] font-mono px-2 py-0.5 rounded-full font-black">
-                10
-              </span>
-            </button>
-
-            <button
-              onClick={() => setFamilyDetailTab("housing")}
-              className={`px-4 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 transition-all cursor-pointer ${
-                familyDetailTab === "housing"
-                  ? "bg-slate-800 text-white shadow-md"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              <Home size={18} />
-              <span>بيان حالة المسكن والبيئة</span>
-            </button>
-
-            <button
-              onClick={() => setFamilyDetailTab("social")}
-              className={`px-4 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 transition-all cursor-pointer ${
-                familyDetailTab === "social"
-                  ? "bg-sky-700 text-white shadow-md"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              <CreditCard size={18} />
-              <span>البحث الاجتماعي والتمكين</span>
-            </button>
-
-            <button
-              onClick={() => setFamilyDetailTab("deaths")}
-              className={`px-4 py-2.5 rounded-2xl font-black text-sm flex items-center gap-2 transition-all cursor-pointer ${
-                familyDetailTab === "deaths"
-                  ? "bg-red-700 text-white shadow-md"
-                  : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              <ShieldAlert size={18} />
-              <span>سجل وفيات الأسرة</span>
-            </button>
-          </div>
+                  {/* العمود الرئيسي: لوحة عرض محتوى القسم أو النموذج المختار */}
+                  <div className="lg:col-span-8 xl:col-span-9 min-w-0 space-y-6">
 
           {/* بيان حالة المسكن والبيئة السكنية */}
           {familyDetailTab === "housing" && (
@@ -1764,16 +1906,6 @@ const FamilyFilesModule: React.FC = () => {
                   الزواج، الرعاية الشاملة لكبار السن، وطب الفم والأسنان.
                 </p>
               </div>
-              <div className="flex flex-col sm:flex-row items-center gap-2.5 shrink-0">
-                <div className="bg-white/10 backdrop-blur-md px-4 py-2.5 rounded-2xl border border-white/10 text-center">
-                  <span className="text-[10px] text-purple-200 block font-bold">
-                    إجمالي أفراد العائلة
-                  </span>
-                  <span className="text-base font-black font-mono">
-                    {selectedFamilyFile.members?.length || 0} فرد
-                  </span>
-                </div>
-              </div>
             </div>
 
             {/* محدد أفراد الأسرة لاختيار المريض المراد توثيق ملفه */}
@@ -1970,58 +2102,6 @@ const FamilyFilesModule: React.FC = () => {
 
               return (
                 <div className="space-y-6">
-                  {/* شريط تبويبات النماذج السريرية الـ 10 */}
-                  <div className="bg-white p-3 rounded-3xl border border-gray-200 shadow-sm space-y-2.5">
-                    <div className="flex items-center justify-between px-1">
-                      <div className="flex items-center gap-2">
-                        <Layers size={18} className="text-purple-600" />
-                        <span className="text-xs sm:text-sm font-black text-gray-800">
-                          نماذج الملف الصحي السريري المعتمدة (10 نماذج مستقلة):
-                        </span>
-                      </div>
-                      <span className="text-[11px] font-bold text-gray-500">
-                        النموذج النشط:{" "}
-                        <strong className="text-purple-700 font-black">
-                          {currentMod.title}
-                        </strong>
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 scrollbar-thin">
-                      {accreditationModulesList.map((mod) => {
-                        const ModIcon = mod.icon;
-                        const isActive = clinicalModelTab === mod.id;
-                        return (
-                          <button
-                            key={mod.id}
-                            type="button"
-                            onClick={() => setClinicalModelTab(mod.id)}
-                            className={`px-3.5 py-2.5 rounded-2xl font-black text-xs flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer shrink-0 border ${
-                              isActive
-                                ? `${mod.btnClass} border-transparent shadow-md scale-[1.02]`
-                                : "bg-gray-50/90 hover:bg-gray-100 text-gray-700 border-gray-200 hover:border-gray-300"
-                            }`}
-                          >
-                            <ModIcon
-                              size={16}
-                              className={isActive ? "text-white" : mod.textClass}
-                            />
-                            <span>{mod.title}</span>
-                            <span
-                              className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
-                                isActive
-                                  ? "bg-white/25 text-white"
-                                  : "bg-gray-200 text-gray-600"
-                              }`}
-                            >
-                              {mod.num}
-                            </span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
                   {/* شريط اختيار أفراد العائلة */}
                   <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -3905,6 +3985,11 @@ const FamilyFilesModule: React.FC = () => {
           })()}
         </div>
       )}
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
     </div>
   ) : (
         /* Family Files Table (شكل جدول) */
