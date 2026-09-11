@@ -6,6 +6,7 @@ import { DB } from '../store.ts';
 import { Patient, Service } from '../types.ts';
 import { FileDown, Filter, Printer, MoreVertical, CheckCircle, Clock, Plus, Search, X, UserPlus } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect.tsx';
+import { printInvoiceDocument } from '../utils/printUtils.ts';
 
 const BillingModule: React.FC = () => {
   const [filterRoom, setFilterRoom] = useState('');
@@ -144,7 +145,11 @@ const BillingModule: React.FC = () => {
                 </td>
                 <td className="px-6 py-4 no-print">
                   <div className="flex gap-2">
-                    <button className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all" title={AR.print}>
+                    <button 
+                      onClick={() => printInvoiceDocument(inv, patients.find(p => p.name === inv.patientName))}
+                      className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all cursor-pointer" 
+                      title={AR.print}
+                    >
                       <Printer size={18} />
                     </button>
                     <button className="p-2 text-gray-400 hover:text-gray-800"><MoreVertical size={18} /></button>

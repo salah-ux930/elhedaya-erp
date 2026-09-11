@@ -66,7 +66,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
   return (
     <div className="flex min-h-screen bg-gray-50 font-cairo" dir="rtl">
       {/* Sidebar - Desktop */}
-      <aside className="hidden lg:flex flex-col w-72 bg-white border-l border-gray-200 shadow-sm fixed h-full z-20">
+      <aside className="hidden lg:flex flex-col w-72 bg-white border-l border-gray-200 shadow-sm fixed h-full z-20 print:hidden no-print">
         <div className="p-8 border-b border-gray-100 flex items-center gap-2">
           <div className="w-10 h-10 bg-primary-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">هـ</div>
           <h1 className="text-xl font-bold text-primary-900 tracking-tight">مركز الهدايه الطبى</h1>
@@ -94,8 +94,8 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
       </aside>
 
       {/* Main Content Area */}
-      <main className="flex-1 lg:mr-72 min-h-screen transition-all duration-300">
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-30 px-6 h-20 flex items-center justify-between shadow-sm">
+      <main className="flex-1 lg:mr-72 min-h-screen transition-all duration-300 print:mr-0 print:p-0">
+        <header className="bg-white border-b border-gray-200 sticky top-0 z-30 px-6 h-20 flex items-center justify-between shadow-sm print:hidden no-print">
           <div className="flex items-center gap-4">
             <button 
               className="lg:hidden p-2 text-gray-600 hover:bg-gray-100 rounded-md"
@@ -132,7 +132,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
 
       {/* Mobile Menu Overlay */}
       {isMobileMenuOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm lg:hidden flex justify-end" onClick={() => setIsMobileMenuOpen(false)}>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm lg:hidden flex justify-end print:hidden no-print" onClick={() => setIsMobileMenuOpen(false)}>
           <div 
             className="w-72 h-full bg-white shadow-2xl relative flex flex-col animate-in slide-in-from-right duration-200" 
             onClick={e => e.stopPropagation()}

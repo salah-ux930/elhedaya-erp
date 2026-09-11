@@ -178,10 +178,10 @@ const VisitsFormModal: React.FC<VisitsFormModalProps> = ({
   });
 
   return (
-    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto" dir="rtl">
+    <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto print:static print:bg-white print:p-0 print:m-0 print:block" dir="rtl">
       
       {/* Container wrapper (Print optimized) */}
-      <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden border border-gray-200 print:max-h-none print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:absolute print:inset-0">
+      <div className="bg-white w-full max-w-5xl rounded-3xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden border border-gray-200 print:static print:max-h-none print:w-full print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:overflow-visible">
         
         {/* Modal Top Header Bar - Hidden in Print */}
         <div className="p-5 bg-gradient-to-r from-gray-900 via-slate-800 to-gray-900 text-white flex justify-between items-center shrink-0 print:hidden rounded-t-3xl border-b border-slate-700">

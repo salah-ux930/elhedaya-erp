@@ -40,11 +40,29 @@
         font-family: 'Cairo', sans-serif;
       }
       @media print {
-        .no-print { display: none; }
-        .print-only { display: block; }
+        .no-print { display: none !important; }
+        .print-only { display: block !important; }
         @page {
-          size: A3 landscape;
-          margin: 1cm;
+          size: A4 portrait;
+          margin: 10mm;
+        }
+        body {
+          background: #ffffff !important;
+          color: #000000 !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+        }
+        /* Ensure modals and containers do not hide or clip content during print */
+        .fixed.inset-0 {
+          position: static !important;
+          background: transparent !important;
+          backdrop-filter: none !important;
+          padding: 0 !important;
+          overflow: visible !important;
+        }
+        .max-h-\[90vh\], .max-h-\[92vh\], .max-h-\[95vh\], .overflow-y-auto, .overflow-hidden {
+          max-height: none !important;
+          overflow: visible !important;
         }
       }
       .print-only { display: none; }

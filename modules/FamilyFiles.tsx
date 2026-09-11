@@ -54,7 +54,9 @@ import {
   CalendarCheck,
   ScrollText,
   Square,
+  Printer,
 } from "lucide-react";
+import { printFamilyFileFull, printHtmlDocument } from "../utils/printUtils.ts";
 
 // تفتيت وحفظ الدور والملاحظات مدمجة لعدم كسر الهيكل الحالي لقاعدة البيانات
 const parseFamilyRoleAndNotes = (combinedRole: string | null) => {
@@ -688,12 +690,48 @@ const FamilyFilesModule: React.FC = () => {
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => setSelectedFamilyFile(null)}
-              className="p-2 hover:bg-gray-100 rounded-xl text-gray-400 hover:text-gray-600"
-            >
-              <X size={20} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const membersList = selectedFamilyFile.members || [];
+                  const familyMemberIds = membersList.map((m: any) => m.patient_id);
+                  const deaths = patientDeaths.filter((d: any) => {
+                    const isMember = familyMemberIds.includes(d.patient_id);
+                    const headNameMatches =
+                      d.notes &&
+                      d.notes.includes(selectedFamilyFile.head_name || "---");
+                    return isMember || headNameMatches;
+                  });
+                  const housing = {
+                    total_rooms: selectedFamilyFile.total_rooms,
+                    sleeping_rooms: selectedFamilyFile.sleeping_rooms,
+                    ventilation_condition: selectedFamilyFile.ventilation,
+                    water_source: selectedFamilyFile.water_source,
+                    sanitation_type: selectedFamilyFile.sewage_system,
+                    electricity_available: selectedFamilyFile.lighting_type !== "none",
+                  };
+                  const social = {
+                    income_source: selectedFamilyFile.income_type,
+                    monthly_income: selectedFamilyFile.monthly_income,
+                    social_aid: selectedFamilyFile.receives_pension ? "مستفيد من معاش/دعم" : "غير مستفيد",
+                    economic_status: selectedFamilyFile.eligible_for_free_service ? "مستحق للرعاية المجانية" : "عادي",
+                  };
+                  printFamilyFileFull(selectedFamilyFile, membersList, deaths, housing, social);
+                }}
+                className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                title="طباعة الملف العائلي الشامل (معايير الاعتماد GAHAR)"
+              >
+                <Printer size={16} />
+                <span>طباعة الملف العائلي</span>
+              </button>
+              <button
+                onClick={() => setSelectedFamilyFile(null)}
+                className="p-2 hover:bg-gray-100 rounded-xl text-gray-400 hover:text-gray-600"
+              >
+                <X size={20} />
+              </button>
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 bg-gray-50/50 p-6 rounded-2xl border border-gray-100">
@@ -5585,8 +5623,8 @@ const FamilyFilesModule: React.FC = () => {
 
       {/* عرض الملف الكامل للمريض والتايم لاين عند النقر على اسم المريض من داخل الملف العائلي */}
       {timelinePatient && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 md:p-6 animate-in fade-in">
-          <div className="bg-white w-full max-w-6xl h-[92vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-2 md:p-6 animate-in fade-in print:static print:bg-white print:p-0 print:m-0 print:block">
+          <div className="bg-white w-full max-w-6xl h-[92vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col print:static print:w-full print:h-auto print:max-w-none print:shadow-none print:border-none print:rounded-none print:p-0 print:overflow-visible">
             <PatientTimeline
               patient={timelinePatient}
               onClose={() => {

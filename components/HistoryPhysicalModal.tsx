@@ -372,13 +372,16 @@ const HistoryPhysicalModal: React.FC<HistoryPhysicalModalProps> = ({
   };
 
   const triggerPrint = () => {
-    window.print();
+    setActiveTab('full');
+    setTimeout(() => {
+      window.print();
+    }, 150);
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto print:static print:bg-white print:p-0 print:m-0 print:block">
       {/* Printable Area Wrapper */}
-      <div className="bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border-2 border-gray-100 print:max-h-none print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:absolute print:inset-0">
+      <div className="bg-white w-full max-w-4xl rounded-[2.5rem] shadow-2xl flex flex-col max-h-[90vh] overflow-hidden border-2 border-gray-100 print:static print:max-h-none print:w-full print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:overflow-visible">
         
         {/* Modal Controls / Header - Hidden in Print */}
         <div className="p-6 bg-gradient-to-r from-purple-800 to-indigo-900 text-white flex justify-between items-center shrink-0 print:hidden rounded-t-[2.5rem]">
@@ -396,14 +399,13 @@ const HistoryPhysicalModal: React.FC<HistoryPhysicalModalProps> = ({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {isViewMode && (
-              <button 
-                onClick={triggerPrint}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg transition-all"
-              >
-                <Printer size={16} /> طباعة النموذج
-              </button>
-            )}
+            <button 
+              onClick={triggerPrint}
+              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-2 shadow-lg transition-all cursor-pointer"
+              title="طباعة نموذج الفحص الشامل والتاريخ المرضي"
+            >
+              <Printer size={16} /> طباعة النموذج
+            </button>
             <button 
               onClick={onClose}
               className="p-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
@@ -475,8 +477,8 @@ const HistoryPhysicalModal: React.FC<HistoryPhysicalModalProps> = ({
           <div className="hidden print:block mb-8 border-b-4 border-double border-gray-800 pb-4 text-right" dir="rtl">
             <div className="flex justify-between items-center mb-4">
               <div className="text-left">
-                <p className="font-black text-sm text-gray-700">مركز الشروق للرعاية الأولية والغسيل الكلوي</p>
-                <p className="text-xs text-gray-400 font-bold">AL-SHOUROUK PRIMARY HEALTH CARE CENTER</p>
+                <p className="font-black text-sm text-gray-700">مركز الهداية الطبي للرعاية الأولية ووحدة الكلى</p>
+                <p className="text-xs text-gray-400 font-bold">AL-HEDAYA PRIMARY HEALTH CARE & FAMILY MEDICINE</p>
               </div>
               <div className="text-center font-bold px-4 py-2 border-2 border-gray-800 rounded-2xl">
                 <span className="text-sm">ملف طبي معتمد للأعتماد الوطني</span>

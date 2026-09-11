@@ -598,49 +598,49 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   }, [moduleGroups, activeTab]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200" dir="rtl">
-      <div className="bg-slate-50 w-full max-w-6xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200 print:static print:bg-white print:p-0 print:m-0 print:block" dir="rtl">
+      <div className="bg-slate-50 w-full max-w-6xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh] print:static print:w-full print:max-h-none print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:overflow-visible">
         
         {/* Modal Top Header */}
-        <div className="p-5 sm:p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 shadow-md">
+        <div className="p-5 sm:p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shrink-0 shadow-md print:bg-white print:text-black print:border-b-2 print:border-slate-800 print:p-4 print:shadow-none">
           <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 text-white flex items-center justify-center font-black shadow-lg shadow-indigo-500/20 shrink-0">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-indigo-500 to-purple-500 text-white flex items-center justify-center font-black shadow-lg shadow-indigo-500/20 shrink-0 print:bg-slate-100 print:text-slate-900 print:shadow-none print:border print:border-slate-300">
               <Stethoscope size={24} />
             </div>
             <div>
               <div className="flex items-center gap-2 flex-wrap">
-                <h3 className="text-xl sm:text-2xl font-black">{patient.name}</h3>
-                <span className="bg-white/15 text-indigo-200 text-xs px-2.5 py-0.5 rounded-full font-bold">
+                <h3 className="text-xl sm:text-2xl font-black print:text-slate-900">{patient.name}</h3>
+                <span className="bg-white/15 text-indigo-200 text-xs px-2.5 py-0.5 rounded-full font-bold print:bg-slate-100 print:text-slate-800 print:border print:border-slate-300">
                   {patient.gender || 'غير محدد'} • {age !== null ? `${age} سنة` : 'تاريخ الميلاد غير مدون'}
                 </span>
                 {familyFile && (
-                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-0.5 rounded-full font-bold font-mono">
+                  <span className="bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs px-2.5 py-0.5 rounded-full font-bold font-mono print:bg-slate-100 print:text-slate-800 print:border-slate-300">
                     ملف الأسرة: {familyFile.family_code} ({familyFile.head_name})
                   </span>
                 )}
                 {activeAppointment ? (
-                  <span className="bg-emerald-500 text-slate-950 text-xs px-3 py-1 rounded-full font-black shadow-md flex items-center gap-1.5 animate-pulse">
+                  <span className="bg-emerald-500 text-slate-950 text-xs px-3 py-1 rounded-full font-black shadow-md flex items-center gap-1.5 animate-pulse print:hidden">
                     <CalendarCheck size={14} /> وضع جلسة كشف نشطة (معتمد)
                   </span>
                 ) : (
-                  <span className="bg-slate-800 text-slate-300 text-xs px-2.5 py-0.5 rounded-full font-bold border border-slate-700">
+                  <span className="bg-slate-800 text-slate-300 text-xs px-2.5 py-0.5 rounded-full font-bold border border-slate-700 print:hidden">
                     وضع استعراض الملف (سجل تراكمي)
                   </span>
                 )}
               </div>
-              <p className="text-xs text-indigo-200 font-bold mt-1">
-                الرقم القومي: <span className="font-mono" dir="ltr">{patient.national_id || '—'}</span> | الهاتف: <span className="font-mono" dir="ltr">{patient.phone || '—'}</span> | فصيلة الدم: <span className="text-amber-300 font-black">{patient.blood_type || '—'}</span>
+              <p className="text-xs text-indigo-200 font-bold mt-1 print:text-slate-600">
+                الرقم القومي: <span className="font-mono" dir="ltr">{patient.national_id || '—'}</span> | الهاتف: <span className="font-mono" dir="ltr">{patient.phone || '—'}</span> | فصيلة الدم: <span className="text-amber-300 font-black print:text-red-700">{patient.blood_type || '—'}</span>
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0">
+          <div className="flex items-center gap-2 self-end sm:self-auto shrink-0 print:hidden">
             <button
               onClick={handlePrint}
-              className="px-3.5 py-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all border border-white/10 cursor-pointer"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
               title="طباعة السجل الصحي الشامل"
             >
-              <Printer size={14} /> طباعة
+              <Printer size={15} /> طباعة النموذج
             </button>
             <button
               onClick={handleCloseModal}
@@ -654,7 +654,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
 
         {/* Active Appointment Banner */}
         {activeAppointment && (
-          <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-3 flex items-center justify-between gap-4 text-xs shrink-0">
+          <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-3 flex items-center justify-between gap-4 text-xs shrink-0 print:hidden">
             <div className="flex items-center gap-2 text-emerald-950 font-bold">
               <CheckCircle className="text-emerald-600 shrink-0" size={16} />
               <span>
@@ -670,7 +670,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         )}
 
         {/* Navigation Tabs grouped into 3 distinctive visual clusters */}
-        <div className="bg-slate-100/90 border-b border-slate-200 p-3 overflow-x-auto shrink-0">
+        <div className="bg-slate-100/90 border-b border-slate-200 p-3 overflow-x-auto shrink-0 print:hidden">
           <div className="flex items-stretch gap-3 min-w-max">
             {moduleGroups.map((grp, gIdx) => {
               const clusterStyles: Record<string, { container: string; badge: string; dot: string }> = {
