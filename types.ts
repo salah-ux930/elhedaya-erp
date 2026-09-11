@@ -354,6 +354,8 @@ export interface PatientReferral {
 export interface FamilyFile {
   id: string;
   family_code: string;
+  house_number?: string;
+  family_number?: string;
   home_number?: string;
   address?: string;
   area_district?: string;
@@ -720,3 +722,210 @@ export interface PatientVisit {
   created_at?: string;
   patients?: Patient;
 }
+
+// ==========================================
+// Comprehensive Dialysis Nursing Assessment
+// ==========================================
+
+export interface DialysisNursingAssessment {
+  id?: string;
+  session_id: string;
+  patient_id: string;
+  assessment_datetime: string;
+  information_source?: 'patient' | 'family' | 'relative' | 'external_facility' | string;
+  chief_complaint?: string;
+  medical_care_plan?: string;
+  doctor_signature?: string;
+  pre_dialysis_pain?: {
+    has_pain: boolean;
+    onset?: string;
+    location?: string;
+    duration?: string;
+    characteristics?: string;
+  };
+  allergy?: {
+    has_allergy: boolean;
+    details?: string;
+  };
+  fall_risk_measures?: {
+    card_placed?: boolean;
+    bed_low_brakes_locked?: boolean;
+    safe_environment?: boolean;
+    frequent_toilet_check?: boolean;
+    staff_assist_walking?: boolean;
+    patient_education?: boolean;
+  };
+  access_review?: {
+    access_type?: string;
+    insertion_site?: string;
+    working_efficiently?: boolean;
+    pulse_check_result?: string;
+    complications?: string;
+  };
+  edema?: {
+    present: boolean;
+    location?: string;
+    grade?: string;
+  };
+  consciousness_level?: string;
+  immunization_review?: {
+    reviewed_and_updated: boolean;
+    vaccine_name_if_not?: string;
+    reason?: string;
+  };
+  weight_gain_during_session?: number;
+  session_complications?: {
+    none?: boolean;
+    cramps?: boolean;
+    nausea?: boolean;
+    hypoxia?: boolean;
+    high_bp?: boolean;
+    low_bp?: boolean;
+    dizziness?: boolean;
+    cardiac_problems?: boolean;
+    other_text?: string;
+  };
+  new_events_since_last_assessment?: {
+    has_new: boolean;
+    details?: string;
+  };
+  doctor_orders_reviewed?: boolean;
+  lab_results_reviewed?: boolean;
+  dialysis_machine_check_reviewed?: boolean;
+  breathing_difficulty?: boolean;
+  chest_pain?: boolean;
+  fluid_status?: {
+    target_weight_kg?: number;
+    tongue_dryness?: boolean;
+    neck_veins?: 'distended' | 'flat' | string;
+  };
+  abuse_neglect_signs?: boolean;
+  psychological_assessment?: 'frustrated' | 'tense' | 'uncooperative' | 'no_problem' | string;
+  skin_assessment?: 'healthy' | 'wrinkled' | 'inflamed' | string;
+  spiritual_assessment?: 'needs_support' | 'no_need' | string;
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface DialysisAccessLine {
+  id?: string;
+  patient_id: string;
+  line_type: 'peripheral_cannula' | 'av_fistula' | 'urinary_catheter' | 'tracheal_tube' | 'tracheostomy' | 'chest_tube' | 'cvc_central_line' | string;
+  insertion_site?: string;
+  insertion_datetime?: string;
+  removal_datetime?: string;
+  removal_or_change_reason?: string;
+  responsible_doctor?: string;
+  status: 'active' | 'removed';
+  created_by?: string;
+  created_at?: string;
+}
+
+export interface DialysisNursingNote {
+  id?: string;
+  session_id: string;
+  note_time: string;
+  note_text: string;
+  nurse_signature?: string;
+  created_at?: string;
+}
+
+export interface DialysisNursingCarePlan {
+  id?: string;
+  session_id: string;
+  plan_time: string;
+  assessment?: string;
+  nursing_diagnosis?: string;
+  goal?: string;
+  nursing_interventions?: string;
+  signature?: string;
+  created_at?: string;
+}
+
+export interface DialysisVitalSignsEws {
+  id?: string;
+  session_id: string;
+  recorded_time: string;
+  respiratory_rate?: number;
+  respiratory_rate_score?: number;
+  oxygen_saturation?: number;
+  spo2_score?: number;
+  oxygen_therapy_type?: 'air' | 'o2' | string;
+  oxygen_flow_lmin?: number;
+  oxygen_score?: number;
+  systolic_bp?: number;
+  bp_score?: number;
+  heart_rate?: number;
+  hr_score?: number;
+  consciousness_level?: 'alert' | 'not_responding_to_voice_pain' | 'unconscious' | string;
+  consciousness_score?: number;
+  temperature_celsius?: number;
+  temp_score?: number;
+  total_ews_score?: number;
+  escalation_action?: string;
+  recorded_by?: string;
+  created_at?: string;
+}
+
+export interface DialysisPainGlucoseLog {
+  id?: string;
+  session_id: string;
+  log_time: string;
+  pain_assessment_score?: number;
+  blood_glucose_level?: number;
+  withdrawal_amount_ml?: number;
+  created_at?: string;
+}
+
+export interface DialysisMedicalCareLog {
+  id?: string;
+  session_id: string;
+  log_time: string;
+  complaint?: string;
+  examination_findings?: string;
+  created_at?: string;
+}
+
+export interface DialysisMedicationAdmin {
+  id?: string;
+  session_id: string;
+  drug_name: string;
+  dose?: string;
+  route?: string;
+  instructions?: string;
+  administered_datetime?: string;
+  doctor_signature?: string;
+  nurse_signature?: string;
+  created_at?: string;
+}
+
+export interface DialysisHealthEducation {
+  id?: string;
+  patient_id: string;
+  session_id?: string;
+  assessment_date: string;
+  learning_ability?: 'high' | 'medium' | 'low' | string;
+  learning_barriers?: {
+    language?: boolean;
+    illiteracy?: boolean;
+    communication_difficulty?: boolean;
+    other?: string;
+  };
+  learning_method?: {
+    reading?: boolean;
+    listening?: boolean;
+    practice?: boolean;
+  };
+  topics_covered?: {
+    diet_explanation?: boolean;
+    patient_rights_duties?: boolean;
+    fall_prevention?: boolean;
+    fistula_site_care?: boolean;
+    fluid_restriction?: boolean;
+    other?: string;
+  };
+  patient_or_family_signature?: string;
+  nurse_signature?: string;
+  created_at?: string;
+}
+

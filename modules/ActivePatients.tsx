@@ -3,7 +3,8 @@ import React, { useState, useEffect } from 'react';
 import { DB } from '../store.ts';
 import { DialysisSession, Patient, Service, Store } from '../types.ts';
 import { calculateAge } from '../constants.ts';
-import { Loader2, Activity, MapPin, Clock, HeartPulse, Scale, User, FilePlus, X, CheckCircle, Package, ListChecks } from 'lucide-react';
+import { Loader2, Activity, MapPin, Clock, HeartPulse, Scale, User, FilePlus, X, CheckCircle, Package, ListChecks, Stethoscope } from 'lucide-react';
+import DialysisNursingAssessmentModal from '../components/DialysisNursingAssessmentModal.tsx';
 
 const ActivePatients: React.FC = () => {
   const [activeSessions, setActiveSessions] = useState<any[]>([]);
@@ -12,6 +13,7 @@ const ActivePatients: React.FC = () => {
   const [stores, setStores] = useState<Store[]>([]);
   
   const [selectedSessionForReport, setSelectedSessionForReport] = useState<any | null>(null);
+  const [selectedSessionForNursing, setSelectedSessionForNursing] = useState<any | null>(null);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [customFieldsData, setCustomFieldsData] = useState<Record<string, string>>({});
 
@@ -126,21 +128,31 @@ const ActivePatients: React.FC = () => {
               </div>
             </div>
 
-            {session.status === 'WAITING' ? (
+            {/* Action Buttons */}
+            <div className="space-y-2 mt-6">
               <button 
-                onClick={() => handleStartSession(session)}
-                className="w-full mt-6 py-4 bg-yellow-600 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-yellow-700 transition-all shadow-lg"
+                onClick={() => setSelectedSessionForNursing(session)}
+                className="w-full py-3 bg-teal-50 text-teal-800 hover:bg-teal-100 hover:text-teal-900 rounded-2xl font-black text-xs flex items-center justify-center gap-2 transition-all border border-teal-200/80 shadow-sm"
               >
-                <Activity size={18} /> بدء الجلسة الآن
+                <Stethoscope size={16} className="text-teal-600" /> التقييم التمريضي الشامل (EWS / فحص / علامات)
               </button>
-            ) : (
-              <button 
-                onClick={() => setSelectedSessionForReport(session)}
-                className="w-full mt-6 py-4 bg-emerald-600 text-white rounded-2xl font-black text-sm flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-lg"
-              >
-                <FilePlus size={18} /> إنهاء الجلسة وإضافة تقرير
-              </button>
-            )}
+
+              {session.status === 'WAITING' ? (
+                <button 
+                  onClick={() => handleStartSession(session)}
+                  className="w-full py-3.5 bg-yellow-600 text-white rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-yellow-700 transition-all shadow-md"
+                >
+                  <Activity size={16} /> بدء الجلسة الآن
+                </button>
+              ) : (
+                <button 
+                  onClick={() => setSelectedSessionForReport(session)}
+                  className="w-full py-3.5 bg-emerald-600 text-white rounded-2xl font-black text-xs flex items-center justify-center gap-2 hover:bg-emerald-700 transition-all shadow-md"
+                >
+                  <FilePlus size={16} /> إنهاء الجلسة وإضافة تقرير
+                </button>
+              )}
+            </div>
           </div>
         ))}
         {activeSessions.length === 0 && (
@@ -149,6 +161,15 @@ const ActivePatients: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Comprehensive Dialysis Nursing Assessment Modal */}
+      {selectedSessionForNursing && (
+        <DialysisNursingAssessmentModal 
+          session={selectedSessionForNursing}
+          onClose={() => setSelectedSessionForNursing(null)}
+          onUpdate={load}
+        />
+      )}
 
       {/* Report Modal */}
       {selectedSessionForReport && (

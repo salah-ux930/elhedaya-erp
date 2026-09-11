@@ -497,6 +497,8 @@ const FamilyFilesModule: React.FC = () => {
         village_city: target.village_city.value.trim(),
         health_unit: target.health_unit.value.trim(),
         address: target.address.value.trim(),
+        house_number: target.house_number?.value?.trim() || null,
+        family_number: target.family_number?.value?.trim() || null,
         phone: phone || null,
         home_number: workPhone || null, // تليفون العمل
         nearest_landmark: nearestPhone || null, // أقرب تليفون
@@ -808,6 +810,22 @@ const FamilyFilesModule: React.FC = () => {
               </span>
               <span className="font-bold text-primary-600 font-extrabold">
                 {selectedFamilyFile.health_unit || "---"}
+              </span>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-gray-400 font-bold block">
+                رقم المنزل (للطباعة)
+              </span>
+              <span className="font-mono font-bold text-gray-700 bg-white px-2 py-1 rounded-lg border border-gray-200 inline-block">
+                {selectedFamilyFile.house_number || "غير محدد (............)"}
+              </span>
+            </div>
+            <div className="space-y-1">
+              <span className="text-xs text-gray-400 font-bold block">
+                رقم الأسرة (للطباعة)
+              </span>
+              <span className="font-mono font-bold text-gray-700 bg-white px-2 py-1 rounded-lg border border-gray-200 inline-block">
+                {selectedFamilyFile.family_number || "غير محدد (............)"}
               </span>
             </div>
             <div className="space-y-1 lg:col-span-2">
@@ -4289,6 +4307,35 @@ const FamilyFilesModule: React.FC = () => {
                     className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono"
                   />
                 </div>
+              </div>
+
+              {/* حقول الترقيم للطباعة الرسمية (رقم المنزل / رقم الأسرة) */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 block mb-1">
+                      رقم المنزل
+                    </label>
+                    <input
+                      name="house_number"
+                      placeholder="رقم المنزل للنموذج الورقي (اختياري)"
+                      className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-primary-500 outline-none font-bold"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-700 block mb-1">
+                      رقم الأسرة
+                    </label>
+                    <input
+                      name="family_number"
+                      placeholder="رقم الأسرة للنموذج الورقي (اختياري)"
+                      className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-primary-500 outline-none font-bold"
+                    />
+                  </div>
+                </div>
+                <p className="text-[11px] text-gray-400 font-bold leading-relaxed">
+                  تُستخدم هذه الحقول فقط عند طباعة النموذج الرسمي المطابق لبطاقة الملف العائلي الورقية، وليست إلزامية للعمل اليومي على النظام.
+                </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

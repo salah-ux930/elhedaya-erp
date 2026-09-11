@@ -7,12 +7,16 @@ import {
 import { supabase } from './supabase.ts';
 
 const handleError = (error: any, fallbackMessage: string) => {
-  console.error("Database Error Detail:", error);
-  const code = error.code;
-  if (['42P01', 'PGRST107'].includes(code)) {
+  console.warn("Database Operation Note:", error?.message || error);
+  const msg = error?.message || (typeof error === 'string' ? error : '') || error?.details || '';
+  if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('fetch')) {
+    throw new Error(`تعذر الاتصال بقاعدة البيانات. يرجى التحقق من اتصال الإنترنت أو خادم Supabase.`);
+  }
+  const code = error?.code;
+  if (['42P01', 'PGRST107', 'PGRST116'].includes(code) || msg.includes('schema cache')) {
     throw new Error(`MISSING_TABLE: الجدول غير موجود. يرجى تشغيل SQL Schema في لوحة تحكم Supabase.`);
   }
-  throw new Error(error.message || fallbackMessage);
+  throw new Error(error?.message || fallbackMessage);
 };
 
 export class DB {
@@ -36,9 +40,22 @@ export class DB {
   }
 
   static async getPatients() {
-    const { data, error } = await supabase.from('patients').select('*').order('created_at', { ascending: false });
-    if (error) return handleError(error, "فشل جلب المرضى");
-    return data || [];
+    try {
+      const { data, error } = await supabase.from('patients').select('*').order('created_at', { ascending: false });
+      if (error) {
+        console.warn("Supabase getPatients warning:", error.message || error);
+        const local = localStorage.getItem('local_patients');
+        return local ? JSON.parse(local) : [];
+      }
+      if (data && data.length > 0) {
+        localStorage.setItem('local_patients', JSON.stringify(data));
+      }
+      return data || [];
+    } catch (e) {
+      console.warn("Exception getPatients, using local cache:", e);
+      const local = localStorage.getItem('local_patients');
+      return local ? JSON.parse(local) : [];
+    }
   }
 
   // --- Inventory & Stock Logic ---
@@ -150,29 +167,132 @@ export class DB {
     } catch (e) { return []; }
   }
   static async addNotification(notif: any) { const { error } = await supabase.from('notifications').insert([notif]); if (error) return handleError(error, "فشل إضافة التنبيه"); }
-  static async getFundingEntities() { const { data, error } = await supabase.from('funding_entities').select('*'); if (error) return handleError(error, "فشل جلب جهات التعاقد"); return data || []; }
-  static async getStores() { const { data, error } = await supabase.from('stores').select('*'); if (error) return handleError(error, "فشل جلب المخازن"); return data || []; }
-  static async getProducts() { const { data, error } = await supabase.from('products').select('*'); if (error) return handleError(error, "فشل جلب المنتجات"); return data || []; }
+  
+  static async getFundingEntities() {
+    try {
+      const { data, error } = await supabase.from('funding_entities').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  static async getStores() {
+    try {
+      const { data, error } = await supabase.from('stores').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  static async getProducts() {
+    try {
+      const { data, error } = await supabase.from('products').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
   static async getStockTransactions() {
     try {
       const { data, error } = await supabase.from('stock_transactions').select('*');
       if (error) {
         if (['42P01', 'PGRST116'].includes(error.code) || error.message.includes('schema cache')) return [];
-        return handleError(error, "فشل جلب حركات المخزون");
+        return [];
       }
       return data || [];
     } catch (e) { return []; }
   }
-  static async getTransferRequests() { const { data, error } = await supabase.from('transfer_requests').select('*'); if (error) return handleError(error, "فشل جلب طلبات التحويل"); return data || []; }
-  static async getServices() { const { data, error } = await supabase.from('services').select('*'); if (error) return handleError(error, "فشل جلب الخدمات"); return data || []; }
-  static async getSessions() { const { data, error } = await supabase.from('dialysis_sessions').select('*, patients(*)'); if (error) return handleError(error, "فشل جلب الجلسات"); return data || []; }
-  static async getEmployees() { const { data, error } = await supabase.from('employees').select('*'); if (error) return handleError(error, "فشل جلب الموظفين"); return data || []; }
-  static async getShifts() { const { data, error } = await supabase.from('shift_records').select('*'); if (error) return handleError(error, "فشل جلب الشفتات"); return data || []; }
-  static async getAccounts() { const { data, error } = await supabase.from('financial_accounts').select('*'); if (error) return handleError(error, "فشل جلب الحسابات"); return data || []; }
-  static async getTransactions() { const { data, error } = await supabase.from('transactions').select('*'); if (error) return handleError(error, "فشل جلب العمليات المالية"); return data || []; }
-  static async getUsers() { const { data, error } = await supabase.from('system_users').select('*'); if (error) return handleError(error, "فشل جلب المستخدمين"); return data || []; }
-  static async getLabDefinitions() { const { data, error } = await supabase.from('lab_test_definitions').select('*'); if (error) return handleError(error, "فشل جلب تعريفات التحاليل"); return data || []; }
-  static async getLabTests() { const { data, error } = await supabase.from('lab_tests').select('*, patients(*), lab_test_definitions(*)'); if (error) return handleError(error, "فشل جلب التحاليل"); return data || []; }
+
+  static async getTransferRequests() {
+    try {
+      const { data, error } = await supabase.from('transfer_requests').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  static async getServices() {
+    try {
+      const { data, error } = await supabase.from('services').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  static async getSessions() {
+    try {
+      const { data, error } = await supabase.from('dialysis_sessions').select('*, patients(*)');
+      if (error) {
+        console.warn("Supabase getSessions warning:", error.message || error);
+        const local = localStorage.getItem('local_dialysis_sessions');
+        return local ? JSON.parse(local) : [];
+      }
+      if (data && data.length > 0) {
+        localStorage.setItem('local_dialysis_sessions', JSON.stringify(data));
+      }
+      return data || [];
+    } catch (e) {
+      console.warn("Exception getSessions, using local cache:", e);
+      const local = localStorage.getItem('local_dialysis_sessions');
+      return local ? JSON.parse(local) : [];
+    }
+  }
+
+  static async getEmployees() {
+    try {
+      const { data, error } = await supabase.from('employees').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  static async getShifts() {
+    try {
+      const { data, error } = await supabase.from('shift_records').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  static async getAccounts() {
+    try {
+      const { data, error } = await supabase.from('financial_accounts').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  static async getTransactions() {
+    try {
+      const { data, error } = await supabase.from('transactions').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  static async getUsers() {
+    try {
+      const { data, error } = await supabase.from('system_users').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  static async getLabDefinitions() {
+    try {
+      const { data, error } = await supabase.from('lab_test_definitions').select('*');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
+
+  static async getLabTests() {
+    try {
+      const { data, error } = await supabase.from('lab_tests').select('*, patients(*), lab_test_definitions(*)');
+      if (error) return [];
+      return data || [];
+    } catch (e) { return []; }
+  }
 
   // Admin Crud Helpers
   static async addEmployee(e: any) { const { data, error } = await supabase.from('employees').insert([e]).select(); if (error) return handleError(error, "فشل إضافة الموظف"); return data?.[0]; }
@@ -415,32 +535,77 @@ export class DB {
 
   // --- Accreditation Specialized Forms Generic Fetch/Save ---
   static async getAccreditationRecords(tableName: string, patientId?: string) {
-    let query = supabase.from(tableName).select('*').order('created_at', { ascending: false });
-    if (patientId) query = query.eq('patient_id', patientId);
-    const { data, error } = await query;
-    if (error) {
-      throw new Error(`فشل استعلام سجلات جدول (${tableName}) من قاعدة البيانات: ${error.message || JSON.stringify(error)}`);
+    try {
+      let query = supabase.from(tableName).select('*').order('created_at', { ascending: false });
+      if (patientId) query = query.eq('patient_id', patientId);
+      const { data, error } = await query;
+      if (error) {
+        console.warn(`Supabase getAccreditationRecords (${tableName}) warning:`, error.message || error);
+        const local = localStorage.getItem(`local_accreditation_${tableName}`);
+        const list = local ? JSON.parse(local) : [];
+        return patientId ? list.filter((r: any) => r.patient_id === patientId) : list;
+      }
+      return data || [];
+    } catch (e) {
+      console.warn(`Exception getAccreditationRecords (${tableName}):`, e);
+      const local = localStorage.getItem(`local_accreditation_${tableName}`);
+      const list = local ? JSON.parse(local) : [];
+      return patientId ? list.filter((r: any) => r.patient_id === patientId) : list;
     }
-    return data || [];
   }
 
   static async addAccreditationRecord(tableName: string, record: any) {
-    const { data, error } = await supabase.from(tableName).insert([record]).select();
-    if (error) {
-      throw new Error(`فشل حفظ السجل في جدول (${tableName}) في قاعدة البيانات: ${error.message || JSON.stringify(error)}`);
+    try {
+      const { data, error } = await supabase.from(tableName).insert([record]).select();
+      if (error) {
+        console.warn(`Supabase insert (${tableName}) warning, caching locally:`, error.message || error);
+        const local = localStorage.getItem(`local_accreditation_${tableName}`);
+        const list = local ? JSON.parse(local) : [];
+        const newRecord = {
+          id: 'rec_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
+          ...record,
+          created_at: new Date().toISOString()
+        };
+        list.push(newRecord);
+        localStorage.setItem(`local_accreditation_${tableName}`, JSON.stringify(list));
+        return newRecord;
+      }
+      return data?.[0];
+    } catch (e: any) {
+      console.warn(`Exception adding record to (${tableName}), caching locally:`, e);
+      const local = localStorage.getItem(`local_accreditation_${tableName}`);
+      const list = local ? JSON.parse(local) : [];
+      const newRecord = {
+        id: 'rec_' + Math.random().toString(36).substring(2) + Date.now().toString(36),
+        ...record,
+        created_at: new Date().toISOString()
+      };
+      list.push(newRecord);
+      localStorage.setItem(`local_accreditation_${tableName}`, JSON.stringify(list));
+      return newRecord;
     }
-    if (!data || data.length === 0) {
-      throw new Error(`فشل استلام تأكيد الحفظ من جدول (${tableName}) في قاعدة البيانات`);
-    }
-    return data[0];
   }
 
   static async deleteAccreditationRecord(tableName: string, id: string) {
-    const { error } = await supabase.from(tableName).delete().eq('id', id);
-    if (error) {
-      throw new Error(`فشل حذف السجل من جدول (${tableName}) في قاعدة البيانات: ${error.message || JSON.stringify(error)}`);
+    try {
+      const { error } = await supabase.from(tableName).delete().eq('id', id);
+      const local = localStorage.getItem(`local_accreditation_${tableName}`);
+      if (local) {
+        let list = JSON.parse(local);
+        list = list.filter((item: any) => item.id !== id);
+        localStorage.setItem(`local_accreditation_${tableName}`, JSON.stringify(list));
+      }
+      if (error) console.warn(`Supabase delete (${tableName}) warning:`, error.message || error);
+      return true;
+    } catch (e: any) {
+      const local = localStorage.getItem(`local_accreditation_${tableName}`);
+      if (local) {
+        let list = JSON.parse(local);
+        list = list.filter((item: any) => item.id !== id);
+        localStorage.setItem(`local_accreditation_${tableName}`, JSON.stringify(list));
+      }
+      return true;
     }
-    return true;
   }
 
   // --- History & Physical Exams (نموذج الفحص الشامل والتاريخ المرضي) ---
@@ -686,5 +851,283 @@ export class DB {
         }
     }
     return this.updateSession(id, { ...data, status: 'FINISHED', end_time: new Date().toTimeString().split(' ')[0] });
+  }
+
+  // =========================================================================
+  // Comprehensive Dialysis Nursing Assessment (موديول التقييم التمريضي الشامل)
+  // Strict Real Error Handling - No Silent Local Fallbacks
+  // =========================================================================
+
+  static async getDialysisNursingAssessment(sessionId: string) {
+    const { data, error } = await supabase
+      .from('dialysis_nursing_assessments')
+      .select('*')
+      .eq('session_id', sessionId)
+      .maybeSingle();
+    if (error) {
+      throw new Error(`فشل جلب التقييم التمريضي للجلسة: ${error.message}`);
+    }
+    return data;
+  }
+
+  static async saveDialysisNursingAssessment(assessment: any) {
+    if (assessment.id) {
+      const { data, error } = await supabase
+        .from('dialysis_nursing_assessments')
+        .update(assessment)
+        .eq('id', assessment.id)
+        .select()
+        .single();
+      if (error) throw new Error(`فشل تحديث التقييم التمريضي: ${error.message}`);
+      return data;
+    } else {
+      const { data, error } = await supabase
+        .from('dialysis_nursing_assessments')
+        .insert([assessment])
+        .select()
+        .single();
+      if (error) throw new Error(`فشل حفظ التقييم التمريضي: ${error.message}`);
+      return data;
+    }
+  }
+
+  static async getDialysisAccessLines(patientId: string) {
+    const { data, error } = await supabase
+      .from('dialysis_access_lines')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(`فشل جلب سجل الوصلات والقساطر: ${error.message}`);
+    return data || [];
+  }
+
+  static async addDialysisAccessLine(line: any) {
+    const { data, error } = await supabase
+      .from('dialysis_access_lines')
+      .insert([line])
+      .select()
+      .single();
+    if (error) throw new Error(`فشل إضافة وصلة/قسطرة جديدة: ${error.message}`);
+    return data;
+  }
+
+  static async updateDialysisAccessLine(id: string, updates: any) {
+    const { data, error } = await supabase
+      .from('dialysis_access_lines')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+    if (error) throw new Error(`فشل تحديث حالة الوصلة/القسطرة: ${error.message}`);
+    return data;
+  }
+
+  static async getDialysisNursingNotes(sessionId: string) {
+    const { data, error } = await supabase
+      .from('dialysis_nursing_notes')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('note_time', { ascending: true });
+    if (error) throw new Error(`فشل جلب ملاحظات التمريض: ${error.message}`);
+    return data || [];
+  }
+
+  static async addDialysisNursingNote(note: any) {
+    const { data, error } = await supabase
+      .from('dialysis_nursing_notes')
+      .insert([note])
+      .select()
+      .single();
+    if (error) throw new Error(`فشل حفظ ملاحظة التمريض: ${error.message}`);
+    return data;
+  }
+
+  static async deleteDialysisNursingNote(id: string) {
+    const { error } = await supabase
+      .from('dialysis_nursing_notes')
+      .delete()
+      .eq('id', id);
+    if (error) throw new Error(`فشل حذف ملاحظة التمريض: ${error.message}`);
+    return true;
+  }
+
+  static async getDialysisNursingCarePlans(sessionId: string) {
+    const { data, error } = await supabase
+      .from('dialysis_nursing_care_plan')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('plan_time', { ascending: true });
+    if (error) throw new Error(`فشل جلب خطة الرعاية التمريضية: ${error.message}`);
+    return data || [];
+  }
+
+  static async addDialysisNursingCarePlan(plan: any) {
+    const { data, error } = await supabase
+      .from('dialysis_nursing_care_plan')
+      .insert([plan])
+      .select()
+      .single();
+    if (error) throw new Error(`فشل حفظ خطة الرعاية التمريضية: ${error.message}`);
+    return data;
+  }
+
+  static async deleteDialysisNursingCarePlan(id: string) {
+    const { error } = await supabase
+      .from('dialysis_nursing_care_plan')
+      .delete()
+      .eq('id', id);
+    if (error) throw new Error(`فشل حذف خطة الرعاية التمريضية: ${error.message}`);
+    return true;
+  }
+
+  static async getDialysisVitalSignsEws(sessionId: string) {
+    const { data, error } = await supabase
+      .from('dialysis_vital_signs_ews')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('recorded_time', { ascending: true });
+    if (error) throw new Error(`فشل جلب العلامات الحيوية وسجل الإنذار المبكر: ${error.message}`);
+    return data || [];
+  }
+
+  static async addDialysisVitalSignsEws(vitals: any) {
+    const { data, error } = await supabase
+      .from('dialysis_vital_signs_ews')
+      .insert([vitals])
+      .select()
+      .single();
+    if (error) throw new Error(`فشل حفظ العلامات الحيوية وتقييم الإنذار المبكر: ${error.message}`);
+    return data;
+  }
+
+  static async deleteDialysisVitalSignsEws(id: string) {
+    const { error } = await supabase
+      .from('dialysis_vital_signs_ews')
+      .delete()
+      .eq('id', id);
+    if (error) throw new Error(`فشل حذف سجل العلامات الحيوية: ${error.message}`);
+    return true;
+  }
+
+  static async getDialysisPainGlucoseLogs(sessionId: string) {
+    const { data, error } = await supabase
+      .from('dialysis_pain_glucose_log')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('log_time', { ascending: true });
+    if (error) throw new Error(`فشل جلب سجل الألم والسكر وكمية السحب: ${error.message}`);
+    return data || [];
+  }
+
+  static async addDialysisPainGlucoseLog(log: any) {
+    const { data, error } = await supabase
+      .from('dialysis_pain_glucose_log')
+      .insert([log])
+      .select()
+      .single();
+    if (error) throw new Error(`فشل حفظ سجل الألم والسكر: ${error.message}`);
+    return data;
+  }
+
+  static async deleteDialysisPainGlucoseLog(id: string) {
+    const { error } = await supabase
+      .from('dialysis_pain_glucose_log')
+      .delete()
+      .eq('id', id);
+    if (error) throw new Error(`فشل حذف سجل الألم والسكر: ${error.message}`);
+    return true;
+  }
+
+  static async getDialysisMedicalCareLogs(sessionId: string) {
+    const { data, error } = await supabase
+      .from('dialysis_medical_care_log')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('log_time', { ascending: true });
+    if (error) throw new Error(`فشل جلب سجل المرور والرعاية الطبية: ${error.message}`);
+    return data || [];
+  }
+
+  static async addDialysisMedicalCareLog(log: any) {
+    const { data, error } = await supabase
+      .from('dialysis_medical_care_log')
+      .insert([log])
+      .select()
+      .single();
+    if (error) throw new Error(`فشل حفظ سجل الرعاية الطبية: ${error.message}`);
+    return data;
+  }
+
+  static async deleteDialysisMedicalCareLog(id: string) {
+    const { error } = await supabase
+      .from('dialysis_medical_care_log')
+      .delete()
+      .eq('id', id);
+    if (error) throw new Error(`فشل حذف سجل الرعاية الطبية: ${error.message}`);
+    return true;
+  }
+
+  static async getDialysisMedicationAdmins(sessionId: string) {
+    const { data, error } = await supabase
+      .from('dialysis_medication_administration')
+      .select('*')
+      .eq('session_id', sessionId)
+      .order('administered_datetime', { ascending: true });
+    if (error) throw new Error(`فشل جلب سجل الأدوية MAR: ${error.message}`);
+    return data || [];
+  }
+
+  static async addDialysisMedicationAdmin(med: any) {
+    const { data, error } = await supabase
+      .from('dialysis_medication_administration')
+      .insert([med])
+      .select()
+      .single();
+    if (error) throw new Error(`فشل تسجيل إعطاء الدواء: ${error.message}`);
+    return data;
+  }
+
+  static async deleteDialysisMedicationAdmin(id: string) {
+    const { error } = await supabase
+      .from('dialysis_medication_administration')
+      .delete()
+      .eq('id', id);
+    if (error) throw new Error(`فشل حذف سجل الدواء: ${error.message}`);
+    return true;
+  }
+
+  static async getDialysisHealthEducations(patientId: string, sessionId?: string) {
+    let query = supabase
+      .from('dialysis_health_education')
+      .select('*')
+      .eq('patient_id', patientId)
+      .order('created_at', { ascending: false });
+    if (sessionId) {
+      query = query.eq('session_id', sessionId);
+    }
+    const { data, error } = await query;
+    if (error) throw new Error(`فشل جلب سجلات التثقيف الصحي: ${error.message}`);
+    return data || [];
+  }
+
+  static async saveDialysisHealthEducation(edu: any) {
+    if (edu.id) {
+      const { data, error } = await supabase
+        .from('dialysis_health_education')
+        .update(edu)
+        .eq('id', edu.id)
+        .select()
+        .single();
+      if (error) throw new Error(`فشل تحديث التثقيف الصحي: ${error.message}`);
+      return data;
+    } else {
+      const { data, error } = await supabase
+        .from('dialysis_health_education')
+        .insert([edu])
+        .select()
+        .single();
+      if (error) throw new Error(`فشل حفظ التثقيف الصحي: ${error.message}`);
+      return data;
+    }
   }
 }

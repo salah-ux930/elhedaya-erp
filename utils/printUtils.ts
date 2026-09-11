@@ -375,6 +375,14 @@ export function printFamilyFileFull(
         <span class="info-label">الوحدة الصحية التابع لها</span>
         <span class="info-value" style="color:#0284c7;">${familyFile.health_unit || '---'}</span>
       </div>
+      <div class="info-card">
+        <span class="info-label">رقم المنزل (للطباعة الرسمية)</span>
+        <span class="info-value" style="font-family:monospace; font-weight:bold;">${familyFile.house_number || '............'}</span>
+      </div>
+      <div class="info-card">
+        <span class="info-label">رقم الأسرة (للطباعة الرسمية)</span>
+        <span class="info-value" style="font-family:monospace; font-weight:bold;">${familyFile.family_number || '............'}</span>
+      </div>
     </div>
 
     <div class="info-card" style="margin-top: 8px;">
@@ -555,7 +563,7 @@ export function printInvoiceDocument(invoice: any, patient?: any) {
 /**
  * دالة طباعة نموذج الزيارات والتردد (Visits Form)
  */
-export function printVisitsFormDocument(patient: any, visits: any[]) {
+export function printVisitsFormDocument(patient: any, visits: any[], familyFile?: any) {
   const rows = visits.length > 0 ? visits.map((v, i) => `
     <tr>
       <td style="text-align:center;">${i + 1}</td>
@@ -569,10 +577,32 @@ export function printVisitsFormDocument(patient: any, visits: any[]) {
   `).join('') : '<tr><td colspan="7" style="text-align:center; color:#64748b;">لا توجد زيارات مسجلة للمريض</td></tr>';
 
   const html = `
-    <div class="grid-3" style="margin-bottom:12px;">
-      <div class="info-card"><span class="info-label">اسم المريض</span><span class="info-value">${patient.name || '---'}</span></div>
-      <div class="info-card"><span class="info-label">الرقم القومي</span><span class="info-value" style="font-family:monospace;">${patient.national_id || '---'}</span></div>
-      <div class="info-card"><span class="info-label">إجمالي الزيارات</span><span class="info-value">${visits.length} زيارة</span></div>
+    <!-- شريط الترقيم الرسمي من 4 مستويات -->
+    <div style="border: 2px solid #0f172a; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; background-color: #ffffff;">
+      <div style="display: grid; grid-template-columns: repeat(4, 1fr); text-align: center; font-size: 11px; font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px; margin-bottom: 6px; gap: 8px;">
+        <div style="border-left: 1px solid #cbd5e1; padding-left: 4px;">
+          <span style="color: #64748b; font-size: 10px; display: block;">رقم الملف العائلي</span>
+          <span style="font-family: monospace; font-size: 13px; color: #0f172a;">${familyFile?.family_code || familyFile?.id || '............'}</span>
+        </div>
+        <div style="border-left: 1px solid #cbd5e1; padding-left: 4px;">
+          <span style="color: #64748b; font-size: 10px; display: block;">رقم المنزل</span>
+          <span style="font-family: monospace; font-size: 13px; color: #0f172a;">${familyFile?.house_number || '............'}</span>
+        </div>
+        <div style="border-left: 1px solid #cbd5e1; padding-left: 4px;">
+          <span style="color: #64748b; font-size: 10px; display: block;">رقم الأسرة</span>
+          <span style="font-family: monospace; font-size: 13px; color: #0f172a;">${familyFile?.family_number || '............'}</span>
+        </div>
+        <div>
+          <span style="color: #64748b; font-size: 10px; display: block;">رقم الفرد</span>
+          <span style="font-family: monospace; font-size: 13px; color: #0f172a;">${patient?.family_individual_number ?? (patient?.individual_number || '............')}</span>
+        </div>
+      </div>
+      <div style="display: grid; grid-template-columns: 2fr 2fr 1.5fr 1fr; font-size: 11px; font-weight: bold; gap: 8px;">
+        <div><span style="color: #64748b;">اسم المريض: </span>${patient?.name || '............'}</div>
+        <div><span style="color: #64748b;">الرقم القومي: </span><span style="font-family: monospace;">${patient?.national_id || '............'}</span></div>
+        <div><span style="color: #64748b;">تاريخ الميلاد: </span><span style="font-family: monospace;">${patient?.date_of_birth || '............'}</span></div>
+        <div><span style="color: #64748b;">النوع: </span>${patient?.gender === 'female' || patient?.gender === 'أنثى' ? 'أنثى' : (patient?.gender === 'male' || patient?.gender === 'ذكر' ? 'ذكر' : '............')}</div>
+      </div>
     </div>
 
     <div class="section-title">سجل التردد والزيارات الطبية المعتمد</div>
