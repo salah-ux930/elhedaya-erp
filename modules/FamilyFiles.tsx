@@ -152,6 +152,7 @@ const FamilyFilesModule: React.FC = () => {
   const [familyDetailTab, setFamilyDetailTab] = useState<
     "members" | "clinical" | "housing" | "social" | "deaths"
   >("members");
+  const [clinicalModelTab, setClinicalModelTab] = useState<string>("history");
   const [showComprehensiveModal, setShowComprehensiveModal] = useState(false);
   const [comprehensiveModalPatient, setComprehensiveModalPatient] =
     useState<any | null>(null);
@@ -172,6 +173,7 @@ const FamilyFilesModule: React.FC = () => {
       };
     setComprehensiveModalPatient(fullPatient);
     setComprehensiveInitialModule(initialModule);
+    setClinicalModelTab(initialModule);
     setShowComprehensiveModal(true);
   };
 
@@ -1961,8 +1963,65 @@ const FamilyFilesModule: React.FC = () => {
                 },
               ];
 
+              const currentMod =
+                accreditationModulesList.find((m) => m.id === clinicalModelTab) ||
+                accreditationModulesList[0];
+              const CurrentModIcon = currentMod.icon;
+
               return (
                 <div className="space-y-6">
+                  {/* شريط تبويبات النماذج السريرية الـ 10 */}
+                  <div className="bg-white p-3 rounded-3xl border border-gray-200 shadow-sm space-y-2.5">
+                    <div className="flex items-center justify-between px-1">
+                      <div className="flex items-center gap-2">
+                        <Layers size={18} className="text-purple-600" />
+                        <span className="text-xs sm:text-sm font-black text-gray-800">
+                          نماذج الملف الصحي السريري المعتمدة (10 نماذج مستقلة):
+                        </span>
+                      </div>
+                      <span className="text-[11px] font-bold text-gray-500">
+                        النموذج النشط:{" "}
+                        <strong className="text-purple-700 font-black">
+                          {currentMod.title}
+                        </strong>
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 overflow-x-auto pb-2 pt-1 scrollbar-thin">
+                      {accreditationModulesList.map((mod) => {
+                        const ModIcon = mod.icon;
+                        const isActive = clinicalModelTab === mod.id;
+                        return (
+                          <button
+                            key={mod.id}
+                            type="button"
+                            onClick={() => setClinicalModelTab(mod.id)}
+                            className={`px-3.5 py-2.5 rounded-2xl font-black text-xs flex items-center gap-2 whitespace-nowrap transition-all cursor-pointer shrink-0 border ${
+                              isActive
+                                ? `${mod.btnClass} border-transparent shadow-md scale-[1.02]`
+                                : "bg-gray-50/90 hover:bg-gray-100 text-gray-700 border-gray-200 hover:border-gray-300"
+                            }`}
+                          >
+                            <ModIcon
+                              size={16}
+                              className={isActive ? "text-white" : mod.textClass}
+                            />
+                            <span>{mod.title}</span>
+                            <span
+                              className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-black ${
+                                isActive
+                                  ? "bg-white/25 text-white"
+                                  : "bg-gray-200 text-gray-600"
+                              }`}
+                            >
+                              {mod.num}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
                   {/* شريط اختيار أفراد العائلة */}
                   <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-3">
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -2051,94 +2110,97 @@ const FamilyFilesModule: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* بطاقات الموديولات الـ 10 للفرد المحدد */}
+                  {/* بطاقة النموذج المعتمد للفرد المحدد */}
                   {activePatient ? (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                      {accreditationModulesList.map((mod) => {
-                        const IconComp = mod.icon;
-                        return (
+                    <div
+                      className={`p-6 rounded-3xl border ${currentMod.borderClass} bg-gradient-to-br ${currentMod.bgClass} bg-white shadow-sm space-y-4`}
+                    >
+                      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="flex items-start gap-3.5">
                           <div
-                            key={mod.id}
-                            className={`p-4 rounded-3xl border ${mod.borderClass} bg-gradient-to-b ${mod.bgClass} bg-white shadow-xs hover:shadow-md transition-all flex flex-col justify-between space-y-3 group`}
+                            className={`w-12 h-12 rounded-2xl ${currentMod.btnClass} flex items-center justify-center font-black shadow-md shrink-0`}
                           >
-                            <div className="space-y-2">
-                              <div className="flex items-center justify-between">
-                                <div
-                                  className={`w-9 h-9 rounded-2xl ${mod.btnClass} flex items-center justify-center font-black shadow-xs`}
-                                >
-                                  <IconComp size={18} />
-                                </div>
-                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600">
-                                  سجل صحي معتمد
-                                </span>
-                              </div>
-
-                              <div>
-                                <h5 className="font-black text-xs text-gray-900 leading-snug">
-                                  {mod.title}
-                                </h5>
-                                <span className="text-[10px] font-bold text-gray-400 block line-clamp-1 mt-0.5">
-                                  {mod.sub}
-                                </span>
-                              </div>
-
-                              <p className="text-[11px] text-gray-600 leading-relaxed line-clamp-2">
-                                {mod.desc}
-                              </p>
-                            </div>
-
-                            <div className="space-y-2 pt-2 border-t border-gray-100/70">
-                              <div className="flex items-center justify-between text-[10px]">
-                                <span
-                                  className={`px-2 py-0.5 rounded-md font-bold ${
-                                    mod.eligible
-                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-100"
-                                      : "bg-gray-100 text-gray-500 border border-gray-200"
-                                  }`}
-                                >
-                                  {mod.badge}
-                                </span>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setComprehensiveModalPatient(activePatient);
-                                  setComprehensiveInitialModule(mod.id);
-                                  setShowComprehensiveModal(true);
-                                }}
-                                className={`w-full py-2 px-3 ${mod.btnClass} rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition-all shadow-xs cursor-pointer`}
-                              >
-                                <Activity size={14} />
-                                <span>فتح وتوثيق السجل</span>
-                              </button>
-                            </div>
+                            <CurrentModIcon size={24} />
                           </div>
-                        );
-                      })}
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <h4 className="font-black text-base md:text-lg text-gray-900">
+                                {currentMod.title}
+                              </h4>
+                              <span
+                                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full ${
+                                  currentMod.eligible
+                                    ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                    : "bg-gray-100 text-gray-600 border border-gray-200"
+                                }`}
+                              >
+                                {currentMod.badge}
+                              </span>
+                              <span className="text-xs text-gray-400 font-mono font-bold">
+                                [{currentMod.sub}]
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-700 font-medium leading-relaxed max-w-3xl">
+                              {currentMod.desc}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setComprehensiveModalPatient(activePatient);
+                              setComprehensiveInitialModule(currentMod.id);
+                              setShowComprehensiveModal(true);
+                            }}
+                            className={`py-2.5 px-4 ${currentMod.btnClass} rounded-xl font-black text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer`}
+                          >
+                            <Activity size={16} />
+                            <span>فتح وتوثيق السجل في الملف الشامل</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuickBookingPatient(activePatient);
+                              setQuickBookingModule(currentMod.id as any);
+                              setQuickBookingReason(
+                                `متابعة وفحص (${currentMod.title}) بالملف العائلي`,
+                              );
+                            }}
+                            className="py-2.5 px-3.5 bg-white hover:bg-gray-50 text-gray-800 rounded-xl font-black text-xs flex items-center gap-2 transition-all border border-gray-300 shadow-xs cursor-pointer"
+                          >
+                            <CalendarCheck
+                              size={16}
+                              className="text-primary-600"
+                            />
+                            <span>حجز موعد عيادة سريعة</span>
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   ) : (
                     <div className="p-8 text-center bg-gray-50 rounded-3xl border border-gray-200">
                       <p className="text-sm font-bold text-gray-500">
-                        الرجاء اختيار فرد من الأسرة لعرض وتوثيق سجلاته
-                        الصحية.
+                        الرجاء اختيار فرد من الأسرة لعرض وتوثيق سجلاته الصحية
+                        في هذا النموذج.
                       </p>
                     </div>
                   )}
 
-                  {/* فاصل وسجلات أفراد الأسرة التفصيلية */}
-                  <div className="pt-4 border-t border-gray-200">
-                    <div className="flex items-center justify-between mb-4">
-                      <h4 className="font-black text-lg text-gray-800 flex items-center gap-2">
+                  {/* عنوان جدول وسجلات النموذج النشط */}
+                  <div className="pt-2 border-t border-gray-200/80">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-black text-base text-gray-800 flex items-center gap-2">
                         <FileSpreadsheet
-                          size={20}
+                          size={18}
                           className="text-purple-600"
                         />
-                        جداول نتائج الفحص التفصيلية لأفراد الأسرة (4 نماذج
-                        رئيسية)
+                        بيانات وجدول السجلات الطبية لنموذج ({currentMod.title})
                       </h4>
-                      <span className="text-xs text-gray-400 font-bold">
-                        تظهر كافة السجلات المدخلة لجميع أفراد الملف
+                      <span className="text-xs text-purple-700 font-bold bg-purple-50 px-2.5 py-1 rounded-lg border border-purple-100">
+                        النموذج المعروض: {currentMod.title}
                       </span>
                     </div>
                   </div>
@@ -2147,7 +2209,8 @@ const FamilyFilesModule: React.FC = () => {
             })()}
 
             {/* ---------------- 1. جدول موديول التاريخ المرضي والصحي ---------------- */}
-            <div className="bg-white border border-purple-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
+            {clinicalModelTab === "history" && (
+              <div className="bg-white border border-purple-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
               <div className="p-4 bg-gradient-to-r from-purple-50 via-white to-purple-50/30 border-b border-purple-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-purple-600 text-white flex items-center justify-center font-black shadow-md shadow-purple-200">
@@ -2321,9 +2384,11 @@ const FamilyFilesModule: React.FC = () => {
                 </table>
               </div>
             </div>
+            )}
 
             {/* ---------------- 2. جدول موديول ملخص الأحداث الطبية الهامة ---------------- */}
-            <div className="bg-white border border-amber-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
+            {clinicalModelTab === "significant" && (
+              <div className="bg-white border border-amber-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
               <div className="p-4 bg-gradient-to-r from-amber-50 via-white to-amber-50/30 border-b border-amber-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center font-black shadow-md shadow-amber-200">
@@ -2501,9 +2566,11 @@ const FamilyFilesModule: React.FC = () => {
                 </table>
               </div>
             </div>
+            )}
 
             {/* ---------------- 3. جدول موديول الفحص السريري الإكلينيكي ---------------- */}
-            <div className="bg-white border border-indigo-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
+            {clinicalModelTab === "clinical" && (
+              <div className="bg-white border border-indigo-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
               <div className="p-4 bg-gradient-to-r from-indigo-50 via-white to-indigo-50/30 border-b border-indigo-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black shadow-md shadow-indigo-200">
@@ -2725,9 +2792,11 @@ const FamilyFilesModule: React.FC = () => {
                 </table>
               </div>
             </div>
+            )}
 
-            {/* ---------------- سجل الزيارات والتردد (Visits Form) ---------------- */}
-            <div className="bg-white border border-teal-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
+            {/* ---------------- 4. سجل الزيارات والتردد (Visits Form) ---------------- */}
+            {clinicalModelTab === "visits" && (
+              <div className="bg-white border border-teal-100 rounded-3xl overflow-hidden shadow-sm space-y-3">
               <div className="p-4 bg-gradient-to-r from-teal-50 via-white to-teal-50/30 border-b border-teal-100 flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-teal-600 text-white flex items-center justify-center font-black shadow-md shadow-teal-200">
@@ -2890,6 +2959,861 @@ const FamilyFilesModule: React.FC = () => {
                 </table>
               </div>
             </div>
+            )}
+
+            {/* ---------------- 5. سجل صحة ورعاية الطفل والتطعيمات ---------------- */}
+            {clinicalModelTab === "child" && (
+              <div className="bg-white border border-cyan-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+                <div className="p-4 bg-gradient-to-r from-cyan-50 via-white to-cyan-50/30 border-b border-cyan-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-cyan-600 text-white flex items-center justify-center font-black shadow-md shadow-cyan-200">
+                      <Baby size={18} />
+                    </div>
+                    <div>
+                      <h5 className="font-black text-base text-cyan-950">
+                        سجل صحة ورعاية الطفل والتطعيمات ومتابعة النمو
+                      </h5>
+                      <span className="text-[11px] font-bold text-cyan-700">
+                        Child Health, Immunization & Developmental Milestones (موديول معتمد)
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black bg-cyan-100 text-cyan-800 px-3 py-1 rounded-full border border-cyan-200">
+                    النموذج 5 - صحة الطفل
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse min-w-[950px]">
+                    <thead>
+                      <tr className="bg-cyan-50/50 text-cyan-950 font-black text-xs border-b border-cyan-100">
+                        <th className="p-3.5">الطفل / فرد الأسرة</th>
+                        <th className="p-3.5">العمر والصلة</th>
+                        <th className="p-3.5">مؤشرات النمو (الوزن / الطول / محيط الرأس)</th>
+                        <th className="p-3.5">حالة التطعيمات الإلزامية</th>
+                        <th className="p-3.5">التطور النمائي والحركي</th>
+                        <th className="p-3.5">مستوى الأهلية للمتابعة</th>
+                        <th className="p-3.5 text-center">إجراءات الموديول</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-xs">
+                      {(() => {
+                        const members = selectedFamilyFile.members || [];
+                        return members.map((m: any, idx: number) => {
+                          const mPatient =
+                            patients.find((p) => p.id === m.patient_id) ||
+                            m.patients;
+                          const mAge = mPatient
+                            ? calculateAge(mPatient.date_of_birth)
+                            : null;
+                          const isEligibleChild = mAge !== null && mAge < 18;
+                          const isInfant = mAge !== null && mAge < 2;
+                          const exam = physicalExams.find(
+                            (pe) => pe.patient_id === m.patient_id,
+                          );
+
+                          return (
+                            <tr
+                              key={m.id || idx}
+                              className={`hover:bg-cyan-50/30 transition-colors ${
+                                isEligibleChild ? "bg-cyan-50/10" : "opacity-75"
+                              }`}
+                            >
+                              <td className="p-3.5 font-black text-gray-900">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-lg bg-cyan-100 text-cyan-800 flex items-center justify-center text-[10px] font-mono font-black">
+                                    {m.family_individual_number ?? idx + 1}
+                                  </span>
+                                  <span>{mPatient?.name || "مريض بدون اسم"}</span>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                <div className="space-y-0.5">
+                                  <span className="font-bold text-gray-700 block">
+                                    {mAge !== null ? `${mAge} سنة` : "غير محدد"}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    {m.relationship_to_head || "فرد"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                {exam?.vital_signs?.weight || exam?.vital_signs?.height ? (
+                                  <div className="space-y-0.5 text-[11px]">
+                                    <span className="font-black text-cyan-800 block">
+                                      وزن: {exam.vital_signs.weight || "--"} كجم | طول: {exam.vital_signs.height || "--"} سم
+                                    </span>
+                                    <span className="text-[10px] text-gray-500">
+                                      {exam.date ? `بتاريخ: ${exam.date}` : "فحص حديث"}
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-400 italic text-[11px]">
+                                    لم تسجل قياسات بعد
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3.5">
+                                <span
+                                  className={`px-2.5 py-1 rounded-md font-black text-[10px] inline-flex items-center gap-1 ${
+                                    isEligibleChild
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      : "bg-gray-100 text-gray-500 border border-gray-200"
+                                  }`}
+                                >
+                                  <CheckCircle2 size={12} />
+                                  {isInfant
+                                    ? "جدول التطعيمات الدورية نشط"
+                                    : isEligibleChild
+                                    ? "تطعيمات الطفولة مسجلة"
+                                    : "فوق السن المستهدف"}
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-[11px] text-gray-600">
+                                {isInfant ? (
+                                  <span className="font-bold text-cyan-800">
+                                    متابعة الرضاعة والنمو الحركي والذهني
+                                  </span>
+                                ) : isEligibleChild ? (
+                                  <span>فحص نمو عام وفحص الأسنان المدرسي</span>
+                                ) : (
+                                  <span className="text-gray-400">---</span>
+                                )}
+                              </td>
+                              <td className="p-3.5">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                    isEligibleChild
+                                      ? "bg-cyan-100 text-cyan-900 border border-cyan-200"
+                                      : "bg-gray-100 text-gray-400"
+                                  }`}
+                                >
+                                  {isEligibleChild ? "مستهدف بالنموذج" : "فرد بالغ"}
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openComprehensiveForMember(mPatient, "child")
+                                    }
+                                    className="px-2.5 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Baby size={13} />
+                                    <span>توثيق صحة الطفل</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setQuickBookingPatient(mPatient);
+                                      setQuickBookingModule("child");
+                                      setQuickBookingReason("متابعة صحة الطفل والتطعيمات بالملف العائلي");
+                                    }}
+                                    className="px-2 py-1 bg-white hover:bg-cyan-50 text-cyan-800 rounded-lg font-bold text-[11px] border border-cyan-200 transition-all cursor-pointer"
+                                  >
+                                    موعد تطعيم
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ---------------- 6. سجل رعاية الأمومة ومتابعة الحمل والنفاس ---------------- */}
+            {clinicalModelTab === "maternal" && (
+              <div className="bg-white border border-rose-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+                <div className="p-4 bg-gradient-to-r from-rose-50 via-white to-rose-50/30 border-b border-rose-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-rose-600 text-white flex items-center justify-center font-black shadow-md shadow-rose-200">
+                      <Heart size={18} />
+                    </div>
+                    <div>
+                      <h5 className="font-black text-base text-rose-950">
+                        سجل رعاية الأمومة ومتابعة الحمل والولادة والنفاس
+                      </h5>
+                      <span className="text-[11px] font-bold text-rose-700">
+                        Antenatal, Perinatal & Postnatal Care Module (موديول معتمد)
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black bg-rose-100 text-rose-800 px-3 py-1 rounded-full border border-rose-200">
+                    النموذج 6 - رعاية الأمومة
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse min-w-[950px]">
+                    <thead>
+                      <tr className="bg-rose-50/50 text-rose-950 font-black text-xs border-b border-rose-100">
+                        <th className="p-3.5">السيدة / فرد الأسرة</th>
+                        <th className="p-3.5">العمر والصلة</th>
+                        <th className="p-3.5">التاريخ الولادي (G/P/A)</th>
+                        <th className="p-3.5">متابعة الحمل والضغط</th>
+                        <th className="p-3.5">فحص ما بعد الولادة (النفاس)</th>
+                        <th className="p-3.5">الأهلية والمطابقة</th>
+                        <th className="p-3.5 text-center">إجراءات الموديول</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-xs">
+                      {(() => {
+                        const members = selectedFamilyFile.members || [];
+                        return members.map((m: any, idx: number) => {
+                          const mPatient =
+                            patients.find((p) => p.id === m.patient_id) ||
+                            m.patients;
+                          const mAge = mPatient
+                            ? calculateAge(mPatient.date_of_birth)
+                            : null;
+                          const mGender = mPatient?.gender || "";
+                          const isFemale = mGender === "أنثى" || mGender === "female";
+                          const isEligibleFemale = isFemale && (mAge === null || (mAge >= 15 && mAge <= 49));
+                          const exam = physicalExams.find(
+                            (pe) => pe.patient_id === m.patient_id,
+                          );
+
+                          return (
+                            <tr
+                              key={m.id || idx}
+                              className={`hover:bg-rose-50/30 transition-colors ${
+                                isEligibleFemale ? "bg-rose-50/10" : "opacity-70"
+                              }`}
+                            >
+                              <td className="p-3.5 font-black text-gray-900">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-lg bg-rose-100 text-rose-800 flex items-center justify-center text-[10px] font-mono font-black">
+                                    {m.family_individual_number ?? idx + 1}
+                                  </span>
+                                  <span>{mPatient?.name || "مريضة بدون اسم"}</span>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                <div className="space-y-0.5">
+                                  <span className="font-bold text-gray-700 block">
+                                    {mAge !== null ? `${mAge} سنة` : "غير محدد"}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    {m.relationship_to_head || "فرد"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                {isFemale ? (
+                                  <span className="font-mono font-black text-rose-900 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-[11px]">
+                                    سجل ولادي دوري
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">غير منطبق (ذكر)</span>
+                                )}
+                              </td>
+                              <td className="p-3.5">
+                                {exam?.vital_signs?.bp_systolic ? (
+                                  <div className="text-[11px] space-y-0.5">
+                                    <span className="font-black text-rose-900">
+                                      ضغط: {exam.vital_signs.bp_systolic}/{exam.vital_signs.bp_diastolic} mmHg
+                                    </span>
+                                    <span className="text-[10px] text-gray-500 block">
+                                      مؤشر أمان تسمم الحمل
+                                    </span>
+                                  </div>
+                                ) : isFemale ? (
+                                  <span className="text-gray-400 italic text-[11px]">
+                                    لم يسجل فحص ضغط حديث
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">---</span>
+                                )}
+                              </td>
+                              <td className="p-3.5 text-[11px] text-gray-600">
+                                {isFemale ? (
+                                  <span>فحص دوري، الحديد وحمض الفوليك وفيتامينات الأمومة</span>
+                                ) : (
+                                  <span className="text-gray-400">---</span>
+                                )}
+                              </td>
+                              <td className="p-3.5">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                    isEligibleFemale
+                                      ? "bg-rose-100 text-rose-900 border border-rose-200"
+                                      : "bg-gray-100 text-gray-400"
+                                  }`}
+                                >
+                                  {isEligibleFemale ? "سيدة في سن الإنجاب" : isFemale ? "أنثى" : "غير مستهدف"}
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openComprehensiveForMember(mPatient, "maternal")
+                                    }
+                                    className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Heart size={13} />
+                                    <span>توثيق رعاية الأمومة</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setQuickBookingPatient(mPatient);
+                                      setQuickBookingModule("maternal");
+                                      setQuickBookingReason("متابعة رعاية الأمومة والحمل بالملف العائلي");
+                                    }}
+                                    className="px-2 py-1 bg-white hover:bg-rose-50 text-rose-800 rounded-lg font-bold text-[11px] border border-rose-200 transition-all cursor-pointer"
+                                  >
+                                    حجز متابعة
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ---------------- 7. سجل تنظيم الأسرة والصحة الإنجابية ---------------- */}
+            {clinicalModelTab === "family_planning" && (
+              <div className="bg-white border border-fuchsia-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+                <div className="p-4 bg-gradient-to-r from-fuchsia-50 via-white to-fuchsia-50/30 border-b border-fuchsia-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-fuchsia-600 text-white flex items-center justify-center font-black shadow-md shadow-fuchsia-200">
+                      <Sparkles size={18} />
+                    </div>
+                    <div>
+                      <h5 className="font-black text-base text-fuchsia-950">
+                        سجل تنظيم الأسرة ومباعدة الولادات والصحة الإنجابية
+                      </h5>
+                      <span className="text-[11px] font-bold text-fuchsia-700">
+                        Family Planning & Reproductive Health Module (موديول معتمد)
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black bg-fuchsia-100 text-fuchsia-800 px-3 py-1 rounded-full border border-fuchsia-200">
+                    النموذج 7 - تنظيم الأسرة
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse min-w-[950px]">
+                    <thead>
+                      <tr className="bg-fuchsia-50/50 text-fuchsia-950 font-black text-xs border-b border-fuchsia-100">
+                        <th className="p-3.5">المنتفعة / فرد الأسرة</th>
+                        <th className="p-3.5">العمر والصلة</th>
+                        <th className="p-3.5">الوسيلة المستخدمة حالياً</th>
+                        <th className="p-3.5">تاريخ بدء / متابعة الوسيلة</th>
+                        <th className="p-3.5">المشورة والتوعية الإنجابية</th>
+                        <th className="p-3.5">الأهلية المستهدفة</th>
+                        <th className="p-3.5 text-center">إجراءات الموديول</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-xs">
+                      {(() => {
+                        const members = selectedFamilyFile.members || [];
+                        return members.map((m: any, idx: number) => {
+                          const mPatient =
+                            patients.find((p) => p.id === m.patient_id) ||
+                            m.patients;
+                          const mAge = mPatient
+                            ? calculateAge(mPatient.date_of_birth)
+                            : null;
+                          const mGender = mPatient?.gender || "";
+                          const isFemale = mGender === "أنثى" || mGender === "female";
+                          const isReproductiveAge = isFemale && (mAge === null || (mAge >= 15 && mAge <= 49));
+
+                          return (
+                            <tr
+                              key={m.id || idx}
+                              className={`hover:bg-fuchsia-50/30 transition-colors ${
+                                isReproductiveAge ? "bg-fuchsia-50/10" : "opacity-70"
+                              }`}
+                            >
+                              <td className="p-3.5 font-black text-gray-900">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-lg bg-fuchsia-100 text-fuchsia-800 flex items-center justify-center text-[10px] font-mono font-black">
+                                    {m.family_individual_number ?? idx + 1}
+                                  </span>
+                                  <span>{mPatient?.name || "مريضة بدون اسم"}</span>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                <div className="space-y-0.5">
+                                  <span className="font-bold text-gray-700 block">
+                                    {mAge !== null ? `${mAge} سنة` : "غير محدد"}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    {m.relationship_to_head || "فرد"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                {isFemale ? (
+                                  <span className="px-2 py-1 rounded-md bg-fuchsia-50 text-fuchsia-800 border border-fuchsia-200 font-bold text-[11px] inline-block">
+                                    استشارة ومتابعة وسائل تنظيم الأسرة
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400">غير منطبق</span>
+                                )}
+                              </td>
+                              <td className="p-3.5 text-[11px] text-gray-600">
+                                {isFemale ? (
+                                  <span>مجدول بالمتابعة الدورية للعيادة</span>
+                                ) : (
+                                  <span className="text-gray-400">---</span>
+                                )}
+                              </td>
+                              <td className="p-3.5 text-[11px] text-gray-600">
+                                {isFemale ? (
+                                  <span>مشورة مباعدة الولادات والرضاعة الطبيعية</span>
+                                ) : (
+                                  <span className="text-gray-400">---</span>
+                                )}
+                              </td>
+                              <td className="p-3.5">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                    isReproductiveAge
+                                      ? "bg-fuchsia-100 text-fuchsia-900 border border-fuchsia-200"
+                                      : "bg-gray-100 text-gray-400"
+                                  }`}
+                                >
+                                  {isReproductiveAge ? "مستهدفة بتنظيم الأسرة" : "غير مستهدف"}
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openComprehensiveForMember(mPatient, "family_planning")
+                                    }
+                                    className="px-2.5 py-1.5 bg-fuchsia-600 hover:bg-fuchsia-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Sparkles size={13} />
+                                    <span>توثيق تنظيم الأسرة</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setQuickBookingPatient(mPatient);
+                                      setQuickBookingModule("family_planning");
+                                      setQuickBookingReason("استشارة ومتابعة تنظيم الأسرة بالملف العائلي");
+                                    }}
+                                    className="px-2 py-1 bg-white hover:bg-fuchsia-50 text-fuchsia-800 rounded-lg font-bold text-[11px] border border-fuchsia-200 transition-all cursor-pointer"
+                                  >
+                                    حجز استشارة
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ---------------- 8. سجل الفحص الطبي الشامل للمقبلين على الزواج ---------------- */}
+            {clinicalModelTab === "premarital" && (
+              <div className="bg-white border border-emerald-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+                <div className="p-4 bg-gradient-to-r from-emerald-50 via-white to-emerald-50/30 border-b border-emerald-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-black shadow-md shadow-emerald-200">
+                      <UserCheck size={18} />
+                    </div>
+                    <div>
+                      <h5 className="font-black text-base text-emerald-950">
+                        سجل الفحص الطبي الشامل للمقبلين على الزواج والمشورة الوراثية
+                      </h5>
+                      <span className="text-[11px] font-bold text-emerald-700">
+                        Premarital Screening & Genetic Counseling Module (موديول معتمد)
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black bg-emerald-100 text-emerald-800 px-3 py-1 rounded-full border border-emerald-200">
+                    النموذج 8 - فحص المقبلين على الزواج
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse min-w-[950px]">
+                    <thead>
+                      <tr className="bg-emerald-50/50 text-emerald-950 font-black text-xs border-b border-emerald-100">
+                        <th className="p-3.5">فرد الأسرة المفحوص</th>
+                        <th className="p-3.5">العمر والصلة</th>
+                        <th className="p-3.5">أمراض الدم الوراثية (الثلاسيميا / المنجلية)</th>
+                        <th className="p-3.5">الفحوصات الفيروسية (HBV/HCV/HIV)</th>
+                        <th className="p-3.5">فصيلة الدم وعامل ريسس (Rh)</th>
+                        <th className="p-3.5">حالة الشهادة الطبية</th>
+                        <th className="p-3.5 text-center">إجراءات الموديول</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-xs">
+                      {(() => {
+                        const members = selectedFamilyFile.members || [];
+                        return members.map((m: any, idx: number) => {
+                          const mPatient =
+                            patients.find((p) => p.id === m.patient_id) ||
+                            m.patients;
+                          const mAge = mPatient
+                            ? calculateAge(mPatient.date_of_birth)
+                            : null;
+                          const isAdult = mAge === null || mAge >= 18;
+
+                          return (
+                            <tr
+                              key={m.id || idx}
+                              className={`hover:bg-emerald-50/30 transition-colors ${
+                                isAdult ? "bg-emerald-50/10" : "opacity-70"
+                              }`}
+                            >
+                              <td className="p-3.5 font-black text-gray-900">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center text-[10px] font-mono font-black">
+                                    {m.family_individual_number ?? idx + 1}
+                                  </span>
+                                  <span>{mPatient?.name || "مريض بدون اسم"}</span>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                <div className="space-y-0.5">
+                                  <span className="font-bold text-gray-700 block">
+                                    {mAge !== null ? `${mAge} سنة` : "غير محدد"}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    {m.relationship_to_head || "فرد"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-3.5 text-[11px]">
+                                <span className="text-gray-700 font-medium">
+                                  فحص الهيموجلوبين واستبعاد أنيميا البحر المتوسط
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-[11px]">
+                                <span className="px-2 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-bold">
+                                  مسح الفيروسات الكبدية والمناعية
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-[11px] font-mono font-bold text-emerald-900">
+                                {mPatient?.blood_group || "غير محدد"}
+                              </td>
+                              <td className="p-3.5">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                    isAdult
+                                      ? "bg-emerald-100 text-emerald-900 border border-emerald-200"
+                                      : "bg-gray-100 text-gray-400"
+                                  }`}
+                                >
+                                  {isAdult ? "مؤهل للفحص الطبي" : "أقل من سن الزواج"}
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openComprehensiveForMember(mPatient, "premarital")
+                                    }
+                                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <UserCheck size={13} />
+                                    <span>توثيق فحص الزواج</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setQuickBookingPatient(mPatient);
+                                      setQuickBookingModule("premarital");
+                                      setQuickBookingReason("فحص المقبلين على الزواج بالملف العائلي");
+                                    }}
+                                    className="px-2 py-1 bg-white hover:bg-emerald-50 text-emerald-800 rounded-lg font-bold text-[11px] border border-emerald-200 transition-all cursor-pointer"
+                                  >
+                                    حجز فحص
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ---------------- 9. سجل الرعاية الشاملة لكبار السن ---------------- */}
+            {clinicalModelTab === "geriatric" && (
+              <div className="bg-white border border-amber-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+                <div className="p-4 bg-gradient-to-r from-amber-50 via-white to-amber-50/30 border-b border-amber-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-amber-600 text-white flex items-center justify-center font-black shadow-md shadow-amber-200">
+                      <ShieldAlert size={18} />
+                    </div>
+                    <div>
+                      <h5 className="font-black text-base text-amber-950">
+                        سجل الرعاية الشاملة لكبار السن والتقييم الوظيفي والإدراكي
+                      </h5>
+                      <span className="text-[11px] font-bold text-amber-700">
+                        Comprehensive Geriatric Assessment & Fall Risk Module (موديول معتمد)
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black bg-amber-100 text-amber-800 px-3 py-1 rounded-full border border-amber-200">
+                    النموذج 9 - كبار السن
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse min-w-[950px]">
+                    <thead>
+                      <tr className="bg-amber-50/50 text-amber-950 font-black text-xs border-b border-amber-100">
+                        <th className="p-3.5">المسن / فرد الأسرة</th>
+                        <th className="p-3.5">العمر والصلة</th>
+                        <th className="p-3.5">التقييم الوظيفي ومخاطر السقوط</th>
+                        <th className="p-3.5">التقييم الإدراكي والذاكرة</th>
+                        <th className="p-3.5">الأمراض المزمنة وتعدد الأدوية</th>
+                        <th className="p-3.5">الأهلية والمطابقة</th>
+                        <th className="p-3.5 text-center">إجراءات الموديول</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-xs">
+                      {(() => {
+                        const members = selectedFamilyFile.members || [];
+                        return members.map((m: any, idx: number) => {
+                          const mPatient =
+                            patients.find((p) => p.id === m.patient_id) ||
+                            m.patients;
+                          const mAge = mPatient
+                            ? calculateAge(mPatient.date_of_birth)
+                            : null;
+                          const isElderly = mAge !== null && mAge >= 60;
+                          const exam = physicalExams.find(
+                            (pe) => pe.patient_id === m.patient_id,
+                          );
+
+                          return (
+                            <tr
+                              key={m.id || idx}
+                              className={`hover:bg-amber-50/30 transition-colors ${
+                                isElderly ? "bg-amber-50/10" : "opacity-70"
+                              }`}
+                            >
+                              <td className="p-3.5 font-black text-gray-900">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center text-[10px] font-mono font-black">
+                                    {m.family_individual_number ?? idx + 1}
+                                  </span>
+                                  <span>{mPatient?.name || "مريض بدون اسم"}</span>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                <div className="space-y-0.5">
+                                  <span className="font-bold text-gray-700 block">
+                                    {mAge !== null ? `${mAge} سنة` : "غير محدد"}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    {m.relationship_to_head || "فرد"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-3.5 text-[11px]">
+                                <span className="font-bold text-amber-900">
+                                  تقييم الحركة والتوازن والقدرة على الاعتماد على الذات
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-[11px] text-gray-600">
+                                <span>فحص الذاكرة ومقياس الاكتئاب لكبار السن (GDS)</span>
+                              </td>
+                              <td className="p-3.5 text-[11px]">
+                                {exam?.vital_signs?.bp_systolic ? (
+                                  <span className="font-mono text-gray-800 font-bold">
+                                    ضغط: {exam.vital_signs.bp_systolic}/{exam.vital_signs.bp_diastolic} | سكر: {exam.vital_signs.random_blood_sugar || "--"}
+                                  </span>
+                                ) : (
+                                  <span className="text-gray-400 italic">متابعة الأمراض المزمنة</span>
+                                )}
+                              </td>
+                              <td className="p-3.5">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                    isElderly
+                                      ? "bg-amber-100 text-amber-900 border border-amber-200"
+                                      : "bg-gray-100 text-gray-400"
+                                  }`}
+                                >
+                                  {isElderly ? "مستهدف (≥ 60 سنة)" : "أقل من 60 سنة"}
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openComprehensiveForMember(mPatient, "geriatric")
+                                    }
+                                    className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <ShieldAlert size={13} />
+                                    <span>توثيق رعاية المسن</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setQuickBookingPatient(mPatient);
+                                      setQuickBookingModule("geriatric");
+                                      setQuickBookingReason("تقييم رعاية كبار السن بالملف العائلي");
+                                    }}
+                                    className="px-2 py-1 bg-white hover:bg-amber-50 text-amber-800 rounded-lg font-bold text-[11px] border border-amber-200 transition-all cursor-pointer"
+                                  >
+                                    حجز تقييم
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ---------------- 10. سجل طب وجراحة الفم والأسنان ---------------- */}
+            {clinicalModelTab === "dental" && (
+              <div className="bg-white border border-blue-100 rounded-3xl overflow-hidden shadow-sm space-y-3 animate-in fade-in duration-200">
+                <div className="p-4 bg-gradient-to-r from-blue-50 via-white to-blue-50/30 border-b border-blue-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shadow-md shadow-blue-200">
+                      <Smile size={18} />
+                    </div>
+                    <div>
+                      <h5 className="font-black text-base text-blue-950">
+                        سجل طب وجراحة الفم والأسنان وصحة اللثة
+                      </h5>
+                      <span className="text-[11px] font-bold text-blue-700">
+                        Dental & Oral Health Examination Module (موديول معتمد)
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-xs font-black bg-blue-100 text-blue-800 px-3 py-1 rounded-full border border-blue-200">
+                    النموذج 10 - طب الأسنان
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-right border-collapse min-w-[950px]">
+                    <thead>
+                      <tr className="bg-blue-50/50 text-blue-950 font-black text-xs border-b border-blue-100">
+                        <th className="p-3.5">فرد الأسرة المفحوص</th>
+                        <th className="p-3.5">العمر والصلة</th>
+                        <th className="p-3.5">مؤشر التسوس (DMFT / dft)</th>
+                        <th className="p-3.5">صحة اللثة والجير (Gingival Index)</th>
+                        <th className="p-3.5">الخطة العلاجية والوقائية</th>
+                        <th className="p-3.5">الأهلية</th>
+                        <th className="p-3.5 text-center">إجراءات الموديول</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 text-xs">
+                      {(() => {
+                        const members = selectedFamilyFile.members || [];
+                        return members.map((m: any, idx: number) => {
+                          const mPatient =
+                            patients.find((p) => p.id === m.patient_id) ||
+                            m.patients;
+                          const mAge = mPatient
+                            ? calculateAge(mPatient.date_of_birth)
+                            : null;
+
+                          return (
+                            <tr
+                              key={m.id || idx}
+                              className="hover:bg-blue-50/30 transition-colors bg-blue-50/5"
+                            >
+                              <td className="p-3.5 font-black text-gray-900">
+                                <div className="flex items-center gap-2">
+                                  <span className="w-6 h-6 rounded-lg bg-blue-100 text-blue-800 flex items-center justify-center text-[10px] font-mono font-black">
+                                    {m.family_individual_number ?? idx + 1}
+                                  </span>
+                                  <span>{mPatient?.name || "مريض بدون اسم"}</span>
+                                </div>
+                              </td>
+                              <td className="p-3.5">
+                                <div className="space-y-0.5">
+                                  <span className="font-bold text-gray-700 block">
+                                    {mAge !== null ? `${mAge} سنة` : "غير محدد"}
+                                  </span>
+                                  <span className="text-[10px] text-gray-400">
+                                    {m.relationship_to_head || "فرد"}
+                                  </span>
+                                </div>
+                              </td>
+                              <td className="p-3.5 text-[11px]">
+                                <span className="font-mono font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                                  فحص نخر وتسوس الأسنان الدوري
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-[11px] text-gray-600">
+                                <span>تقييم التهابات اللثة والتكلسات الجيرية</span>
+                              </td>
+                              <td className="p-3.5 text-[11px] text-gray-700">
+                                <span>علاج تحفظي، حشو، تنظيف وقائي، وتوعية بصحة الفم</span>
+                              </td>
+                              <td className="p-3.5">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-200">
+                                  متاح لجميع أفراد الأسرة
+                                </span>
+                              </td>
+                              <td className="p-3.5 text-center">
+                                <div className="flex items-center justify-center gap-1.5 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      openComprehensiveForMember(mPatient, "dental")
+                                    }
+                                    className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                  >
+                                    <Smile size={13} />
+                                    <span>توثيق فحص الأسنان</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setQuickBookingPatient(mPatient);
+                                      setQuickBookingModule("dental");
+                                      setQuickBookingReason("كشف عيادة طب الفم والأسنان بالملف العائلي");
+                                    }}
+                                    className="px-2 py-1 bg-white hover:bg-blue-50 text-blue-800 rounded-lg font-bold text-[11px] border border-blue-200 transition-all cursor-pointer"
+                                  >
+                                    حجز كشف أسنان
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
