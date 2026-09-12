@@ -23,6 +23,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [prefillData, setPrefillData] = useState<{ name?: string; phone?: string; national_id?: string }>({});
 
   // Comprehensive Health Record Modal States
   const [showComprehensiveModal, setShowComprehensiveModal] = useState(false);
@@ -123,6 +124,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
       setFamilyRole('');
       setFamilyNotes('');
       setIsFamilyHead(false);
+      setPrefillData({});
 
       setView('list');
       loadData();
@@ -133,6 +135,32 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
     }
   };
 
+  const handleStartAddPatient = (term?: string) => {
+    if (term && term.trim()) {
+      const s = term.trim();
+      if (/^\d{14}$/.test(s)) {
+        setPrefillData({ national_id: s });
+      } else if (/^01\d{9}$/.test(s)) {
+        setPrefillData({ phone: s });
+      } else {
+        setPrefillData({ name: s });
+      }
+    } else {
+      setPrefillData({});
+    }
+    setView('add');
+  };
+
+  const filteredPatients = patients.filter(p => {
+    if (!searchTerm.trim()) return true;
+    const q = searchTerm.toLowerCase().trim();
+    const name = (p.name || '').toLowerCase();
+    const phone = (p.phone || '').toLowerCase();
+    const nationalId = (p.national_id || '').toLowerCase();
+    const code = ((p as any).code || '').toLowerCase();
+    return name.includes(q) || phone.includes(q) || nationalId.includes(q) || code.includes(q);
+  });
+
   return (
     <div className="space-y-6">
       {view === 'list' ? (
@@ -141,13 +169,24 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
             <div className="relative w-full md:w-96">
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input 
-                type="text" placeholder="بحث..." 
-                className="w-full pr-10 pl-4 py-3 border rounded-xl shadow-sm outline-none focus:ring-2 focus:ring-primary-500"
-                value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
+                type="text" 
+                placeholder="بحث بالاسم، الرقم القومي، أو الهاتف..." 
+                className="w-full pr-10 pl-10 py-3 border border-gray-200 rounded-2xl shadow-sm outline-none focus:ring-2 focus:ring-primary-500 bg-white text-sm"
+                value={searchTerm} 
+                onChange={e => setSearchTerm(e.target.value)}
               />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100"
+                  title="مسح البحث"
+                >
+                  <X size={16} />
+                </button>
+              )}
             </div>
-            <button onClick={() => setView('add')} className="bg-primary-600 text-white px-8 py-3 rounded-xl font-black shadow-lg flex items-center gap-2">
-              <UserPlus size={20} /> إضافة مريض
+            <button onClick={() => handleStartAddPatient()} className="bg-primary-600 hover:bg-primary-700 text-white px-8 py-3.5 rounded-2xl font-black shadow-lg shadow-primary-600/20 flex items-center gap-2 transition-all">
+              <UserPlus size={20} /> إضافة مريض جديد
             </button>
           </div>
 
@@ -166,7 +205,8 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
                   </tr>
                 </thead>
                 <tbody className="divide-y">
-                  {patients.filter(p => p.name.includes(searchTerm) || (p.national_id && p.national_id.includes(searchTerm))).map(p => {
+                  {filteredPatients.length > 0 ? (
+                    filteredPatients.map(p => {
                     const linkedFile = familyFiles.find(ff => 
                       ff.members?.some((m: any) => m.patient_id === p.id || m.patients?.id === p.id)
                     );
@@ -265,7 +305,45 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
                         </td>
                       </tr>
                     );
-                  })}
+                  })
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="py-20 px-6 text-center">
+                      <div className="max-w-md mx-auto space-y-4 animate-in fade-in zoom-in-95 duration-300">
+                        <div className="w-16 h-16 rounded-3xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto shadow-sm">
+                          <UserPlus size={32} />
+                        </div>
+                        <div>
+                          <h4 className="font-black text-slate-800 text-lg">
+                            {searchTerm.trim() ? `لم يتم العثور على أي مريض يطابق "${searchTerm.trim()}"` : 'لا توجد سجلات مرضى مسجلة حتى الآن'}
+                          </h4>
+                          <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">
+                            {searchTerm.trim()
+                              ? 'المريض غير مسجل في قاعدة البيانات. يمكنك إضافته وتجهيز سجله الطبي الآن بضغطة واحدة.'
+                              : 'ابدأ بتسجيل أول مريض لإدارة السجلات الطبية والملفات العائلية وجلسات الغسيل.'}
+                          </p>
+                        </div>
+                        <div className="flex items-center justify-center gap-3 pt-2">
+                          {searchTerm.trim() && (
+                            <button
+                              onClick={() => setSearchTerm('')}
+                              className="px-5 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-2xl font-bold text-xs transition-all"
+                            >
+                              مسح البحث
+                            </button>
+                          )}
+                          <button
+                            onClick={() => handleStartAddPatient(searchTerm)}
+                            className="inline-flex items-center justify-center gap-2 px-7 py-3.5 bg-primary-600 hover:bg-primary-700 text-white rounded-2xl font-black text-xs shadow-lg shadow-primary-600/25 transition-all transform hover:-translate-y-0.5 cursor-pointer"
+                          >
+                            <UserPlus size={18} />
+                            <span>{searchTerm.trim() ? `إضافة "${searchTerm.trim()}" كـ مريض جديد` : 'إضافة مريض جديد'}</span>
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                )}
                 </tbody>
               </table>
             )}
@@ -275,13 +353,13 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
         <div className="bg-white rounded-[3rem] p-10 shadow-xl max-w-4xl mx-auto">
           <div className="flex justify-between items-center mb-10">
             <h3 className="text-2xl font-black">تسجيل مريض جديد</h3>
-            <button onClick={() => setView('list')}><X size={24}/></button>
+            <button onClick={() => { setView('list'); setPrefillData({}); }}><X size={24}/></button>
           </div>
           <form onSubmit={handleAddPatient} className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <input name="name" required placeholder="الاسم رباعياً بالكامل" className="p-4 border-2 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-primary-500" />
-              <input name="phone" required placeholder="رقم الهاتف (01xxxxxxxxx)" className="p-4 border-2 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-primary-500" />
-              <input name="national_id" required placeholder="الرقم القومي" className="p-4 border-2 rounded-2xl outline-none font-mono text-sm focus:ring-2 focus:ring-primary-500" />
+              <input name="name" defaultValue={prefillData.name || ''} required placeholder="الاسم رباعياً بالكامل" className="p-4 border-2 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-primary-500" />
+              <input name="phone" defaultValue={prefillData.phone || ''} required placeholder="رقم الهاتف (01xxxxxxxxx)" className="p-4 border-2 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-primary-500" />
+              <input name="national_id" defaultValue={prefillData.national_id || ''} required placeholder="الرقم القومي" className="p-4 border-2 rounded-2xl outline-none font-mono text-sm focus:ring-2 focus:ring-primary-500" />
               <input name="dob" type="date" required className="p-4 border-2 rounded-2xl outline-none text-sm focus:ring-2 focus:ring-primary-500" />
               <select name="gender" required className="p-4 border-2 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-primary-500">
                 <option value="">-- اختر النوع --</option>

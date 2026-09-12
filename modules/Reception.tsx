@@ -311,11 +311,20 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
               <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input 
                 type="text" 
-                placeholder="ابحث بالاسم لتسجيل دخول..." 
-                className="w-full pr-10 pl-4 py-3 border rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all"
+                placeholder="ابحث بالاسم، الرقم القومي أو الهاتف..." 
+                className="w-full pr-10 pl-10 py-3 border border-gray-200 rounded-xl bg-gray-50 focus:bg-white focus:ring-2 focus:ring-primary-500 outline-none transition-all text-sm font-medium"
                 value={searchTerm}
                 onChange={e => setSearchTerm(e.target.value)}
               />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                  title="مسح البحث"
+                >
+                  <X size={16} />
+                </button>
+              )}
             </div>
 
             <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
@@ -367,13 +376,19 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
               ))}
               
               {searchTerm && filteredPatients.length === 0 && (
-                <div className="p-6 text-center bg-indigo-50 rounded-2xl border-2 border-dashed border-indigo-200 animate-in zoom-in-95">
-                  <p className="text-indigo-800 font-bold mb-3">لم يتم العثور على المريض</p>
+                <div className="p-6 text-center bg-indigo-50/80 rounded-2xl border-2 border-dashed border-indigo-200 animate-in zoom-in-95 space-y-3">
+                  <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center mx-auto">
+                    <UserPlus size={24} />
+                  </div>
+                  <div>
+                    <p className="text-indigo-900 font-black text-sm">لم يتم العثور على أي مريض</p>
+                    <p className="text-xs text-indigo-600/80 font-medium mt-0.5">"{searchTerm}" غير مسجل بقاعدة البيانات</p>
+                  </div>
                   <button 
                     onClick={() => setShowQuickAddModal(true)}
-                    className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-indigo-700 transition-all"
+                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
                   >
-                    <UserPlus size={18} /> إضافة مريض جديد فوراً
+                    <UserPlus size={16} /> إضافة مريض جديد بالاسم "{searchTerm}"
                   </button>
                 </div>
               )}
@@ -392,19 +407,37 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
                 <h3 className="text-xl font-bold flex items-center gap-2"><UserPlus size={22} /> إضافة مريض وتسجيل حضور</h3>
                 <button onClick={() => setShowQuickAddModal(false)}><X size={24} /></button>
              </div>
-             <form onSubmit={handleQuickAddPatient} className="p-8 space-y-4">
+              <form onSubmit={handleQuickAddPatient} className="p-8 space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-gray-500 mr-2">الاسم بالكامل</label>
-                    <input name="name" required placeholder="اسم المريض" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                    <input 
+                      name="name" 
+                      defaultValue={!/^\d{14}$/.test(searchTerm.trim()) && !/^01\d{9}$/.test(searchTerm.trim()) ? searchTerm.trim() : ''} 
+                      required 
+                      placeholder="اسم المريض" 
+                      className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm" 
+                    />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-gray-500 mr-2">الرقم القومي</label>
-                    <input name="national_id" required placeholder="14 رقم" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                    <input 
+                      name="national_id" 
+                      defaultValue={/^\d{14}$/.test(searchTerm.trim()) ? searchTerm.trim() : ''} 
+                      required 
+                      placeholder="14 رقم" 
+                      className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm" 
+                    />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-gray-500 mr-2">رقم الهاتف</label>
-                    <input name="phone" required placeholder="01xxxxxxxxx" className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none" />
+                    <input 
+                      name="phone" 
+                      defaultValue={/^01\d{9}$/.test(searchTerm.trim()) ? searchTerm.trim() : ''} 
+                      required 
+                      placeholder="01xxxxxxxxx" 
+                      className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none font-mono text-sm" 
+                    />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-bold text-gray-500 mr-2">تاريخ الميلاد</label>

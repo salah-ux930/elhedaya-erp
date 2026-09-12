@@ -6,7 +6,7 @@ export const AR = {
   clinicReception: "استقبال العيادات",
   reception: "الاستقبال الشامل",
   patients: "سجلات المرضى",
-  activePatients: "المرضى الحاليين",
+  activePatients: "الجلسات الحالية",
   lab: "المعمل",
   billing: "الفواتير",
   employees: "الموظفين",
