@@ -7,12 +7,34 @@ import {
   Building2, Users, Calendar, Plus, Search, 
   Clock, CheckCircle2, XCircle, MoreVertical, 
   ClipboardList, Stethoscope, Save, UserPlus, Loader2, X, History,
-  FolderOpen, MapPin, Phone, FileText, Info, Activity, ShieldAlert
+  FolderOpen, MapPin, Phone, FileText, Info, Activity, ShieldAlert, AlertTriangle
 } from 'lucide-react';
 import { ClinicExaminationModal } from '../components/ClinicExaminationModal.tsx';
 import QuickClinicBookingModal from '../components/QuickClinicBookingModal.tsx';
 import PatientClinical360Modal from '../components/PatientClinical360Modal.tsx';
 import { HospitalOperationalEngine, PatientOperationalProfile } from '../services/hospitalOperationalEngine.ts';
+import { evaluateClinicalModuleEligibility } from '../services/followupSuggestions.ts';
+
+function getLocalTodayStr(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function getLocalTimeHHMM(): string {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
+
+function mapClinicToEligibilityModule(clinic?: Clinic | null): 'child' | 'maternal' | 'family_planning' | 'geriatric' | 'premarital' | null {
+  if (!clinic) return null;
+  const text = `${clinic.name || ''} ${clinic.specialty || ''}`;
+  if (/تنظيم الأسرة/.test(text)) return 'family_planning';
+  if (/حوامل|الأمومة|متابعة الحمل/.test(text)) return 'maternal';
+  if (/أطفال|طفل/.test(text)) return 'child';
+  if (/مسنين|شيخوخة/.test(text)) return 'geriatric';
+  if (/راغبي الزواج|ما قبل الزواج/.test(text)) return 'premarital';
+  return null;
+}
 
 const ClinicsModule: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'appointments' | 'doctors' | 'clinics' | 'clinic_history'>('appointments');
@@ -25,6 +47,7 @@ const ClinicsModule: React.FC = () => {
   const [physicalExams, setPhysicalExams] = useState<any[]>([]);
   const [patientFor360, setPatientFor360] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   
   const [showAddClinic, setShowAddClinic] = useState(false);
@@ -38,6 +61,7 @@ const ClinicsModule: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [c, d, a, p, ff, probs, pExams] = await Promise.all([
         DB.getClinics(),
@@ -48,15 +72,23 @@ const ClinicsModule: React.FC = () => {
         DB.getPatientProblems(),
         DB.getPhysicalExams()
       ]);
-      setClinics(c);
-      setDoctors(d);
-      setAppointments(a);
-      setPatients(p);
+      setClinics(c || []);
+      setDoctors(d || []);
+      // Deduplicate appointments by id
+      const seenIds = new Set<string>();
+      const uniqueApps = (a || []).filter((item: any) => {
+        if (!item || !item.id || seenIds.has(item.id)) return false;
+        seenIds.add(item.id);
+        return true;
+      });
+      setAppointments(uniqueApps);
+      setPatients(p || []);
       setFamilyFiles(ff || []);
       setProblems(probs || []);
       setPhysicalExams(pExams || []);
     } catch (err) {
       console.error(err);
+      setLoadError('تعذر تحميل بيانات العيادات والمواعيد. يرجى إعادة المحاولة.');
     } finally {
       setLoading(false);
     }
@@ -113,13 +145,36 @@ const ClinicsModule: React.FC = () => {
   const handleAddAppointment = async (e: React.FormEvent) => {
     e.preventDefault();
     const target = e.target as any;
+    const patientId = target.patient_id?.value;
+    const clinicId = target.clinic_id?.value;
+    const dateVal = target.date?.value;
+    const timeVal = target.time?.value;
+    const todayStr = getLocalTodayStr();
+    const nowHHMM = getLocalTimeHHMM();
+
+    if (!dateVal || dateVal < todayStr || (dateVal === todayStr && timeVal && timeVal < nowHHMM)) {
+      alert('لا يمكن حجز موعد معلق في تاريخ أو وقت مضى.');
+      return;
+    }
+
+    const pt = patients.find(p => p.id === patientId);
+    const cl = clinics.find(c => c.id === clinicId);
+    const modId = mapClinicToEligibilityModule(cl);
+    if (pt && modId) {
+      const check = evaluateClinicalModuleEligibility(pt, modId);
+      if (!check.eligible) {
+        alert(`لا يمكن حجز هذا الموعد: ${check.reason}`);
+        return;
+      }
+    }
+
     try {
       await DB.addClinicAppointment({
-        patient_id: target.patient_id.value,
+        patient_id: patientId,
         doctor_id: target.doctor_id.value,
-        clinic_id: target.clinic_id.value,
-        date: target.date.value,
-        time: target.time.value,
+        clinic_id: clinicId,
+        date: dateVal,
+        time: timeVal,
         status: 'WAITING'
       });
       setShowAddAppointment(false);
@@ -138,47 +193,78 @@ const ClinicsModule: React.FC = () => {
     }
   };
 
-  const filteredAppointments = appointments.filter(a => {
-    const matchesSearch = a.patients?.name.includes(searchTerm) || 
-                         a.doctors?.name.includes(searchTerm) ||
-                         a.clinics?.name.includes(searchTerm);
-    
-    if (activeTab === 'appointments') {
-      return matchesSearch && (a.status === 'WAITING' || a.status === 'IN_PROGRESS');
-    }
-    if (activeTab === 'clinic_history') {
-      return matchesSearch && (a.status === 'COMPLETED' || a.status === 'CANCELLED');
-    }
-    return matchesSearch;
+  const todayStr = getLocalTodayStr();
+
+  const searchMatchedAppointments = appointments.filter(a => {
+    if (!searchTerm.trim()) return true;
+    return (
+      (a.patients?.name || '').includes(searchTerm) ||
+      (a.doctors?.name || '').includes(searchTerm) ||
+      (a.clinics?.name || '').includes(searchTerm)
+    );
   });
+
+  const activeQueueAppointments = searchMatchedAppointments.filter(
+    a => a.status === 'WAITING' || a.status === 'IN_PROGRESS'
+  );
+  const historyAppointments = searchMatchedAppointments.filter(
+    a => a.status === 'COMPLETED' || a.status === 'CANCELLED'
+  );
+
+  const filteredAppointments =
+    activeTab === 'appointments'
+      ? activeQueueAppointments
+      : activeTab === 'clinic_history'
+        ? historyAppointments
+        : searchMatchedAppointments;
+
+  const waitingTodayCount = activeQueueAppointments.filter(a => a.status === 'WAITING' && (!a.date || a.date >= todayStr)).length;
+  const pastWaitingCount = activeQueueAppointments.filter(a => a.status === 'WAITING' && a.date && a.date < todayStr).length;
+  const inProgressCount = activeQueueAppointments.filter(a => a.status === 'IN_PROGRESS').length;
+  const completedCount = historyAppointments.filter(a => a.status === 'COMPLETED').length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-rose-800 text-sm font-bold">
+            <AlertTriangle size={20} className="text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            onClick={loadData}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       {/* Header Tabs */}
       <div className="flex flex-wrap gap-4 bg-white p-2 rounded-2xl shadow-sm border border-gray-100">
         <button 
           onClick={() => setActiveTab('appointments')}
           className={`px-8 py-3 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'appointments' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-50'}`}
         >
-          <Calendar size={18} /> {AR.appointments}
+          <Calendar size={18} /> {AR.appointments} ({activeQueueAppointments.length})
         </button>
         <button 
           onClick={() => setActiveTab('clinic_history')}
           className={`px-8 py-3 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'clinic_history' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-50'}`}
         >
-          <History size={18} /> أرشيف الكشوفات
+          <History size={18} /> أرشيف الكشوفات ({historyAppointments.length})
         </button>
         <button 
           onClick={() => setActiveTab('doctors')}
           className={`px-8 py-3 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'doctors' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-50'}`}
         >
-          <Stethoscope size={18} /> {AR.doctors}
+          <Stethoscope size={18} /> {AR.doctors} ({doctors.length})
         </button>
         <button 
           onClick={() => setActiveTab('clinics')}
           className={`px-8 py-3 rounded-xl font-bold transition-all flex items-center gap-2 ${activeTab === 'clinics' ? 'bg-primary-600 text-white shadow-lg' : 'text-gray-500 hover:bg-gray-50'}`}
         >
-          <Building2 size={18} /> {AR.clinics}
+          <Building2 size={18} /> {AR.clinics} ({clinics.length})
         </button>
       </div>
 
@@ -216,8 +302,9 @@ const ClinicsModule: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredAppointments.map((app: any) => {
                   const prof = patientProfilesMap.get(app.patient_id);
+                  const isPastWaiting = app.status === 'WAITING' && app.date && app.date < todayStr;
                   return (
-                  <div key={app.id} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
+                  <div key={app.id} className={`bg-white p-6 rounded-2xl border shadow-sm hover:shadow-md transition-all ${isPastWaiting ? 'border-amber-300 bg-amber-50/10' : 'border-gray-100'}`}>
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex items-center gap-3">
                          <div className="w-12 h-12 bg-primary-50 text-primary-600 rounded-xl flex items-center justify-center font-bold">
@@ -235,6 +322,11 @@ const ClinicsModule: React.FC = () => {
                               {prof?.hasAllergyAlert && (
                                 <span className="px-2 py-0.5 bg-rose-100 text-rose-800 border border-rose-300 rounded text-[10px] font-black flex items-center gap-1">
                                   <ShieldAlert size={11} /> حساسية
+                                </span>
+                              )}
+                              {isPastWaiting && (
+                                <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-black flex items-center gap-1">
+                                  <AlertTriangle size={11} /> موعد معلق بتاريخ سابق
                                 </span>
                               )}
                             </div>
@@ -338,7 +430,7 @@ const ClinicsModule: React.FC = () => {
               </div>
             ) : activeTab === 'doctors' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                 {doctors.filter(d => d.name.includes(searchTerm)).map(doc => (
+                 {doctors.filter(d => (d.name || '').includes(searchTerm)).map(doc => (
                    <div key={doc.id} className="bg-white p-5 rounded-2xl border border-gray-100 flex items-center gap-4">
                       <div className="w-14 h-14 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner">
                          <Stethoscope size={28} />
@@ -353,7 +445,7 @@ const ClinicsModule: React.FC = () => {
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                 {clinics.filter(c => c.name.includes(searchTerm)).map(clinic => (
+                 {clinics.filter(c => (c.name || '').includes(searchTerm)).map(clinic => (
                    <div key={clinic.id} className="bg-white p-5 rounded-2xl border border-gray-100 flex items-center gap-4">
                       <div className="w-14 h-14 bg-emerald-50 text-emerald-600 rounded-2xl flex items-center justify-center">
                          <Building2 size={28} />
@@ -367,33 +459,47 @@ const ClinicsModule: React.FC = () => {
                  ))}
               </div>
             )}
-            {!loading && appointments.length === 0 && <div className="text-center py-20 text-gray-300">لا توجد بيانات مسجلة</div>}
+            {!loading && (activeTab === 'appointments' || activeTab === 'clinic_history') && filteredAppointments.length === 0 && (
+              <div className="text-center py-20 text-gray-400 font-bold bg-white rounded-2xl border border-gray-100">
+                لا توجد مواعيد مطابقة للعرض في هذا التبويب
+              </div>
+            )}
           </div>
         </div>
 
         {/* Stats / Actions Sidebar */}
         <div className="space-y-6">
            <div className="bg-gradient-to-br from-primary-600 to-primary-800 p-6 rounded-3xl text-white shadow-xl">
-              <h3 className="text-lg font-bold mb-4 opacity-90">إحصائيات اليوم</h3>
-              <div className="space-y-4">
+              <h3 className="text-lg font-bold mb-4 opacity-90">إحصائيات المواعيد</h3>
+              <div className="space-y-3">
                  <div className="flex justify-between items-center">
-                    <span className="text-sm opacity-75">إجمالي المواعيد</span>
-                    <span className="text-xl font-bold">{appointments.length}</span>
+                    <span className="text-sm opacity-75">القائمة الحالية (النشطة)</span>
+                    <span className="text-xl font-bold">{activeQueueAppointments.length}</span>
                  </div>
                  <div className="flex justify-between items-center">
-                    <span className="text-sm opacity-75">في الانتظار</span>
-                    <span className="text-xl font-bold text-yellow-300">{appointments.filter(a => a.status === 'WAITING').length}</span>
+                    <span className="text-sm opacity-75">في الانتظار (اليوم/القادم)</span>
+                    <span className="text-xl font-bold text-yellow-300">{waitingTodayCount}</span>
                  </div>
+                 {pastWaitingCount > 0 && (
+                   <div className="flex justify-between items-center">
+                      <span className="text-sm opacity-75">معلقة من تاريخ سابق</span>
+                      <span className="text-xl font-bold text-amber-300">{pastWaitingCount}</span>
+                   </div>
+                 )}
                  <div className="flex justify-between items-center">
-                    <span className="text-sm opacity-75">تم الانتهاء</span>
-                    <span className="text-xl font-bold text-green-300">{appointments.filter(a => a.status === 'COMPLETED').length}</span>
+                    <span className="text-sm opacity-75">قيد الكشف الآن</span>
+                    <span className="text-xl font-bold text-sky-200">{inProgressCount}</span>
+                 </div>
+                 <div className="flex justify-between items-center pt-2 border-t border-white/15">
+                    <span className="text-sm opacity-75">الكشوفات المكتملة</span>
+                    <span className="text-xl font-bold text-green-300">{completedCount}</span>
                  </div>
               </div>
               <button 
                 onClick={() => setActiveTab('appointments')}
                 className="w-full mt-6 py-3 bg-white/20 hover:bg-white/30 rounded-xl text-sm font-bold transition-all"
               >
-                المزيد من التفاصيل
+                عرض القائمة النشطة
               </button>
            </div>
 

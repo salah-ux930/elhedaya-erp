@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { DB } from '../store.ts';
 import { DialysisSession, Patient, Service, Store, DialysisFallRiskReview } from '../types.ts';
-import { calculateAge } from '../constants.ts';
+import { calculateAge, ROOMS } from '../constants.ts';
 import { 
   Loader2, Activity, MapPin, Clock, HeartPulse, Scale, 
   User, FilePlus, X, CheckCircle, Package, ListChecks, 
@@ -13,11 +13,28 @@ import DialysisNursingAssessmentModal from '../components/DialysisNursingAssessm
 import DialysisFallRiskReviewModal from '../components/DialysisFallRiskReviewModal.tsx';
 import { realtimeNotificationService } from '../services/realtimeNotificationService.ts';
 
+const parseTimeToMinutes = (timeStr?: string | null): number | null => {
+  if (!timeStr || typeof timeStr !== 'string') return null;
+  const match = timeStr.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+  const h = parseInt(match[1], 10);
+  const m = parseInt(match[2], 10);
+  if (isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
+};
+
+const getLocalTodayDateStr = (): string => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
 const ActivePatients: React.FC = () => {
   const [allSessions, setAllSessions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [services, setServices] = useState<Service[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
+  const [pendingRoomsBySession, setPendingRoomsBySession] = useState<Record<string, string>>({});
   
   // Search and Filter States
   const [searchTerm, setSearchTerm] = useState('');
@@ -48,25 +65,35 @@ const ActivePatients: React.FC = () => {
 
   const load = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [sess, serv, stor] = await Promise.all([
         DB.getSessions(),
         DB.getServices(),
         DB.getStores()
       ]);
-      // Show both WAITING and ACTIVE sessions
-      const current = sess?.filter(session => session.status === 'ACTIVE' || session.status === 'WAITING') || [];
+      // Show both WAITING and ACTIVE sessions, deduplicated strictly by actual session key (id) without merging independent sessions
+      const rawCurrent = (sess || []).filter(session => session && (session.status === 'ACTIVE' || session.status === 'WAITING'));
+      const uniqueSessionsMap = new Map<string, any>();
+      rawCurrent.forEach((session, idx) => {
+        const sessionKey = session.id ? String(session.id).trim() : `fallback_sess_${idx}`;
+        if (!uniqueSessionsMap.has(sessionKey)) {
+          uniqueSessionsMap.set(sessionKey, session);
+        }
+      });
+      const current = Array.from(uniqueSessionsMap.values());
+
       setAllSessions(current);
       setServices(serv || []);
       setStores(stor || []);
 
       // Load Fall Risk Reviews for active sessions
-      const activeIds = current.filter(s => s.status === 'ACTIVE').map(s => s.id);
+      const activeIds = current.filter(s => s.status === 'ACTIVE' && s.id).map(s => s.id);
       if (activeIds.length > 0) {
         try {
           const fallReviews = await DB.getFallRiskReviewsForSessions(activeIds);
           const reviewsMap: Record<string, DialysisFallRiskReview[]> = {};
-          fallReviews.forEach((r: DialysisFallRiskReview) => {
+          (fallReviews || []).forEach((r: DialysisFallRiskReview) => {
             if (!reviewsMap[r.session_id]) reviewsMap[r.session_id] = [];
             reviewsMap[r.session_id].push(r);
           });
@@ -77,8 +104,9 @@ const ActivePatients: React.FC = () => {
       } else {
         setFallReviewsBySession({});
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setLoadError(e?.message || 'تعذر تحميل بيانات الجلسات الحالية. يرجى المحاولة مرة أخرى.');
     } finally {
       setLoading(false);
     }
@@ -103,11 +131,14 @@ const ActivePatients: React.FC = () => {
     return Array.from(fundings).sort();
   }, [allSessions]);
 
-  // Helper to compute session fall risk status & countdown
+  // Helper to compute session fall risk status & countdown with strict local timezone & data quality validation
   const getSessionFallRiskStatus = (session: any) => {
     if (session.status !== 'ACTIVE') {
       return {
-        elapsedMinutes: 0,
+        elapsedMinutes: null as number | null,
+        isValidDuration: false,
+        hasDataQualityIssue: false,
+        dataQualityWarning: '',
         has2H: false,
         has4H: false,
         is2HDue: false,
@@ -122,53 +153,98 @@ const ActivePatients: React.FC = () => {
     const has4H = reviews.some(r => r.review_stage === '4_HOURS');
 
     const now = new Date();
-    let elapsedMinutes = 0;
+    const todayStr = getLocalTodayDateStr();
+    const sessionDateStr = typeof session.date === 'string' ? session.date.trim().slice(0, 10) : '';
+
     let startDateTime: Date | null = null;
-    if (session.start_time) {
-      const parts = session.start_time.split(':');
-      if (parts.length >= 2) {
-        const dateStr = session.date || now.toISOString().split('T')[0];
-        const parsed = new Date(`${dateStr}T${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:00`);
-        if (!isNaN(parsed.getTime())) startDateTime = parsed;
+    let hasDataQualityIssue = false;
+    let dataQualityWarning = '';
+
+    // Parse start_time and date in local timezone
+    if (session.start_time && typeof session.start_time === 'string') {
+      const timeMatch = session.start_time.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      const dateMatch = (sessionDateStr || todayStr).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      if (timeMatch && dateMatch) {
+        const year = parseInt(dateMatch[1], 10);
+        const month = parseInt(dateMatch[2], 10);
+        const day = parseInt(dateMatch[3], 10);
+        const hours = parseInt(timeMatch[1], 10);
+        const mins = parseInt(timeMatch[2], 10);
+        const secs = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+        if (hours >= 0 && hours <= 23 && mins >= 0 && mins <= 59) {
+          const parsedLocal = new Date(year, month - 1, day, hours, mins, secs);
+          if (!isNaN(parsedLocal.getTime())) {
+            startDateTime = parsedLocal;
+          }
+        }
       }
     }
-    if (!startDateTime && session.created_at) {
-      const parsed = new Date(session.created_at);
-      if (!isNaN(parsed.getTime())) startDateTime = parsed;
-    }
-    if (startDateTime) {
-      elapsedMinutes = Math.floor((now.getTime() - startDateTime.getTime()) / 60000);
-    }
-    if (elapsedMinutes < 0) elapsedMinutes = 0;
 
-    const is2HDue = elapsedMinutes >= 120 && !has2H;
-    const is4HDue = elapsedMinutes >= 240 && !has4H;
-    const isOverdue = is2HDue || is4HDue;
+    if (!startDateTime) {
+      hasDataQualityIssue = true;
+      dataQualityWarning = 'تحذير جودة بيانات: وقت بدء الجلسة غير مسجل أو بتنسيق غير صالح';
+    } else {
+      const rawDiffMinutes = Math.floor((now.getTime() - startDateTime.getTime()) / 60000);
+      // A valid active dialysis session must not be from a stale historical date (> 12 hours / 720 mins) or in the future
+      if (sessionDateStr && sessionDateStr < todayStr && rawDiffMinutes > 720) {
+        hasDataQualityIssue = true;
+        dataQualityWarning = `تحذير جودة بيانات: جلسة مسجلة بتاريخ سابق (${sessionDateStr}) — لا يتم إصدار تنبيه حرج من بيانات تاريخية/تجريبية قديمة`;
+      } else if (rawDiffMinutes > 720) {
+        hasDataQualityIssue = true;
+        dataQualityWarning = 'تحذير جودة بيانات: وقت بدء الجلسة يتجاوز الحد الزمني المنطقي للجلسة النشطة';
+      } else if (rawDiffMinutes < -5) {
+        hasDataQualityIssue = true;
+        dataQualityWarning = 'تحذير جودة بيانات: وقت بدء الجلسة مسجل في المستقبل';
+      } else {
+        const elapsedMinutes = Math.max(0, rawDiffMinutes);
+        const is2HDue = elapsedMinutes >= 120 && !has2H;
+        const is4HDue = elapsedMinutes >= 240 && !has4H;
+        const isOverdue = is2HDue || is4HDue;
+
+        return {
+          elapsedMinutes,
+          isValidDuration: true,
+          hasDataQualityIssue: false,
+          dataQualityWarning: '',
+          has2H,
+          has4H,
+          is2HDue,
+          is4HDue,
+          isOverdue,
+          reviewsCount: reviews.length
+        };
+      }
+    }
 
     return {
-      elapsedMinutes,
+      elapsedMinutes: null as number | null,
+      isValidDuration: false,
+      hasDataQualityIssue,
+      dataQualityWarning,
       has2H,
       has4H,
-      is2HDue,
-      is4HDue,
-      isOverdue,
+      is2HDue: false,
+      is4HDue: false,
+      isOverdue: false,
       reviewsCount: reviews.length
     };
   };
 
-  // Summary counts
+  // Summary counts (aligned with the exact deduplicated allSessions list)
   const stats = useMemo(() => {
     const total = allSessions.length;
     const active = allSessions.filter(s => s.status === 'ACTIVE').length;
     const waiting = allSessions.filter(s => s.status === 'WAITING').length;
     
     let fallRiskOverdue = 0;
+    let dataQualityIssuesCount = 0;
     allSessions.filter(s => s.status === 'ACTIVE').forEach(s => {
       const st = getSessionFallRiskStatus(s);
       if (st.isOverdue) fallRiskOverdue++;
+      if (st.hasDataQualityIssue) dataQualityIssuesCount++;
     });
 
-    return { total, active, waiting, fallRiskOverdue };
+    return { total, active, waiting, fallRiskOverdue, dataQualityIssuesCount };
   }, [allSessions, fallReviewsBySession]);
 
   // Filtered sessions
@@ -222,13 +298,23 @@ const ActivePatients: React.FC = () => {
   };
 
   const handleStartSession = async (session: any) => {
+    const selectedRoom = (session.room || pendingRoomsBySession[session.id] || '').trim();
+    if (!selectedRoom) {
+      alert("لا يمكن بدء الجلسة بدون تحديد الغرفة / القاعة أولاً. يرجى اختيار الغرفة ثم الضغط على بدء الجلسة.");
+      return;
+    }
+
     try {
       setLoading(true);
+      const now = new Date();
+      const localHHMMSS = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
       await DB.updateSession(session.id, { 
         status: 'ACTIVE',
-        start_time: new Date().toTimeString().split(' ')[0] 
+        room: selectedRoom,
+        date: session.date || getLocalTodayDateStr(),
+        start_time: localHHMMSS
       });
-      load();
+      await load();
     } catch (e) {
       alert("فشل بدء الجلسة: " + (e as Error).message);
     } finally {
@@ -241,13 +327,49 @@ const ActivePatients: React.FC = () => {
     if (!selectedSessionForReport) return;
     const target = e.target as any;
 
+    const effectiveRoom = (selectedSessionForReport.room || target.room?.value || '').trim();
+    if (!effectiveRoom) {
+      alert("يرجى تحديد الغرفة / القاعة قبل إنهاء الجلسة وحفظ التقرير.");
+      return;
+    }
+
+    const startTimeStr = selectedSessionForReport.start_time;
+    const disconnectionTimeStr = reportDisconnectionTime || target.disconnectionTime?.value || '';
+    const endTimeStr = reportEndTime || target.endTime?.value || '';
+
+    const startMins = parseTimeToMinutes(startTimeStr);
+    const discMins = parseTimeToMinutes(disconnectionTimeStr);
+    const endMins = parseTimeToMinutes(endTimeStr);
+
+    if (endMins === null) {
+      alert("يرجى إدخال وقت انتهاء الجلسة بصيغة صحيحة.");
+      return;
+    }
+
+    if (startMins !== null && endMins <= startMins) {
+      alert(`خطأ في التحقق من الوقت: وقت انتهاء الجلسة (${endTimeStr}) يجب أن يكون بعد وقت بدء الجلسة (${startTimeStr.slice(0, 5)}).`);
+      return;
+    }
+
+    if (discMins !== null) {
+      if (startMins !== null && discMins < startMins) {
+        alert(`خطأ في التحقق من الوقت: وقت فك الوصلة (${disconnectionTimeStr}) لا يمكن أن يكون قبل وقت بدء الجلسة (${startTimeStr.slice(0, 5)}).`);
+        return;
+      }
+      if (endMins < discMins) {
+        alert(`خطأ في التحقق من الوقت: وقت انتهاء الجلسة (${endTimeStr}) يجب أن يكون في أو بعد وقت فك الوصلة (${disconnectionTimeStr}).`);
+        return;
+      }
+    }
+
     try {
       await DB.finishSession(selectedSessionForReport.id, {
         service_id: selectedService?.id,
+        room: effectiveRoom,
         blood_pressure: target.bp.value,
         weight_after: target.weightAfter?.value ? parseFloat(target.weightAfter.value) : null,
-        disconnection_time: reportDisconnectionTime || target.disconnectionTime?.value || new Date().toTimeString().slice(0, 5),
-        end_time: reportEndTime || target.endTime?.value || new Date().toTimeString().slice(0, 5),
+        disconnection_time: disconnectionTimeStr || new Date().toTimeString().slice(0, 5),
+        end_time: endTimeStr,
         notes: target.notes.value,
         custom_data: customFieldsData
       }, target.storeId.value);
@@ -256,7 +378,7 @@ const ActivePatients: React.FC = () => {
       setSelectedSessionForReport(null);
       setSelectedService(null);
       setCustomFieldsData({});
-      load();
+      await load();
     } catch (e) {
       alert("فشل إنهاء الجلسة: " + (e as Error).message);
     }
@@ -345,6 +467,25 @@ const ActivePatients: React.FC = () => {
         </div>
       </div>
 
+      {/* Load Error Banner with Retry */}
+      {loadError && (
+        <div className="bg-rose-50 border-2 border-rose-200 p-4 rounded-3xl flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-rose-900">
+            <AlertCircle size={22} className="text-rose-600 shrink-0" />
+            <div>
+              <h4 className="font-black text-sm">حدث خطأ أثناء تحميل بيانات الجلسات</h4>
+              <p className="text-xs font-bold text-rose-700 mt-0.5">{loadError}</p>
+            </div>
+          </div>
+          <button
+            onClick={load}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-colors"
+          >
+            <RefreshCw size={14} /> إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       {/* Fall Risk Overdue Warning Banner */}
       {stats.fallRiskOverdue > 0 && (
         <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-rose-50 border-2 border-amber-300 p-4 rounded-3xl shadow-sm flex items-center justify-between gap-4 flex-wrap animate-in fade-in">
@@ -363,6 +504,19 @@ const ActivePatients: React.FC = () => {
           </div>
           <div className="text-xs font-bold text-amber-900 bg-white/80 px-3.5 py-1.5 rounded-xl border border-amber-200/80">
             انقر على زر "مراجعة إجراءات السقوط" ببطاقة المريض المعني أدناه للتوثيق الفوري وإلغاء التنبيه.
+          </div>
+        </div>
+      )}
+
+      {/* Data Quality Warning Banner for Stale/Test Sessions */}
+      {stats.dataQualityIssuesCount > 0 && (
+        <div className="bg-amber-50/90 border border-amber-300 p-3.5 rounded-2xl flex items-center justify-between gap-3 text-xs text-amber-950">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle size={18} className="text-amber-600 shrink-0" />
+            <div>
+              <span className="font-black">تحذير جودة بيانات ({stats.dataQualityIssuesCount} جلسة): </span>
+              <span className="font-bold">توجد جلسات مسجلة كنشطة بتاريخ سابق أو وقت بدء غير صالح؛ تم إيقاف إصدار التنبيهات الحرجة التلقائية عنها لحين مراجعة السجل.</span>
+            </div>
           </div>
         </div>
       )}
@@ -572,7 +726,22 @@ const ActivePatients: React.FC = () => {
                   <div className="text-[10px] text-gray-400 font-black mb-1 flex items-center gap-1">
                     <MapPin size={11} className="text-primary-500" /> الغرفة / القاعة
                   </div>
-                  <div className="font-black text-gray-800 text-sm">{session.room || 'غير محدد'}</div>
+                  {session.room ? (
+                    <div className="font-black text-gray-800 text-sm">{session.room}</div>
+                  ) : session.status === 'WAITING' ? (
+                    <select
+                      value={pendingRoomsBySession[session.id] || ''}
+                      onChange={(e) => setPendingRoomsBySession(prev => ({ ...prev, [session.id]: e.target.value }))}
+                      className="w-full mt-0.5 p-1.5 bg-white border border-amber-300 rounded-lg text-xs font-black text-gray-800 outline-none focus:border-primary-600"
+                    >
+                      <option value="">-- اختر الغرفة --</option>
+                      {ROOMS.map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="font-black text-amber-700 text-xs">غير محدد</div>
+                  )}
                 </div>
                 
                 <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100">
@@ -580,6 +749,9 @@ const ActivePatients: React.FC = () => {
                     <Clock size={11} className="text-primary-500" /> {session.status === 'ACTIVE' ? 'وقت البدء' : 'وقت الوصول'}
                   </div>
                   <div className="font-black text-gray-800 text-sm">{session.start_time || '---'}</div>
+                  {session.date && (
+                    <div className="text-[10px] font-mono text-gray-400 mt-0.5">{session.date}</div>
+                  )}
                 </div>
 
                 <div className="bg-emerald-50/70 p-3 rounded-2xl border border-emerald-100 col-span-2">
@@ -646,7 +818,9 @@ const ActivePatients: React.FC = () => {
                 {/* Periodic Fall Risk Status Box (Twice per session / Every 2 hours) */}
                 {session.status === 'ACTIVE' && (
                   <div className={`p-3.5 rounded-2xl border col-span-2 space-y-2 ${
-                    fallStatus.isOverdue 
+                    fallStatus.hasDataQualityIssue
+                      ? 'bg-slate-50 border-amber-300'
+                      : fallStatus.isOverdue 
                       ? 'bg-rose-50/70 border-rose-300' 
                       : 'bg-amber-50/60 border-amber-200/80'
                   }`}>
@@ -656,59 +830,69 @@ const ActivePatients: React.FC = () => {
                         مراجعة السقوط (كل ساعتين):
                       </span>
                       <span className="text-[10px] font-bold text-slate-500 flex items-center gap-1">
-                        <Clock size={11} /> {fallStatus.elapsedMinutes} دقيقة
+                        <Clock size={11} />{' '}
+                        {fallStatus.isValidDuration && fallStatus.elapsedMinutes !== null
+                          ? `${fallStatus.elapsedMinutes} دقيقة`
+                          : 'تاريخ/وقت غير صالح للحساب'}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-[11px]">
-                      {/* 2-Hour Stage */}
-                      <div className={`p-2 rounded-xl border flex items-center justify-between ${
-                        fallStatus.has2H
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                          : fallStatus.is2HDue
-                          ? 'bg-rose-100 border-rose-300 text-rose-800 font-black animate-pulse'
-                          : 'bg-white border-slate-200 text-slate-500'
-                      }`}>
-                        <span className="font-bold">ساعتان (T+2h)</span>
-                        {fallStatus.has2H ? (
-                          <span className="flex items-center gap-0.5 text-[10px] font-black text-emerald-700">
-                            <CheckCircle2 size={12} /> مكتملة
-                          </span>
-                        ) : fallStatus.is2HDue ? (
-                          <span className="text-[10px] font-black text-rose-700 flex items-center gap-0.5">
-                            <AlertCircle size={12} /> مطلوبة!
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            بعد {Math.max(0, 120 - fallStatus.elapsedMinutes)} د
-                          </span>
-                        )}
+                    {fallStatus.hasDataQualityIssue ? (
+                      <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-bold flex items-start gap-2">
+                        <AlertCircle size={14} className="text-amber-600 shrink-0 mt-0.5" />
+                        <span>{fallStatus.dataQualityWarning}</span>
                       </div>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2 text-[11px]">
+                        {/* 2-Hour Stage */}
+                        <div className={`p-2 rounded-xl border flex items-center justify-between ${
+                          fallStatus.has2H
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            : fallStatus.is2HDue
+                            ? 'bg-rose-100 border-rose-300 text-rose-800 font-black animate-pulse'
+                            : 'bg-white border-slate-200 text-slate-500'
+                        }`}>
+                          <span className="font-bold">ساعتان (T+2h)</span>
+                          {fallStatus.has2H ? (
+                            <span className="flex items-center gap-0.5 text-[10px] font-black text-emerald-700">
+                              <CheckCircle2 size={12} /> مكتملة
+                            </span>
+                          ) : fallStatus.is2HDue ? (
+                            <span className="text-[10px] font-black text-rose-700 flex items-center gap-0.5">
+                              <AlertCircle size={12} /> مطلوبة!
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              بعد {Math.max(0, 120 - (fallStatus.elapsedMinutes || 0))} د
+                            </span>
+                          )}
+                        </div>
 
-                      {/* 4-Hour Stage */}
-                      <div className={`p-2 rounded-xl border flex items-center justify-between ${
-                        fallStatus.has4H
-                          ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
-                          : fallStatus.is4HDue
-                          ? 'bg-rose-100 border-rose-300 text-rose-800 font-black animate-pulse'
-                          : 'bg-white border-slate-200 text-slate-500'
-                      }`}>
-                        <span className="font-bold">4 ساعات (T+4h)</span>
-                        {fallStatus.has4H ? (
-                          <span className="flex items-center gap-0.5 text-[10px] font-black text-emerald-700">
-                            <CheckCircle2 size={12} /> مكتملة
-                          </span>
-                        ) : fallStatus.is4HDue ? (
-                          <span className="text-[10px] font-black text-rose-700 flex items-center gap-0.5">
-                            <AlertCircle size={12} /> مطلوبة!
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            قبل الإنهاء
-                          </span>
-                        )}
+                        {/* 4-Hour Stage */}
+                        <div className={`p-2 rounded-xl border flex items-center justify-between ${
+                          fallStatus.has4H
+                            ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                            : fallStatus.is4HDue
+                            ? 'bg-rose-100 border-rose-300 text-rose-800 font-black animate-pulse'
+                            : 'bg-white border-slate-200 text-slate-500'
+                        }`}>
+                          <span className="font-bold">4 ساعات (T+4h)</span>
+                          {fallStatus.has4H ? (
+                            <span className="flex items-center gap-0.5 text-[10px] font-black text-emerald-700">
+                              <CheckCircle2 size={12} /> مكتملة
+                            </span>
+                          ) : fallStatus.is4HDue ? (
+                            <span className="text-[10px] font-black text-rose-700 flex items-center gap-0.5">
+                              <AlertCircle size={12} /> مطلوبة!
+                            </span>
+                          ) : (
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              قبل الإنهاء
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -720,7 +904,7 @@ const ActivePatients: React.FC = () => {
                   <button 
                     onClick={() => {
                       setNursingAssessmentInitialTab('fall_risk');
-                      setNursingAssessmentInitialFallStage(fallStatus.elapsedMinutes >= 240 ? '4_HOURS' : '2_HOURS');
+                      setNursingAssessmentInitialFallStage((fallStatus.elapsedMinutes || 0) >= 240 ? '4_HOURS' : '2_HOURS');
                       setSelectedSessionForNursing(session);
                     }}
                     className={`w-full py-2.5 rounded-2xl font-black text-xs flex items-center justify-center gap-2 transition-all border shadow-xs ${
@@ -1014,9 +1198,19 @@ const ActivePatients: React.FC = () => {
                   onClick={async () => {
                     try {
                       const timeToSave = quickDisconnectionTime || new Date().toTimeString().slice(0, 5);
+                      const startMins = parseTimeToMinutes(disconnectingSession.start_time);
+                      const discMins = parseTimeToMinutes(timeToSave);
+                      if (discMins === null) {
+                        alert('يرجى إدخال وقت فك الوصلة بصيغة صحيحة.');
+                        return;
+                      }
+                      if (startMins !== null && discMins < startMins) {
+                        alert(`لا يمكن أن يكون وقت فك الوصلة (${timeToSave}) قبل وقت بدء الجلسة (${disconnectingSession.start_time.slice(0, 5)}).`);
+                        return;
+                      }
                       await DB.recordDisconnectionTime(disconnectingSession.id, timeToSave);
                       setDisconnectingSession(null);
-                      load();
+                      await load();
                     } catch (err: any) {
                       alert('فشل حفظ وقت فك الوصلة: ' + (err.message || 'خطأ غير معروف'));
                     }

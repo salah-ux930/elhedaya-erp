@@ -13,6 +13,7 @@ import HistoryPhysicalModal from './HistoryPhysicalModal.tsx';
 import { QuickClinicBookingModal } from './QuickClinicBookingModal.tsx';
 import { ModuleProgressRing, UnsavedChangesModal } from './clinical-record/ClinicalFormComponents.tsx';
 import { MaternalAncPoCView } from './clinical-record/MaternalAncPoCView.tsx';
+import { evaluateClinicalModuleEligibility } from '../services/followupSuggestions.ts';
 
 interface Props {
   isOpen: boolean;
@@ -52,12 +53,20 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
     return ageYears;
   };
 
-  const age = getNumericAge(patient.date_of_birth);
-  const isFemale = patient.gender === 'أنثى' || patient.gender === 'female' || patient.gender === 'Female';
-  const isChild = age !== null && age < 18;
-  const isUnder5 = age !== null && age < 5;
-  const isElderly = age !== null && age >= 60;
-  const isReproductiveAge = isFemale && age !== null && age >= 15 && age <= 49;
+  const childElig = useMemo(() => evaluateClinicalModuleEligibility(patient, 'child'), [patient]);
+  const childUnder5Elig = useMemo(() => evaluateClinicalModuleEligibility(patient, 'child', 'under5'), [patient]);
+  const childOver5Elig = useMemo(() => evaluateClinicalModuleEligibility(patient, 'child', 'over5'), [patient]);
+  const maternalElig = useMemo(() => evaluateClinicalModuleEligibility(patient, 'maternal'), [patient]);
+  const familyPlanningElig = useMemo(() => evaluateClinicalModuleEligibility(patient, 'family_planning'), [patient]);
+  const geriatricElig = useMemo(() => evaluateClinicalModuleEligibility(patient, 'geriatric'), [patient]);
+  const premaritalElig = useMemo(() => evaluateClinicalModuleEligibility(patient, 'premarital'), [patient]);
+
+  const age = childElig.ageYears;
+  const isFemale = childElig.normalizedGender === 'female';
+  const isChild = childElig.eligible;
+  const isUnder5 = childUnder5Elig.eligible;
+  const isElderly = geriatricElig.eligible;
+  const isReproductiveAge = familyPlanningElig.eligible;
 
   // Active Module Tab
   const [activeTab, setActiveTab] = useState<string>(initialModule || initialModuleId || 'history');
@@ -140,20 +149,8 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
     if (onRefresh) onRefresh();
   };
 
-  const handleDeleteRecord = async (tableName: string, id: string, recordLabel: string) => {
-    if (!window.confirm(`هل أنت متأكد من حذف ${recordLabel} نهائياً من قاعدة البيانات المركزية؟`)) return;
-    try {
-      await DB.deleteAccreditationRecord(tableName, id);
-      showNotification('success', `تم حذف ${recordLabel} بنجاح من قاعدة البيانات.`);
-      loadAllData();
-      if (onRefresh) onRefresh();
-    } catch (err: any) {
-      console.error("Delete error:", err);
-      const errMsg = err?.message || "تعذر الحذف من قاعدة البيانات";
-      const userMessage = `فشل حذف البيانات من قاعدة البيانات. لم يتم الحذف. تفاصيل الخطأ: ${errMsg}`;
-      showNotification('error', userMessage);
-      alert(userMessage);
-    }
+  const handleDeleteRecord = async (_tableName: string, _id: string, recordLabel: string) => {
+    showNotification('error', `السجلات السريرية التاريخية (${recordLabel}) محمية للقراءة فقط ولا يُسمح بحذفها حفاظاً على سلامة التاريخ المرضي.`);
   };
 
   const loadAllData = async () => {
@@ -534,9 +531,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           subtitle: 'Child Growth & Immunizations',
           icon: Baby,
           color: 'emerald',
-          badge: isChild ? 'متاح (< 18 سنة)' : 'خاص بالأطفال (< 18 سنة)',
-          available: isChild,
-          reason: 'يتاح للأفراد دون سن 18 عاماً فقط',
+          badge: childElig.badgeText,
+          available: childElig.eligible,
+          reason: childElig.reason || 'يتاح للأفراد دون سن 18 عاماً فقط',
           count: childUnder5Records.length + childOver5Records.length
         },
         {
@@ -545,9 +542,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           subtitle: 'Maternal ANC & Postpartum',
           icon: HeartHandshake,
           color: 'rose',
-          badge: isFemale ? 'متاح (إناث)' : 'خاص بالإناث فقط',
-          available: isFemale,
-          reason: 'يتاح للإناث فقط',
+          badge: maternalElig.badgeText,
+          available: maternalElig.eligible,
+          reason: maternalElig.reason || 'يتاح للإناث في سن الإنجاب (15 - 49 سنة)',
           count: ancRecords.length + postpartumRecords.length
         },
         {
@@ -556,9 +553,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           subtitle: 'Family Planning & Reproductive Health',
           icon: Sparkles,
           color: 'pink',
-          badge: isReproductiveAge ? 'متاح (15 - 49 سنة)' : (isFemale ? 'سن الإنجاب (15-49)' : 'خاص بالإناث'),
-          available: isFemale,
-          reason: 'يتاح للإناث في سن الإنجاب',
+          badge: familyPlanningElig.badgeText,
+          available: familyPlanningElig.eligible,
+          reason: familyPlanningElig.reason || 'يتاح للإناث في سن الإنجاب (15 - 49 سنة)',
           count: familyPlanningRecords.length
         },
         {
@@ -567,9 +564,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           subtitle: 'Comprehensive Geriatric Assessment',
           icon: Clock,
           color: 'amber',
-          badge: isElderly ? 'متاح (≥ 60 سنة)' : 'خاص بالمسنين (≥ 60)',
-          available: isElderly,
-          reason: 'يتاح للمسنين من سن 60 عاماً فأكثر',
+          badge: geriatricElig.badgeText,
+          available: geriatricElig.eligible,
+          reason: geriatricElig.reason || 'يتاح للمسنين من سن 60 عاماً فأكثر',
           count: geriatricRecords.length
         }
       ]
@@ -585,8 +582,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
           subtitle: 'Premarital Screening & Counseling',
           icon: HeartHandshake,
           color: 'cyan',
-          badge: 'مشورة وفحص وراثي',
-          available: true,
+          badge: premaritalElig.badgeText,
+          available: premaritalElig.eligible,
+          reason: premaritalElig.reason || 'معيار الأهلية يحتاج إعداداً من الإدارة الطبية',
           count: premaritalRecords.length
         }
       ]
@@ -713,16 +711,16 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                       return (
                         <button
                           key={mod.id}
-                          disabled={!isAllowed}
+                          type="button"
                           onClick={() => handleTabClick(mod.id)}
                           className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
                             isActive
                               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 scale-[1.02]'
                               : isAllowed
                               ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 hover:border-slate-300'
-                              : 'bg-slate-100/60 text-slate-400 opacity-50 cursor-not-allowed border border-transparent'
+                              : 'bg-slate-100/80 text-slate-500 border border-slate-200/80 hover:bg-slate-200/60'
                           }`}
-                          title={!isAllowed ? mod.reason : mod.title}
+                          title={!isAllowed ? `${mod.reason} (متاح لعرض السجلات التاريخية فقط)` : mod.title}
                         >
                           <ModuleProgressRing
                             percent={mod.count > 0 ? 100 : 0}
@@ -756,8 +754,10 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           )}
 
                           {!isAllowed && (
-                            <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-normal shrink-0">
-                              غير منطبق
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
+                              isActive ? 'bg-amber-400 text-slate-950' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              عرض تاريخي فقط
                             </span>
                           )}
                         </button>
@@ -1218,19 +1218,56 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setQuickBookingState({ module: 'child', reason: 'متابعة وفحص نمو وتطعيمات الطفل' })}
-                        className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                        type="button"
+                        disabled={!childElig.eligible}
+                        onClick={() => {
+                          if (!childElig.eligible) {
+                            showNotification('error', childElig.reason);
+                            return;
+                          }
+                          setQuickBookingState({ module: 'child', reason: 'متابعة وفحص نمو وتطعيمات الطفل' });
+                        }}
+                        title={!childElig.eligible ? childElig.reason : 'حجز عيادة الأطفال'}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all ${
+                          !childElig.eligible
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                            : 'bg-emerald-700 hover:bg-emerald-800 text-white cursor-pointer'
+                        }`}
                       >
                         <CalendarCheck size={14} /> حجز عيادة الأطفال
                       </button>
                       <button
-                        onClick={() => setShowAddForm(!showAddForm)}
-                        className="px-3.5 py-2 bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
+                        type="button"
+                        disabled={!(childSubTab === 'under5' ? childUnder5Elig.eligible : childOver5Elig.eligible)}
+                        onClick={() => {
+                          const subElig = childSubTab === 'under5' ? childUnder5Elig : childOver5Elig;
+                          if (!subElig.eligible) {
+                            showNotification('error', subElig.reason);
+                            return;
+                          }
+                          setShowAddForm(!showAddForm);
+                        }}
+                        title={!(childSubTab === 'under5' ? childUnder5Elig.eligible : childOver5Elig.eligible) ? (childSubTab === 'under5' ? childUnder5Elig.reason : childOver5Elig.reason) : ''}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all ${
+                          !(childSubTab === 'under5' ? childUnder5Elig.eligible : childOver5Elig.eligible)
+                            ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                            : 'bg-white text-emerald-800 border border-emerald-300 hover:bg-emerald-50 cursor-pointer'
+                        }`}
                       >
                         <Plus size={14} /> {showAddForm ? 'إلغاء' : (childSubTab === 'under5' ? 'تسجيل فحص دون 5 سنوات' : 'تسجيل فحص مدرسي فوق 5 سنوات')}
                       </button>
                     </div>
                   </div>
+
+                  {!(childSubTab === 'under5' ? childUnder5Elig.eligible : childOver5Elig.eligible) && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-amber-900 text-xs font-bold">
+                      <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-black text-amber-950">التوثيق والحجز متوقف لهذه الوحدة السريرية:</p>
+                        <p className="mt-0.5 leading-relaxed">{childSubTab === 'under5' ? childUnder5Elig.reason : childOver5Elig.reason}</p>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Sub-Tabs: Under 5 vs Over 5 */}
                   <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
@@ -1278,10 +1315,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                   {/* Under 5 Content */}
                   {childSubTab === 'under5' && (
                     <>
-                      {showAddForm && (
+                      {showAddForm && childUnder5Elig.eligible && (
                         <form
                           onSubmit={async (e) => {
                             e.preventDefault();
+                            if (!childUnder5Elig.eligible) {
+                              showNotification('error', childUnder5Elig.reason);
+                              return;
+                            }
                             setSubmitting(true);
                             const t = e.target as any;
                             try {
@@ -1308,7 +1349,6 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
                               const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
                               showNotification('error', userMsg);
-                              alert(userMsg);
                             } finally {
                               setSubmitting(false);
                             }
@@ -1434,14 +1474,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                                     <div className="text-slate-500 text-[11px]">{c.doctor_signature ? `د/ ${c.doctor_signature}` : ''}</div>
                                   </td>
                                   <td className="p-3 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteRecord('child_under5_followups', c.id, 'فحص نمو الطفل')}
-                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                      title="حذف السجل"
-                                    >
-                                      <Trash2 size={14} />
-                                    </button>
+                                    <span className="px-2 py-1 text-[10px] font-bold bg-slate-100 text-slate-500 rounded-lg border border-slate-200 inline-block">
+                                      سجل تاريخي (للقراءة فقط)
+                                    </span>
                                   </td>
                                 </tr>
                               ))}
@@ -1455,10 +1490,14 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                   {/* Over 5 (School Age & Adolescent Form 5D) Content */}
                   {childSubTab === 'over5' && (
                     <>
-                      {showAddForm && (
+                      {showAddForm && childOver5Elig.eligible && (
                         <form
                           onSubmit={async (e) => {
                             e.preventDefault();
+                            if (!childOver5Elig.eligible) {
+                              showNotification('error', childOver5Elig.reason);
+                              return;
+                            }
                             setSubmitting(true);
                             const t = e.target as any;
                             const weight = Number(t.weight_kg.value) || null;
@@ -1495,7 +1534,6 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
                               const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
                               showNotification('error', userMsg);
-                              alert(userMsg);
                             } finally {
                               setSubmitting(false);
                             }
@@ -1643,14 +1681,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                                     <div className="text-slate-500 text-[11px]">{c.doctor_signature ? `د/ ${c.doctor_signature}` : ''}</div>
                                   </td>
                                   <td className="p-3 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteRecord('child_over5_followups', c.id, 'فحص السن المدرسي')}
-                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                      title="حذف السجل"
-                                    >
-                                      <Trash2 size={14} />
-                                    </button>
+                                    <span className="px-2 py-1 text-[10px] font-bold bg-slate-100 text-slate-500 rounded-lg border border-slate-200 inline-block">
+                                      سجل تاريخي (للقراءة فقط)
+                                    </span>
                                   </td>
                                 </tr>
                               ))}
@@ -1672,9 +1705,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                   tableError={tableErrors['maternal_antenatal_followups']}
                   isFormDirty={isFormDirty}
                   setIsFormDirty={setIsFormDirty}
-                  onBookClinic={() => setQuickBookingState({ module: 'maternal', reason: 'متابعة رعاية حوامل / ما بعد الولادة' })}
+                  onBookClinic={() => {
+                    if (!maternalElig.eligible) {
+                      showNotification('error', maternalElig.reason);
+                      return;
+                    }
+                    setQuickBookingState({ module: 'maternal', reason: 'متابعة رعاية حوامل / ما بعد الولادة' });
+                  }}
                   onDeleteRecord={(id, label) => handleDeleteRecord('maternal_antenatal_followups', id, label)}
                   onSaveRecord={async (payload) => {
+                    if (!maternalElig.eligible) {
+                      showNotification('error', maternalElig.reason);
+                      throw new Error(maternalElig.reason);
+                    }
                     const saved = await DB.addAccreditationRecord('maternal_antenatal_followups', payload);
                     if (!saved || !saved.id) {
                       throw new Error("لم يتم استلام تأكيد المعرّف (ID) من قاعدة البيانات.");
@@ -1699,24 +1742,64 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setQuickBookingState({ module: 'family_planning', reason: 'استشارة ومتابعة تنظيم الأسرة' })}
-                        className="px-3.5 py-2 bg-pink-700 hover:bg-pink-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                        type="button"
+                        disabled={!familyPlanningElig.eligible}
+                        onClick={() => {
+                          if (!familyPlanningElig.eligible) {
+                            showNotification('error', familyPlanningElig.reason);
+                            return;
+                          }
+                          setQuickBookingState({ module: 'family_planning', reason: 'استشارة ومتابعة تنظيم الأسرة' });
+                        }}
+                        title={!familyPlanningElig.eligible ? familyPlanningElig.reason : 'حجز عيادة تنظيم الأسرة'}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all ${
+                          !familyPlanningElig.eligible
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                            : 'bg-pink-700 hover:bg-pink-800 text-white cursor-pointer'
+                        }`}
                       >
                         <CalendarCheck size={14} /> حجز عيادة تنظيم الأسرة
                       </button>
                       <button
-                        onClick={() => setShowAddForm(!showAddForm)}
-                        className="px-3.5 py-2 bg-white text-pink-800 border border-pink-300 hover:bg-pink-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
+                        type="button"
+                        disabled={!familyPlanningElig.eligible}
+                        onClick={() => {
+                          if (!familyPlanningElig.eligible) {
+                            showNotification('error', familyPlanningElig.reason);
+                            return;
+                          }
+                          setShowAddForm(!showAddForm);
+                        }}
+                        title={!familyPlanningElig.eligible ? familyPlanningElig.reason : 'تسجيل متابعة مباشرة'}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all ${
+                          !familyPlanningElig.eligible
+                            ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                            : 'bg-white text-pink-800 border border-pink-300 hover:bg-pink-50 cursor-pointer'
+                        }`}
                       >
                         <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل متابعة مباشرة'}
                       </button>
                     </div>
                   </div>
 
-                  {showAddForm && (
+                  {!familyPlanningElig.eligible && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-amber-900 text-xs font-bold">
+                      <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-black text-amber-950">التوثيق والحجز متوقف لهذه الوحدة السريرية:</p>
+                        <p className="mt-0.5 leading-relaxed">{familyPlanningElig.reason}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {showAddForm && familyPlanningElig.eligible && (
                     <form
                       onSubmit={async (e) => {
                         e.preventDefault();
+                        if (!familyPlanningElig.eligible) {
+                          showNotification('error', familyPlanningElig.reason);
+                          return;
+                        }
                         setSubmitting(true);
                         const t = e.target as any;
                         try {
@@ -1741,7 +1824,6 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
                           const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
                           showNotification('error', userMsg);
-                          alert(userMsg);
                         } finally {
                           setSubmitting(false);
                         }
@@ -1853,14 +1935,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                                 <div className="text-slate-500 text-[11px]">{fp.doctor_signature ? `د/ ${fp.doctor_signature}` : ''}</div>
                               </td>
                               <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteRecord('family_planning_followups', fp.id, 'متابعة تنظيم الأسرة')}
-                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                  title="حذف السجل"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
+                                <span className="px-2 py-1 text-[10px] font-bold bg-slate-100 text-slate-500 rounded-lg border border-slate-200 inline-block">
+                                  سجل تاريخي (للقراءة فقط)
+                                </span>
                               </td>
                             </tr>
                           ))}
@@ -1886,24 +1963,64 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setQuickBookingState({ module: 'premarital', reason: 'فحص واستشارة المشورة للمقبلين على الزواج' })}
-                        className="px-3.5 py-2 bg-cyan-700 hover:bg-cyan-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                        type="button"
+                        disabled={!premaritalElig.eligible}
+                        onClick={() => {
+                          if (!premaritalElig.eligible) {
+                            showNotification('error', premaritalElig.reason);
+                            return;
+                          }
+                          setQuickBookingState({ module: 'premarital', reason: 'فحص واستشارة المشورة للمقبلين على الزواج' });
+                        }}
+                        title={!premaritalElig.eligible ? premaritalElig.reason : 'حجز عيادة الزواج'}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all ${
+                          !premaritalElig.eligible
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                            : 'bg-cyan-700 hover:bg-cyan-800 text-white cursor-pointer'
+                        }`}
                       >
                         <CalendarCheck size={14} /> حجز عيادة الزواج
                       </button>
                       <button
-                        onClick={() => setShowAddForm(!showAddForm)}
-                        className="px-3.5 py-2 bg-white text-cyan-800 border border-cyan-300 hover:bg-cyan-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
+                        type="button"
+                        disabled={!premaritalElig.eligible}
+                        onClick={() => {
+                          if (!premaritalElig.eligible) {
+                            showNotification('error', premaritalElig.reason);
+                            return;
+                          }
+                          setShowAddForm(!showAddForm);
+                        }}
+                        title={!premaritalElig.eligible ? premaritalElig.reason : 'تسجيل فحص مباشرة'}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all ${
+                          !premaritalElig.eligible
+                            ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                            : 'bg-white text-cyan-800 border border-cyan-300 hover:bg-cyan-50 cursor-pointer'
+                        }`}
                       >
                         <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل فحص مباشرة'}
                       </button>
                     </div>
                   </div>
 
-                  {showAddForm && (
+                  {!premaritalElig.eligible && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-amber-900 text-xs font-bold">
+                      <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-black text-amber-950">التوثيق والحجز متوقف لهذه الوحدة السريرية:</p>
+                        <p className="mt-0.5 leading-relaxed">{premaritalElig.reason}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {showAddForm && premaritalElig.eligible && (
                     <form
                       onSubmit={async (e) => {
                         e.preventDefault();
+                        if (!premaritalElig.eligible) {
+                          showNotification('error', premaritalElig.reason);
+                          return;
+                        }
                         setSubmitting(true);
                         const t = e.target as any;
                         try {
@@ -1930,7 +2047,6 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
                           const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
                           showNotification('error', userMsg);
-                          alert(userMsg);
                         } finally {
                           setSubmitting(false);
                         }
@@ -2051,14 +2167,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                                 {p.doctor_signature ? `د/ ${p.doctor_signature}` : '—'}
                               </td>
                               <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteRecord('premarital_assessments', p.id, 'فحص ما قبل الزواج')}
-                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                  title="حذف السجل"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
+                                <span className="px-2 py-1 text-[10px] font-bold bg-slate-100 text-slate-500 rounded-lg border border-slate-200 inline-block">
+                                  سجل تاريخي (للقراءة فقط)
+                                </span>
                               </td>
                             </tr>
                           ))}
@@ -2084,24 +2195,64 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                     </div>
                     <div className="flex items-center gap-2">
                       <button
-                        onClick={() => setQuickBookingState({ module: 'geriatric', reason: 'تقييم شامل لطب ورعاية كبار السن' })}
-                        className="px-3.5 py-2 bg-amber-700 hover:bg-amber-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all"
+                        type="button"
+                        disabled={!geriatricElig.eligible}
+                        onClick={() => {
+                          if (!geriatricElig.eligible) {
+                            showNotification('error', geriatricElig.reason);
+                            return;
+                          }
+                          setQuickBookingState({ module: 'geriatric', reason: 'تقييم شامل لطب ورعاية كبار السن' });
+                        }}
+                        title={!geriatricElig.eligible ? geriatricElig.reason : 'حجز عيادة كبار السن'}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-md flex items-center gap-1.5 transition-all ${
+                          !geriatricElig.eligible
+                            ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                            : 'bg-amber-700 hover:bg-amber-800 text-white cursor-pointer'
+                        }`}
                       >
                         <CalendarCheck size={14} /> حجز عيادة كبار السن
                       </button>
                       <button
-                        onClick={() => setShowAddForm(!showAddForm)}
-                        className="px-3.5 py-2 bg-white text-amber-800 border border-amber-300 hover:bg-amber-50 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all"
+                        type="button"
+                        disabled={!geriatricElig.eligible}
+                        onClick={() => {
+                          if (!geriatricElig.eligible) {
+                            showNotification('error', geriatricElig.reason);
+                            return;
+                          }
+                          setShowAddForm(!showAddForm);
+                        }}
+                        title={!geriatricElig.eligible ? geriatricElig.reason : 'تسجيل تقييم مباشرة'}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-black shadow-sm flex items-center gap-1.5 transition-all ${
+                          !geriatricElig.eligible
+                            ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                            : 'bg-white text-amber-800 border border-amber-300 hover:bg-amber-50 cursor-pointer'
+                        }`}
                       >
                         <Plus size={14} /> {showAddForm ? 'إلغاء' : 'تسجيل تقييم مباشرة'}
                       </button>
                     </div>
                   </div>
 
-                  {showAddForm && (
+                  {!geriatricElig.eligible && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-amber-900 text-xs font-bold">
+                      <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-black text-amber-950">التوثيق والحجز متوقف لهذه الوحدة السريرية:</p>
+                        <p className="mt-0.5 leading-relaxed">{geriatricElig.reason}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {showAddForm && geriatricElig.eligible && (
                     <form
                       onSubmit={async (e) => {
                         e.preventDefault();
+                        if (!geriatricElig.eligible) {
+                          showNotification('error', geriatricElig.reason);
+                          return;
+                        }
                         setSubmitting(true);
                         const t = e.target as any;
                         try {
@@ -2126,7 +2277,6 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           const errMsg = err?.message || "خطأ غير معروف في الاتصال بقاعدة البيانات";
                           const userMsg = `فشل حفظ البيانات في قاعدة البيانات. لم يتم الحفظ. تفاصيل الخطأ: ${errMsg}`;
                           showNotification('error', userMsg);
-                          alert(userMsg);
                         } finally {
                           setSubmitting(false);
                         }
@@ -2243,14 +2393,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                                 <div className="text-slate-500 text-[11px]">{g.doctor_signature ? `د/ ${g.doctor_signature}` : ''}</div>
                               </td>
                               <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteRecord('geriatric_assessments', g.id, 'تقييم المسن')}
-                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                  title="حذف السجل"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
+                                <span className="px-2 py-1 text-[10px] font-bold bg-slate-100 text-slate-500 rounded-lg border border-slate-200 inline-block">
+                                  سجل تاريخي (للقراءة فقط)
+                                </span>
                               </td>
                             </tr>
                           ))}
@@ -2417,14 +2562,9 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                                 {d.doctor_signature ? `د/ ${d.doctor_signature}` : '—'}
                               </td>
                               <td className="p-3 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteRecord('dental_assessments', d.id, 'فحص الأسنان')}
-                                  className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                                  title="حذف السجل"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
+                                <span className="px-2 py-1 text-[10px] font-bold bg-slate-100 text-slate-500 rounded-lg border border-slate-200 inline-block">
+                                  سجل تاريخي (للقراءة فقط)
+                                </span>
                               </td>
                             </tr>
                           ))}
@@ -2441,7 +2581,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
         {/* Modal Footer */}
         <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
           <div className="text-xs text-slate-500 font-bold">
-            الملف الصحي العائلي الشامل • معايير الهيئة العامة للاعتماد والرقابة الصحية (GAHAR)
+            الملف الصحي العائلي الشامل • سجل طبي داخلي للمراجعة السريرية
           </div>
           <button
             onClick={onClose}

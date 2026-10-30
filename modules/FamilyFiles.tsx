@@ -6,7 +6,7 @@ import PatientTimeline from "../components/PatientTimeline.tsx";
 import FamilyComprehensiveHealthRecordModal from "../components/FamilyComprehensiveHealthRecordModal.tsx";
 import QuickClinicBookingModal from "../components/QuickClinicBookingModal.tsx";
 import FamilyUnifiedNavigationTree, { ClinicalModuleItem } from "../components/FamilyUnifiedNavigationTree.tsx";
-import { calculatePatientSuggestedFollowups } from "../services/followupSuggestions.ts";
+import { calculatePatientSuggestedFollowups, evaluateClinicalModuleEligibility } from "../services/followupSuggestions.ts";
 import { HospitalOperationalEngine, OperationalWorkItem } from "../services/hospitalOperationalEngine.ts";
 import PatientClinical360Modal from "../components/PatientClinical360Modal.tsx";
 import {
@@ -825,7 +825,7 @@ const FamilyFilesModule: React.FC = () => {
                   printFamilyFileFull(selectedFamilyFile, membersList, deaths, housing, social);
                 }}
                 className="px-4 py-2 bg-primary-600 hover:bg-primary-700 text-white rounded-xl text-xs font-black flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                title="طباعة الملف العائلي الشامل (معايير الاعتماد GAHAR)"
+                title="طباعة الملف العائلي الشامل"
               >
                 <Printer size={16} />
                 <span>طباعة الملف العائلي</span>
@@ -2090,15 +2090,16 @@ const FamilyFilesModule: React.FC = () => {
                 ? calculateAge(activePatient.date_of_birth)
                 : null;
               const activeGender = activePatient?.gender || "";
-              const isFemale =
-                activeGender === "أنثى" || activeGender === "female";
-              const isChild = activeAge !== null && activeAge < 18;
-              const isElderly = activeAge !== null && activeAge >= 60;
-              const isReproductiveFemale =
-                isFemale &&
-                activeAge !== null &&
-                activeAge >= 15 &&
-                activeAge <= 49;
+              const childElig = evaluateClinicalModuleEligibility(activePatient, "child");
+              const maternalElig = evaluateClinicalModuleEligibility(activePatient, "maternal");
+              const fpElig = evaluateClinicalModuleEligibility(activePatient, "family_planning");
+              const premaritalElig = evaluateClinicalModuleEligibility(activePatient, "premarital");
+              const geriatricElig = evaluateClinicalModuleEligibility(activePatient, "geriatric");
+
+              const isFemale = childElig.normalizedGender === "female";
+              const isChild = childElig.eligible;
+              const isElderly = geriatricElig.eligible;
+              const isReproductiveFemale = fpElig.eligible;
 
               const accreditationModulesList = [
                 {
@@ -2114,6 +2115,7 @@ const FamilyFilesModule: React.FC = () => {
                   btnClass: "bg-purple-600 hover:bg-purple-700 text-white",
                   badge: "متاح لجميع الأعمار",
                   eligible: true,
+                  reason: "",
                   desc: "الحساسية، الأمراض المزمنة، العمليات، العادات الشخصية، والتاريخ الدوائي.",
                 },
                 {
@@ -2129,6 +2131,7 @@ const FamilyFilesModule: React.FC = () => {
                   btnClass: "bg-amber-600 hover:bg-amber-700 text-white",
                   badge: "متاح لجميع الأعمار",
                   eligible: true,
+                  reason: "",
                   desc: "الأزمات الحادة، دخول المستشفيات، العمليات الكبرى، ومضاعفات العلاج.",
                 },
                 {
@@ -2144,6 +2147,7 @@ const FamilyFilesModule: React.FC = () => {
                   btnClass: "bg-indigo-600 hover:bg-indigo-700 text-white",
                   badge: "متاح لجميع الأعمار",
                   eligible: true,
+                  reason: "",
                   desc: "فحص أجهزة الجسم، الضغط، النبض، السكر، ومؤشر كتلة الجسم (BMI).",
                 },
                 {
@@ -2159,6 +2163,7 @@ const FamilyFilesModule: React.FC = () => {
                   btnClass: "bg-teal-600 hover:bg-teal-700 text-white",
                   badge: "متاح لجميع الأعمار",
                   eligible: true,
+                  reason: "",
                   desc: "سجل الاستشارات، الشكوى، التشخيص الطبي، والخطة العلاجية الدورية.",
                 },
                 {
@@ -2172,10 +2177,9 @@ const FamilyFilesModule: React.FC = () => {
                   borderClass: "border-emerald-200",
                   textClass: "text-emerald-700",
                   btnClass: "bg-emerald-600 hover:bg-emerald-700 text-white",
-                  badge: isChild
-                    ? "متاح (طفل دون 18 سنة)"
-                    : "خاص بالأطفال دون 18 سنة",
-                  eligible: isChild,
+                  badge: childElig.badgeText,
+                  eligible: childElig.eligible,
+                  reason: childElig.reason,
                   desc: "متابعة النمو (Under 5 & Over 5)، الوزن، الطول، وجدول التطعيمات.",
                 },
                 {
@@ -2189,8 +2193,9 @@ const FamilyFilesModule: React.FC = () => {
                   borderClass: "border-rose-200",
                   textClass: "text-rose-700",
                   btnClass: "bg-rose-600 hover:bg-rose-700 text-white",
-                  badge: isFemale ? "متاح (إناث)" : "خاص بالسيدات",
-                  eligible: isFemale,
+                  badge: maternalElig.badgeText,
+                  eligible: maternalElig.eligible,
+                  reason: maternalElig.reason,
                   desc: "رعاية الحوامل (ANC)، قياسات الحمل، رعاية ما بعد الولادة، وفحص حديثي الولادة.",
                 },
                 {
@@ -2204,10 +2209,9 @@ const FamilyFilesModule: React.FC = () => {
                   borderClass: "border-fuchsia-200",
                   textClass: "text-fuchsia-700",
                   btnClass: "bg-fuchsia-600 hover:bg-fuchsia-700 text-white",
-                  badge: isReproductiveFemale
-                    ? "متاح (إناث 15-49)"
-                    : "خاص بالسيدات (15-49)",
-                  eligible: isFemale,
+                  badge: fpElig.badgeText,
+                  eligible: fpElig.eligible,
+                  reason: fpElig.reason,
                   desc: "استشارات ووسائل تنظيم الأسرة، المتابعة، والفحص الإنجابي الشامل.",
                 },
                 {
@@ -2221,8 +2225,9 @@ const FamilyFilesModule: React.FC = () => {
                   borderClass: "border-cyan-200",
                   textClass: "text-cyan-700",
                   btnClass: "bg-cyan-600 hover:bg-cyan-700 text-white",
-                  badge: "متاح للبالغين",
-                  eligible: true,
+                  badge: premaritalElig.badgeText,
+                  eligible: premaritalElig.eligible,
+                  reason: premaritalElig.reason,
                   desc: "فحص الأمراض الوراثية والمعدية، التوافق الزواجي، والتثقيف الصحي.",
                 },
                 {
@@ -2236,10 +2241,9 @@ const FamilyFilesModule: React.FC = () => {
                   borderClass: "border-orange-200",
                   textClass: "text-orange-700",
                   btnClass: "bg-orange-600 hover:bg-orange-700 text-white",
-                  badge: isElderly
-                    ? "متاح (كبار السن ≥ 60 سنة)"
-                    : "خاص بكبار السن (≥ 60 سنة)",
-                  eligible: isElderly,
+                  badge: geriatricElig.badgeText,
+                  eligible: geriatricElig.eligible,
+                  reason: geriatricElig.reason,
                   desc: "تقييم الوظائف الإدراكية، النشاط اليومي (ADL)، مخاطر السقوط، ورعاية الشيخوخة.",
                 },
                 {
@@ -2394,36 +2398,72 @@ const FamilyFilesModule: React.FC = () => {
                           <div className="flex flex-wrap items-center gap-2 shrink-0">
                             <button
                               type="button"
+                              disabled={!currentMod.eligible}
                               onClick={() => {
+                                if (!currentMod.eligible) return;
                                 setComprehensiveModalPatient(activePatient);
                                 setComprehensiveInitialModule(currentMod.id);
                                 setShowComprehensiveModal(true);
                               }}
-                              className={`py-2.5 px-4 ${currentMod.btnClass} rounded-xl font-black text-xs flex items-center gap-2 transition-all shadow-md cursor-pointer`}
+                              title={!currentMod.eligible ? (currentMod as any).reason : "فتح وتوثيق السجل في الملف الشامل"}
+                              className={`py-2.5 px-4 rounded-xl font-black text-xs flex items-center gap-2 transition-all ${
+                                !currentMod.eligible
+                                  ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                  : `${currentMod.btnClass} shadow-md cursor-pointer`
+                              }`}
                             >
                               <Activity size={16} />
                               <span>فتح وتوثيق السجل في الملف الشامل</span>
                             </button>
 
+                            {!currentMod.eligible && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setComprehensiveModalPatient(activePatient);
+                                  setComprehensiveInitialModule(currentMod.id);
+                                  setShowComprehensiveModal(true);
+                                }}
+                                className="py-2.5 px-3.5 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-xl font-black text-xs flex items-center gap-1.5 transition-all border border-amber-200 cursor-pointer"
+                                title="عرض السجلات التاريخية السابقة فقط (للقراءة فقط)"
+                              >
+                                <Eye size={15} />
+                                <span>عرض السجل التاريخي فقط</span>
+                              </button>
+                            )}
+
                             <button
                               type="button"
+                              disabled={!currentMod.eligible}
                               onClick={() => {
+                                if (!currentMod.eligible) return;
                                 setQuickBookingPatient(activePatient);
                                 setQuickBookingModule(currentMod.id as any);
                                 setQuickBookingReason(
                                   `متابعة وفحص (${currentMod.title}) بالملف العائلي`,
                                 );
                               }}
-                              className="py-2.5 px-3.5 bg-white hover:bg-gray-50 text-gray-800 rounded-xl font-black text-xs flex items-center gap-2 transition-all border border-gray-300 shadow-xs cursor-pointer"
+                              title={!currentMod.eligible ? (currentMod as any).reason : "حجز موعد عيادة سريعة"}
+                              className={`py-2.5 px-3.5 rounded-xl font-black text-xs flex items-center gap-2 transition-all border ${
+                                !currentMod.eligible
+                                  ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                                  : "bg-white hover:bg-gray-50 text-gray-800 border-gray-300 shadow-xs cursor-pointer"
+                              }`}
                             >
                               <CalendarCheck
                                 size={16}
-                                className="text-primary-600"
+                                className={!currentMod.eligible ? "text-gray-400" : "text-primary-600"}
                               />
                               <span>حجز موعد عيادة سريعة</span>
                             </button>
                           </div>
                         </div>
+                        {!currentMod.eligible && (currentMod as any).reason && (
+                          <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs font-bold text-amber-900">
+                            <ShieldAlert size={16} className="text-amber-600 shrink-0 mt-0.5" />
+                            <span>{(currentMod as any).reason}</span>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <div className="p-8 text-center bg-gray-50 rounded-3xl border border-gray-200">
@@ -3296,7 +3336,8 @@ const FamilyFilesModule: React.FC = () => {
                           const mAge = mPatient
                             ? calculateAge(mPatient.date_of_birth)
                             : null;
-                          const isEligibleChild = mAge !== null && mAge < 18;
+                          const childMemberElig = evaluateClinicalModuleEligibility(mPatient, "child");
+                          const isEligibleChild = childMemberElig.eligible;
                           const isInfant = mAge !== null && mAge < 2;
                           const exam = physicalExams.find(
                             (pe) => pe.patient_id === m.patient_id,
@@ -3367,7 +3408,7 @@ const FamilyFilesModule: React.FC = () => {
                                 ) : isEligibleChild ? (
                                   <span>فحص نمو عام وفحص الأسنان المدرسي</span>
                                 ) : (
-                                  <span className="text-gray-400">---</span>
+                                  <span className="text-gray-400" title={childMemberElig.reason}>{childMemberElig.badgeText}</span>
                                 )}
                               </td>
                               <td className="p-3.5">
@@ -3375,35 +3416,60 @@ const FamilyFilesModule: React.FC = () => {
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                                     isEligibleChild
                                       ? "bg-cyan-100 text-cyan-900 border border-cyan-200"
-                                      : "bg-gray-100 text-gray-400"
+                                      : "bg-gray-100 text-gray-500"
                                   }`}
+                                  title={childMemberElig.reason}
                                 >
-                                  {isEligibleChild ? "مستهدف بالنموذج" : "فرد بالغ"}
+                                  {childMemberElig.badgeText}
                                 </span>
                               </td>
                               <td className="p-3.5 text-center">
                                 <div className="flex items-center justify-center gap-1.5 flex-wrap">
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      openComprehensiveForMember(mPatient, "child")
-                                    }
-                                    className="px-2.5 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                    disabled={!isEligibleChild}
+                                    onClick={() => {
+                                      if (!isEligibleChild) return;
+                                      openComprehensiveForMember(mPatient, "child");
+                                    }}
+                                    title={!isEligibleChild ? childMemberElig.reason : "توثيق صحة الطفل"}
+                                    className={`px-2.5 py-1.5 rounded-xl font-black text-[11px] transition-all flex items-center gap-1 ${
+                                      !isEligibleChild
+                                        ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                        : "bg-cyan-600 hover:bg-cyan-700 text-white shadow-xs cursor-pointer"
+                                    }`}
                                   >
                                     <Baby size={13} />
                                     <span>توثيق صحة الطفل</span>
                                   </button>
                                   <button
                                     type="button"
+                                    disabled={!isEligibleChild}
                                     onClick={() => {
+                                      if (!isEligibleChild) return;
                                       setQuickBookingPatient(mPatient);
                                       setQuickBookingModule("child");
                                       setQuickBookingReason("متابعة صحة الطفل والتطعيمات بالملف العائلي");
                                     }}
-                                    className="px-2 py-1 bg-white hover:bg-cyan-50 text-cyan-800 rounded-lg font-bold text-[11px] border border-cyan-200 transition-all cursor-pointer"
+                                    title={!isEligibleChild ? childMemberElig.reason : "موعد تطعيم"}
+                                    className={`px-2 py-1 rounded-lg font-bold text-[11px] border transition-all ${
+                                      !isEligibleChild
+                                        ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                                        : "bg-white hover:bg-cyan-50 text-cyan-800 border-cyan-200 cursor-pointer"
+                                    }`}
                                   >
                                     موعد تطعيم
                                   </button>
+                                  {!isEligibleChild && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openComprehensiveForMember(mPatient, "child")}
+                                      className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg font-bold text-[10px] border border-amber-200 transition-all cursor-pointer"
+                                      title="عرض السجل التاريخي فقط (للقراءة فقط)"
+                                    >
+                                      عرض التاريخ
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -3462,8 +3528,9 @@ const FamilyFilesModule: React.FC = () => {
                             ? calculateAge(mPatient.date_of_birth)
                             : null;
                           const mGender = mPatient?.gender || "";
-                          const isFemale = mGender === "أنثى" || mGender === "female";
-                          const isEligibleFemale = isFemale && (mAge === null || (mAge >= 15 && mAge <= 49));
+                          const maternalMemberElig = evaluateClinicalModuleEligibility(mPatient, "maternal");
+                          const isFemale = maternalMemberElig.normalizedGender === "female";
+                          const isEligibleFemale = maternalMemberElig.eligible;
                           const exam = physicalExams.find(
                             (pe) => pe.patient_id === m.patient_id,
                           );
@@ -3494,12 +3561,12 @@ const FamilyFilesModule: React.FC = () => {
                                 </div>
                               </td>
                               <td className="p-3.5">
-                                {isFemale ? (
+                                {isEligibleFemale ? (
                                   <span className="font-mono font-black text-rose-900 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-[11px]">
                                     سجل ولادي دوري
                                   </span>
                                 ) : (
-                                  <span className="text-gray-400">غير منطبق (ذكر)</span>
+                                  <span className="text-gray-400">{maternalMemberElig.badgeText}</span>
                                 )}
                               </td>
                               <td className="p-3.5">
@@ -3509,10 +3576,10 @@ const FamilyFilesModule: React.FC = () => {
                                       ضغط: {exam.vital_signs.bp_systolic}/{exam.vital_signs.bp_diastolic} mmHg
                                     </span>
                                     <span className="text-[10px] text-gray-500 block">
-                                      مؤشر أمان تسمم الحمل
+                                      قراءة مسجلة للمراجعة السريرية
                                     </span>
                                   </div>
-                                ) : isFemale ? (
+                                ) : isEligibleFemale ? (
                                   <span className="text-gray-400 italic text-[11px]">
                                     لم يسجل فحص ضغط حديث
                                   </span>
@@ -3521,7 +3588,7 @@ const FamilyFilesModule: React.FC = () => {
                                 )}
                               </td>
                               <td className="p-3.5 text-[11px] text-gray-600">
-                                {isFemale ? (
+                                {isEligibleFemale ? (
                                   <span>فحص دوري، الحديد وحمض الفوليك وفيتامينات الأمومة</span>
                                 ) : (
                                   <span className="text-gray-400">---</span>
@@ -3532,35 +3599,60 @@ const FamilyFilesModule: React.FC = () => {
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                                     isEligibleFemale
                                       ? "bg-rose-100 text-rose-900 border border-rose-200"
-                                      : "bg-gray-100 text-gray-400"
+                                      : "bg-gray-100 text-gray-500"
                                   }`}
+                                  title={maternalMemberElig.reason}
                                 >
-                                  {isEligibleFemale ? "سيدة في سن الإنجاب" : isFemale ? "أنثى" : "غير مستهدف"}
+                                  {maternalMemberElig.badgeText}
                                 </span>
                               </td>
                               <td className="p-3.5 text-center">
                                 <div className="flex items-center justify-center gap-1.5 flex-wrap">
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      openComprehensiveForMember(mPatient, "maternal")
-                                    }
-                                    className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                    disabled={!isEligibleFemale}
+                                    onClick={() => {
+                                      if (!isEligibleFemale) return;
+                                      openComprehensiveForMember(mPatient, "maternal");
+                                    }}
+                                    title={!isEligibleFemale ? maternalMemberElig.reason : "توثيق رعاية الأمومة"}
+                                    className={`px-2.5 py-1.5 rounded-xl font-black text-[11px] transition-all flex items-center gap-1 ${
+                                      !isEligibleFemale
+                                        ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                        : "bg-rose-600 hover:bg-rose-700 text-white shadow-xs cursor-pointer"
+                                    }`}
                                   >
                                     <Heart size={13} />
                                     <span>توثيق رعاية الأمومة</span>
                                   </button>
                                   <button
                                     type="button"
+                                    disabled={!isEligibleFemale}
                                     onClick={() => {
+                                      if (!isEligibleFemale) return;
                                       setQuickBookingPatient(mPatient);
                                       setQuickBookingModule("maternal");
                                       setQuickBookingReason("متابعة رعاية الأمومة والحمل بالملف العائلي");
                                     }}
-                                    className="px-2 py-1 bg-white hover:bg-rose-50 text-rose-800 rounded-lg font-bold text-[11px] border border-rose-200 transition-all cursor-pointer"
+                                    title={!isEligibleFemale ? maternalMemberElig.reason : "حجز متابعة"}
+                                    className={`px-2 py-1 rounded-lg font-bold text-[11px] border transition-all ${
+                                      !isEligibleFemale
+                                        ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                                        : "bg-white hover:bg-rose-50 text-rose-800 border-rose-200 cursor-pointer"
+                                    }`}
                                   >
                                     حجز متابعة
                                   </button>
+                                  {!isEligibleFemale && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openComprehensiveForMember(mPatient, "maternal")}
+                                      className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg font-bold text-[10px] border border-amber-200 transition-all cursor-pointer"
+                                      title="عرض السجل التاريخي فقط (للقراءة فقط)"
+                                    >
+                                      عرض التاريخ
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -3619,8 +3711,9 @@ const FamilyFilesModule: React.FC = () => {
                             ? calculateAge(mPatient.date_of_birth)
                             : null;
                           const mGender = mPatient?.gender || "";
-                          const isFemale = mGender === "أنثى" || mGender === "female";
-                          const isReproductiveAge = isFemale && (mAge === null || (mAge >= 15 && mAge <= 49));
+                          const fpMemberElig = evaluateClinicalModuleEligibility(mPatient, "family_planning");
+                          const isFemale = fpMemberElig.normalizedGender === "female";
+                          const isReproductiveAge = fpMemberElig.eligible;
 
                           return (
                             <tr
@@ -3648,23 +3741,23 @@ const FamilyFilesModule: React.FC = () => {
                                 </div>
                               </td>
                               <td className="p-3.5">
-                                {isFemale ? (
+                                {isReproductiveAge ? (
                                   <span className="px-2 py-1 rounded-md bg-fuchsia-50 text-fuchsia-800 border border-fuchsia-200 font-bold text-[11px] inline-block">
                                     استشارة ومتابعة وسائل تنظيم الأسرة
                                   </span>
                                 ) : (
-                                  <span className="text-gray-400">غير منطبق</span>
+                                  <span className="text-gray-400">{fpMemberElig.badgeText}</span>
                                 )}
                               </td>
                               <td className="p-3.5 text-[11px] text-gray-600">
-                                {isFemale ? (
+                                {isReproductiveAge ? (
                                   <span>مجدول بالمتابعة الدورية للعيادة</span>
                                 ) : (
                                   <span className="text-gray-400">---</span>
                                 )}
                               </td>
                               <td className="p-3.5 text-[11px] text-gray-600">
-                                {isFemale ? (
+                                {isReproductiveAge ? (
                                   <span>مشورة مباعدة الولادات والرضاعة الطبيعية</span>
                                 ) : (
                                   <span className="text-gray-400">---</span>
@@ -3675,35 +3768,60 @@ const FamilyFilesModule: React.FC = () => {
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                                     isReproductiveAge
                                       ? "bg-fuchsia-100 text-fuchsia-900 border border-fuchsia-200"
-                                      : "bg-gray-100 text-gray-400"
+                                      : "bg-gray-100 text-gray-500"
                                   }`}
+                                  title={fpMemberElig.reason}
                                 >
-                                  {isReproductiveAge ? "مستهدفة بتنظيم الأسرة" : "غير مستهدف"}
+                                  {fpMemberElig.badgeText}
                                 </span>
                               </td>
                               <td className="p-3.5 text-center">
                                 <div className="flex items-center justify-center gap-1.5 flex-wrap">
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      openComprehensiveForMember(mPatient, "family_planning")
-                                    }
-                                    className="px-2.5 py-1.5 bg-fuchsia-600 hover:bg-fuchsia-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                    disabled={!isReproductiveAge}
+                                    onClick={() => {
+                                      if (!isReproductiveAge) return;
+                                      openComprehensiveForMember(mPatient, "family_planning");
+                                    }}
+                                    title={!isReproductiveAge ? fpMemberElig.reason : "توثيق تنظيم الأسرة"}
+                                    className={`px-2.5 py-1.5 rounded-xl font-black text-[11px] transition-all flex items-center gap-1 ${
+                                      !isReproductiveAge
+                                        ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                        : "bg-fuchsia-600 hover:bg-fuchsia-700 text-white shadow-xs cursor-pointer"
+                                    }`}
                                   >
                                     <Sparkles size={13} />
                                     <span>توثيق تنظيم الأسرة</span>
                                   </button>
                                   <button
                                     type="button"
+                                    disabled={!isReproductiveAge}
                                     onClick={() => {
+                                      if (!isReproductiveAge) return;
                                       setQuickBookingPatient(mPatient);
                                       setQuickBookingModule("family_planning");
                                       setQuickBookingReason("استشارة ومتابعة تنظيم الأسرة بالملف العائلي");
                                     }}
-                                    className="px-2 py-1 bg-white hover:bg-fuchsia-50 text-fuchsia-800 rounded-lg font-bold text-[11px] border border-fuchsia-200 transition-all cursor-pointer"
+                                    title={!isReproductiveAge ? fpMemberElig.reason : "حجز استشارة"}
+                                    className={`px-2 py-1 rounded-lg font-bold text-[11px] border transition-all ${
+                                      !isReproductiveAge
+                                        ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                                        : "bg-white hover:bg-fuchsia-50 text-fuchsia-800 border-fuchsia-200 cursor-pointer"
+                                    }`}
                                   >
                                     حجز استشارة
                                   </button>
+                                  {!isReproductiveAge && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openComprehensiveForMember(mPatient, "family_planning")}
+                                      className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg font-bold text-[10px] border border-amber-200 transition-all cursor-pointer"
+                                      title="عرض السجل التاريخي فقط (للقراءة فقط)"
+                                    >
+                                      عرض التاريخ
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -3761,7 +3879,8 @@ const FamilyFilesModule: React.FC = () => {
                           const mAge = mPatient
                             ? calculateAge(mPatient.date_of_birth)
                             : null;
-                          const isAdult = mAge === null || mAge >= 18;
+                          const premaritalMemberElig = evaluateClinicalModuleEligibility(mPatient, "premarital");
+                          const isAdult = premaritalMemberElig.eligible;
 
                           return (
                             <tr
@@ -3806,35 +3925,60 @@ const FamilyFilesModule: React.FC = () => {
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                                     isAdult
                                       ? "bg-emerald-100 text-emerald-900 border border-emerald-200"
-                                      : "bg-gray-100 text-gray-400"
+                                      : "bg-amber-50 text-amber-800 border border-amber-200"
                                   }`}
+                                  title={premaritalMemberElig.reason}
                                 >
-                                  {isAdult ? "مؤهل للفحص الطبي" : "أقل من سن الزواج"}
+                                  {premaritalMemberElig.badgeText}
                                 </span>
                               </td>
                               <td className="p-3.5 text-center">
                                 <div className="flex items-center justify-center gap-1.5 flex-wrap">
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      openComprehensiveForMember(mPatient, "premarital")
-                                    }
-                                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                    disabled={!isAdult}
+                                    onClick={() => {
+                                      if (!isAdult) return;
+                                      openComprehensiveForMember(mPatient, "premarital");
+                                    }}
+                                    title={!isAdult ? premaritalMemberElig.reason : "توثيق فحص الزواج"}
+                                    className={`px-2.5 py-1.5 rounded-xl font-black text-[11px] transition-all flex items-center gap-1 ${
+                                      !isAdult
+                                        ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                        : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs cursor-pointer"
+                                    }`}
                                   >
                                     <UserCheck size={13} />
                                     <span>توثيق فحص الزواج</span>
                                   </button>
                                   <button
                                     type="button"
+                                    disabled={!isAdult}
                                     onClick={() => {
+                                      if (!isAdult) return;
                                       setQuickBookingPatient(mPatient);
                                       setQuickBookingModule("premarital");
                                       setQuickBookingReason("فحص المقبلين على الزواج بالملف العائلي");
                                     }}
-                                    className="px-2 py-1 bg-white hover:bg-emerald-50 text-emerald-800 rounded-lg font-bold text-[11px] border border-emerald-200 transition-all cursor-pointer"
+                                    title={!isAdult ? premaritalMemberElig.reason : "حجز فحص"}
+                                    className={`px-2 py-1 rounded-lg font-bold text-[11px] border transition-all ${
+                                      !isAdult
+                                        ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                                        : "bg-white hover:bg-emerald-50 text-emerald-800 border-emerald-200 cursor-pointer"
+                                    }`}
                                   >
                                     حجز فحص
                                   </button>
+                                  {!isAdult && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openComprehensiveForMember(mPatient, "premarital")}
+                                      className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg font-bold text-[10px] border border-amber-200 transition-all cursor-pointer"
+                                      title="عرض السجل التاريخي فقط (للقراءة فقط)"
+                                    >
+                                      عرض التاريخ
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -3892,7 +4036,8 @@ const FamilyFilesModule: React.FC = () => {
                           const mAge = mPatient
                             ? calculateAge(mPatient.date_of_birth)
                             : null;
-                          const isElderly = mAge !== null && mAge >= 60;
+                          const geriatricMemberElig = evaluateClinicalModuleEligibility(mPatient, "geriatric");
+                          const isElderly = geriatricMemberElig.eligible;
                           const exam = physicalExams.find(
                             (pe) => pe.patient_id === m.patient_id,
                           );
@@ -3944,35 +4089,60 @@ const FamilyFilesModule: React.FC = () => {
                                   className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                                     isElderly
                                       ? "bg-amber-100 text-amber-900 border border-amber-200"
-                                      : "bg-gray-100 text-gray-400"
+                                      : "bg-gray-100 text-gray-500"
                                   }`}
+                                  title={geriatricMemberElig.reason}
                                 >
-                                  {isElderly ? "مستهدف (≥ 60 سنة)" : "أقل من 60 سنة"}
+                                  {geriatricMemberElig.badgeText}
                                 </span>
                               </td>
                               <td className="p-3.5 text-center">
                                 <div className="flex items-center justify-center gap-1.5 flex-wrap">
                                   <button
                                     type="button"
-                                    onClick={() =>
-                                      openComprehensiveForMember(mPatient, "geriatric")
-                                    }
-                                    className="px-2.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-[11px] transition-all shadow-xs flex items-center gap-1 cursor-pointer"
+                                    disabled={!isElderly}
+                                    onClick={() => {
+                                      if (!isElderly) return;
+                                      openComprehensiveForMember(mPatient, "geriatric");
+                                    }}
+                                    title={!isElderly ? geriatricMemberElig.reason : "توثيق رعاية المسن"}
+                                    className={`px-2.5 py-1.5 rounded-xl font-black text-[11px] transition-all flex items-center gap-1 ${
+                                      !isElderly
+                                        ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                                        : "bg-amber-600 hover:bg-amber-700 text-white shadow-xs cursor-pointer"
+                                    }`}
                                   >
                                     <ShieldAlert size={13} />
                                     <span>توثيق رعاية المسن</span>
                                   </button>
                                   <button
                                     type="button"
+                                    disabled={!isElderly}
                                     onClick={() => {
+                                      if (!isElderly) return;
                                       setQuickBookingPatient(mPatient);
                                       setQuickBookingModule("geriatric");
                                       setQuickBookingReason("تقييم رعاية كبار السن بالملف العائلي");
                                     }}
-                                    className="px-2 py-1 bg-white hover:bg-amber-50 text-amber-800 rounded-lg font-bold text-[11px] border border-amber-200 transition-all cursor-pointer"
+                                    title={!isElderly ? geriatricMemberElig.reason : "حجز تقييم"}
+                                    className={`px-2 py-1 rounded-lg font-bold text-[11px] border transition-all ${
+                                      !isElderly
+                                        ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                                        : "bg-white hover:bg-amber-50 text-amber-800 border-amber-200 cursor-pointer"
+                                    }`}
                                   >
                                     حجز تقييم
                                   </button>
+                                  {!isElderly && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openComprehensiveForMember(mPatient, "geriatric")}
+                                      className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg font-bold text-[10px] border border-amber-200 transition-all cursor-pointer"
+                                      title="عرض السجل التاريخي فقط (للقراءة فقط)"
+                                    >
+                                      عرض التاريخ
+                                    </button>
+                                  )}
                                 </div>
                               </td>
                             </tr>

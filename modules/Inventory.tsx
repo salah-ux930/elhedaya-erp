@@ -16,6 +16,7 @@ const InventoryModule: React.FC = () => {
   const [moveType, setMoveType] = useState<'ADD' | 'DEDUCT' | 'REQUEST'>('ADD');
   
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
   const [requests, setRequests] = useState<TransferRequest[]>([]);
@@ -36,6 +37,7 @@ const InventoryModule: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [p, s, r, tx] = await Promise.all([
         DB.getProducts(), 
@@ -49,6 +51,7 @@ const InventoryModule: React.FC = () => {
       setStockTransactions(tx || []);
     } catch (err) {
       console.error(err);
+      setLoadError('تعذر مزامنة بيانات المخزون. يرجى التحقق من الاتصال وإعادة المحاولة.');
     } finally {
       setLoading(false);
     }
@@ -151,9 +154,24 @@ const InventoryModule: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4 no-print">
+          <div className="flex items-center gap-3 text-rose-800 text-sm font-bold">
+            <AlertTriangle size={20} className="text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            onClick={loadData}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print">
         <div className="flex gap-2 p-1 bg-gray-200/50 rounded-[1.2rem] w-fit">
-          <button onClick={() => setActiveSubTab('stock')} className={`px-6 py-3 rounded-[1rem] font-black transition-all ${activeSubTab === 'stock' ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'}`}>أرصدة الأصناف</button>
+          <button onClick={() => setActiveSubTab('stock')} className={`px-6 py-3 rounded-[1rem] font-black transition-all ${activeSubTab === 'stock' ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'}`}>أرصدة الأصناف ({products.length})</button>
           <button onClick={() => setActiveSubTab('requests')} className={`px-6 py-3 rounded-[1rem] font-black transition-all ${activeSubTab === 'requests' ? 'bg-white shadow-sm text-indigo-600' : 'text-gray-500'}`}>إدارة التحويلات ({requests.filter(r => r.status === 'PENDING' || r.status === 'APPROVED').length})</button>
         </div>
 
@@ -177,6 +195,12 @@ const InventoryModule: React.FC = () => {
              <p className="font-black">جاري مزامنة المخزون...</p>
           </div>
         ) : activeSubTab === 'stock' ? (
+          products.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-32 gap-3 text-gray-400">
+              <Package size={40} className="text-gray-300" />
+              <p className="font-black text-sm">لا توجد أصناف مسجلة في المخزون حالياً</p>
+            </div>
+          ) : (
           <div className="p-8 overflow-x-auto">
              <table className="w-full text-right">
                 <thead className="bg-gray-50/50 border-b">
@@ -206,6 +230,7 @@ const InventoryModule: React.FC = () => {
                 </tbody>
              </table>
           </div>
+          )
         ) : (
           <div className="p-10 space-y-6">
              {requests.sort((a,b) => b.date.localeCompare(a.date)).map(req => (

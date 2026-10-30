@@ -8,6 +8,17 @@ import {
   Filter, Sun, Moon, Sparkle, RefreshCw, CalendarDays
 } from 'lucide-react';
 import { getClinicRequirements, formatBookingRequirementsText } from '../constants/clinicRequirements.ts';
+import { evaluateClinicalModuleEligibility } from '../services/followupSuggestions.ts';
+
+const getLocalTodayStr = (): string => {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+};
+
+const getLocalTimeHHMM = (): string => {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+};
 
 interface QuickClinicBookingModalProps {
   isOpen: boolean;
@@ -28,6 +39,7 @@ interface TimeSlot {
   time12: string;      // e.g. "09:20 ص" or "05:40 م"
   period: 'morning' | 'evening';
   isBooked: boolean;
+  isPast?: boolean;
   bookedPatientName?: string;
   appointmentStatus?: string;
 }
@@ -68,8 +80,8 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
   
   const [selectedClinicId, setSelectedClinicId] = useState('');
   const [selectedDoctorId, setSelectedDoctorId] = useState('');
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [time, setTime] = useState('09:00');
+  const [date, setDate] = useState(getLocalTodayStr());
+  const [time, setTime] = useState('21:00');
   const [slotInterval, setSlotInterval] = useState<number>(20); // 15, 20, 30 min
   const [slotFilter, setSlotFilter] = useState<'available_only' | 'all' | 'morning' | 'evening'>('available_only');
   const [showCustomTimeInput, setShowCustomTimeInput] = useState(false);
@@ -180,11 +192,38 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
     ? getClinicRequirements(selectedClinic.linked_module, selectedClinic.name)
     : (normalizedModule ? getClinicRequirements(normalizedModule) : null);
 
-  // Quick date shortcuts
+  // Determine effective clinical module for eligibility verification
+  const effectiveModuleForEligibility = useMemo(() => {
+    const linked = selectedClinic?.linked_module || normalizedModule;
+    if (linked) return linked;
+    const cName = (selectedClinic?.name || '').toLowerCase();
+    const cSpec = (selectedClinic?.specialty || '').toLowerCase();
+    if (cName.includes('طفل') || cSpec.includes('أطفال')) return 'child_followup';
+    if (cName.includes('أمومة') || cName.includes('حوامل')) return 'maternal_care';
+    if (cName.includes('تنظيم') || cSpec.includes('تنظيم')) return 'family_planning';
+    if (cName.includes('مسن') || cName.includes('كبار')) return 'geriatric_care';
+    if (cName.includes('زواج') || cName.includes('مقبلين')) return 'premarital';
+    return null;
+  }, [selectedClinic, normalizedModule]);
+
+  const clinicalEligibility = useMemo(() => {
+    if (!effectiveModuleForEligibility) {
+      return { isEligible: true, reason: '', isRuleConfigured: true };
+    }
+    if (!currentPatient) {
+      return { isEligible: false, reason: 'يرجى اختيار المريض للتحقق من الأهلية السريرية للعيادة.', isRuleConfigured: true };
+    }
+    return evaluateClinicalModuleEligibility(currentPatient, effectiveModuleForEligibility);
+  }, [currentPatient, effectiveModuleForEligibility]);
+
+  // Quick date shortcuts (local date)
   const setQuickDate = (offsetDays: number) => {
     const d = new Date();
-    d.setDate(d.getDate() + offsetDays);
-    setDate(d.toISOString().split('T')[0]);
+    d.setDate(d.getDate() + Math.max(0, offsetDays));
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    setDate(`${y}-${m}-${day}`);
   };
 
   // Format 24h string to 12h Arabic
@@ -214,9 +253,21 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
     }
   }, [date]);
 
+  const todayLocalStr = getLocalTodayStr();
+  const nowLocalHHMM = getLocalTimeHHMM();
+
+  const isSelectedDateTimeInPast = useMemo(() => {
+    if (!date) return false;
+    if (date < todayLocalStr) return true;
+    if (date === todayLocalStr && time && time.slice(0, 5) < nowLocalHHMM) return true;
+    return false;
+  }, [date, time, todayLocalStr, nowLocalHHMM]);
+
   // Generate Slots with Availability
   const timeSlots = useMemo<TimeSlot[]>(() => {
     const slots: TimeSlot[] = [];
+    const isToday = date === todayLocalStr;
+    const isBeforeToday = date < todayLocalStr;
 
     const generatePeriodSlots = (startHour: number, startMin: number, endHour: number, endMin: number, period: 'morning' | 'evening') => {
       let currentMinutes = startHour * 60 + startMin;
@@ -239,11 +290,14 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
           return Math.abs(appMinutes - currentMinutes) < slotInterval;
         });
 
+        const isPast = isBeforeToday || (isToday && time24 < nowLocalHHMM);
+
         slots.push({
           time24,
           time12,
           period,
           isBooked: !!matchingApp,
+          isPast,
           bookedPatientName: matchingApp ? (matchingApp.patients?.name || 'مريض محجوز') : undefined,
           appointmentStatus: matchingApp?.status
         });
@@ -259,16 +313,24 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
     generatePeriodSlots(16, 0, 21, 20, 'evening');
 
     return slots;
-  }, [slotInterval, existingAppointments]);
+  }, [slotInterval, existingAppointments, date, todayLocalStr, nowLocalHHMM]);
 
-  // Summary counts
-  const availableSlotsCount = useMemo(() => timeSlots.filter(s => !s.isBooked).length, [timeSlots]);
+  // Auto-select first non-past, available slot when date or slots change
+  useEffect(() => {
+    const firstValid = timeSlots.find(s => !s.isBooked && !s.isPast);
+    if (firstValid && isSelectedDateTimeInPast) {
+      setTime(firstValid.time24);
+    }
+  }, [timeSlots, isSelectedDateTimeInPast]);
+
+  // Summary counts (aligned with displayed filters)
+  const availableSlotsCount = useMemo(() => timeSlots.filter(s => !s.isBooked && !s.isPast).length, [timeSlots]);
   const bookedSlotsCount = useMemo(() => timeSlots.filter(s => s.isBooked).length, [timeSlots]);
 
   // Filtered slots for display
   const displayedSlots = useMemo(() => {
     if (slotFilter === 'available_only') {
-      return timeSlots.filter(s => !s.isBooked);
+      return timeSlots.filter(s => !s.isBooked && !s.isPast);
     }
     if (slotFilter === 'morning') {
       return timeSlots.filter(s => s.period === 'morning');
@@ -317,8 +379,18 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
       alert('يرجى اختيار العيادة');
       return;
     }
-    if (!time) {
-      alert('يرجى اختيار موعد أو وقت الكشف');
+    if (!clinicalEligibility.isEligible) {
+      alert(clinicalEligibility.reason);
+      return;
+    }
+    if (!date || !time) {
+      alert('يرجى اختيار تاريخ ووقت الكشف');
+      return;
+    }
+    const currentToday = getLocalTodayStr();
+    const currentHHMM = getLocalTimeHHMM();
+    if (date < currentToday || (date === currentToday && time.slice(0, 5) < currentHHMM)) {
+      alert('لا يمكن إنشاء موعد معلق (في الانتظار) بتاريخ أو وقت مضى. يرجى اختيار تاريخ ووقت مستقبلي صالح.');
       return;
     }
 
@@ -499,6 +571,17 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                 </div>
               </div>
 
+              {/* Clinical Eligibility Warning Banner */}
+              {!clinicalEligibility.isEligible && (
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-amber-950 animate-in fade-in">
+                  <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-black">الحجز متوقف للعيادة/الوحدة المحددة:</p>
+                    <p className="font-bold mt-0.5">{clinicalEligibility.reason}</p>
+                  </div>
+                </div>
+              )}
+
               {/* Clinic Requirements Card */}
               {clinicReqs && (
                 <div className="bg-sky-50/80 border-2 border-sky-200 rounded-2xl p-3.5 sm:p-4 space-y-2.5 animate-in fade-in duration-200">
@@ -588,11 +671,19 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                   <input
                     type="date"
                     required
+                    min={todayLocalStr}
                     value={date}
                     onChange={e => setDate(e.target.value)}
                     className="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black text-slate-800 focus:bg-white focus:border-indigo-600 outline-none transition-all"
                   />
                 </div>
+
+                {isSelectedDateTimeInPast && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-[11px] font-bold flex items-center gap-1.5">
+                    <AlertTriangle size={14} className="text-rose-600 shrink-0" />
+                    <span>تنبيه: التاريخ أو الوقت المحدد مضى. لا يمكن إنشاء موعد معلق في الماضي، يرجى اختيار موعد مستقبلي.</span>
+                  </div>
+                )}
               </div>
 
               {/* 🌟 SLOTS SECTION: EMPTY / AVAILABLE APPOINTMENTS VIEWER 🌟 */}
@@ -712,6 +803,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                   {displayedSlots.map(slot => {
                     const isSelected = time === slot.time24;
                     const isBooked = slot.isBooked;
+                    const isPast = !!slot.isPast;
 
                     if (isBooked) {
                       return (
@@ -728,6 +820,26 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                           </div>
                           <span className="text-[10px] text-slate-500 font-bold truncate mt-1">
                             {slot.bookedPatientName || 'محجوز'}
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    if (isPast) {
+                      return (
+                        <div
+                          key={slot.time24}
+                          className="p-2.5 rounded-2xl border border-slate-200 bg-slate-100/70 text-slate-400 flex flex-col justify-between select-none opacity-70"
+                          title="هذه الفترة مضى وقتها ولا يمكن حجز موعد معلق فيها"
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="font-bold text-xs line-through text-slate-400">{slot.time12}</span>
+                            <span className="text-[9px] font-black px-1.5 py-0.5 bg-slate-200 text-slate-600 rounded-md">
+                              مضى وقته
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 font-bold truncate mt-1">
+                            فترة سابقة
                           </span>
                         </div>
                       );
@@ -775,10 +887,10 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                     <p className="text-xs font-bold text-slate-700">لا توجد فترات متاحة وفق الفلتر المحدد لهذا اليوم</p>
                     <button
                       type="button"
-                      onClick={() => setSlotFilter('all')}
+                      onClick={() => setQuickDate(1)}
                       className="text-[11px] font-black text-indigo-600 hover:underline"
                     >
-                      عرض جميع الفترات أو اختيار تاريخ آخر
+                      عرض مواعيد الغد المتاحة
                     </button>
                   </div>
                 )}
@@ -876,8 +988,9 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                 </button>
                 <button
                   type="submit"
-                  disabled={saving || success}
-                  className="px-7 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all disabled:opacity-50 cursor-pointer transform hover:-translate-y-0.5"
+                  disabled={saving || success || !clinicalEligibility.isEligible || isSelectedDateTimeInPast}
+                  title={!clinicalEligibility.isEligible ? clinicalEligibility.reason : isSelectedDateTimeInPast ? 'لا يمكن حجز موعد في الماضي' : 'تأكيد حجز الموعد'}
+                  className="px-7 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transform hover:-translate-y-0.5"
                 >
                   {saving ? (
                     <>

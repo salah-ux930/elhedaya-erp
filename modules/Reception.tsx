@@ -5,12 +5,23 @@ import PatientTimeline from '../components/PatientTimeline.tsx';
 import QuickClinicBookingModal from '../components/QuickClinicBookingModal.tsx';
 import PatientClinical360Modal from '../components/PatientClinical360Modal.tsx';
 import { HospitalOperationalEngine, PatientOperationalProfile } from '../services/hospitalOperationalEngine.ts';
+import { evaluateClinicalModuleEligibility } from '../services/followupSuggestions.ts';
 import { DialysisSession, Patient } from '../types.ts';
 import { 
   UserPlus, Search, Clock, Activity, ArrowRight, 
   CheckCircle2, AlertCircle, MapPin, Scale, HeartPulse, MoreVertical, Loader2, X, BellRing, UserCheck,
-  Users, Calendar, Stethoscope, ShieldAlert, FolderOpen, CreditCard
+  Users, Calendar, Stethoscope, ShieldAlert, FolderOpen, CreditCard, AlertTriangle
 } from 'lucide-react';
+
+function getLocalTodayStr(): string {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+function getLocalTimeHHMM(): string {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+}
 
 interface ReceptionProps {
   initialMode?: 'dialysis' | 'clinics';
@@ -34,6 +45,7 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
   const [fundingEntities, setFundingEntities] = useState<any[]>([]);
   const [patientFor360, setPatientFor360] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [showClinicBookingModal, setShowClinicBookingModal] = useState(false);
 
   useEffect(() => {
@@ -42,6 +54,7 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [s, p, ca, cl, dr, ff, probs, pExams, fe] = await Promise.all([
         DB.getSessions(),
@@ -54,9 +67,24 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
         DB.getPhysicalExams(),
         DB.getFundingEntities()
       ]);
-      setSessions(s || []);
+
+      const seenSessIds = new Set<string>();
+      const uniqueSessions = (s || []).filter((item: any) => {
+        if (!item || !item.id || seenSessIds.has(item.id)) return false;
+        seenSessIds.add(item.id);
+        return true;
+      });
+
+      const seenAppIds = new Set<string>();
+      const uniqueApps = (ca || []).filter((item: any) => {
+        if (!item || !item.id || seenAppIds.has(item.id)) return false;
+        seenAppIds.add(item.id);
+        return true;
+      });
+
+      setSessions(uniqueSessions);
       setPatients(p || []);
-      setClinicAppointments(ca || []);
+      setClinicAppointments(uniqueApps);
       setClinics(cl || []);
       setDoctors(dr || []);
       setFamilyFiles(ff || []);
@@ -65,6 +93,7 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
       setFundingEntities(fe || []);
     } catch (err) {
       console.error(err);
+      setLoadError('تعذر تحميل قوائم الاستقبال. يرجى التحقق من الاتصال وإعادة المحاولة.');
     } finally {
       setLoading(false);
     }
@@ -108,12 +137,11 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
       await DB.addSession({
         patient_id: patient.id,
         status: 'WAITING',
-        date: new Date().toISOString().split('T')[0],
+        date: getLocalTodayStr(),
         start_time: new Date().toTimeString().split(' ')[0],
         notes: 'تم تسجيل الحضور من الاستقبال - بانتظار التمريض'
       });
       
-      // محاكاة إرسال إشعار للتمريض (يمكن ربطها بجدول التنبيهات لاحقاً)
       alert(`تم تسجيل حضور المريض ${patient.name} بنجاح. تم إرسال تنبيه لطاقم التمريض.`);
       
       setSearchTerm('');
@@ -151,19 +179,25 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
   };
 
   const filteredPatients = patients.filter(p => 
-    p.name.includes(searchTerm) || p.phone.includes(searchTerm) || p.national_id?.includes(searchTerm)
+    (p.name || '').includes(searchTerm) || (p.phone || '').includes(searchTerm) || p.national_id?.includes(searchTerm)
   );
 
   const confirmCheckIn = async (e: React.FormEvent) => {
     e.preventDefault();
     const target = e.target as any;
+    const roomVal = (target.room?.value || '').trim();
+    if (!roomVal) {
+      alert('يرجى اختيار وتخصيص الغرفة / الماكينة قبل بدء الجلسة النشطة.');
+      return;
+    }
     try {
       await DB.addSession({
         patient_id: selectedPatient?.id,
         status: 'ACTIVE',
+        date: getLocalTodayStr(),
         weight_before: parseFloat(target.weightBefore.value),
         blood_pressure: target.bp.value,
-        room: target.room.value,
+        room: roomVal,
         start_time: new Date().toTimeString().split(' ')[0]
       });
       setShowCheckInModal(false);
@@ -177,14 +211,42 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
     e.preventDefault();
     if (!selectedPatient) return;
     const target = e.target as any;
+    const dateVal = target.date?.value;
+    const timeVal = target.time?.value;
+    const clinicId = target.clinic_id?.value;
+    const todayStr = getLocalTodayStr();
+    const nowHHMM = getLocalTimeHHMM();
+
+    if (!dateVal || dateVal < todayStr || (dateVal === todayStr && timeVal && timeVal < nowHHMM)) {
+      alert('لا يمكن حجز موعد معلق في تاريخ أو وقت مضى.');
+      return;
+    }
+
+    const cl = clinics.find(c => c.id === clinicId);
+    const clText = `${cl?.name || ''} ${cl?.specialty || ''}`;
+    let modId: 'child' | 'maternal' | 'family_planning' | 'geriatric' | 'premarital' | null = null;
+    if (/تنظيم الأسرة/.test(clText)) modId = 'family_planning';
+    else if (/حوامل|الأمومة|متابعة الحمل/.test(clText)) modId = 'maternal';
+    else if (/أطفال|طفل/.test(clText)) modId = 'child';
+    else if (/مسنين|شيخوخة/.test(clText)) modId = 'geriatric';
+    else if (/راغبي الزواج|ما قبل الزواج/.test(clText)) modId = 'premarital';
+
+    if (modId) {
+      const check = evaluateClinicalModuleEligibility(selectedPatient, modId);
+      if (!check.eligible) {
+        alert(`لا يمكن حجز هذا الموعد: ${check.reason}`);
+        return;
+      }
+    }
+
     try {
       setLoading(true);
       await DB.addClinicAppointment({
         patient_id: selectedPatient.id,
-        clinic_id: target.clinic_id.value,
+        clinic_id: clinicId,
         doctor_id: target.doctor_id.value,
-        date: target.date.value,
-        time: target.time.value,
+        date: dateVal,
+        time: timeVal,
         status: 'WAITING'
       });
       alert(`تم حجز موعد للمريض ${selectedPatient.name} بنجاح.`);
@@ -197,35 +259,61 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
     }
   };
 
+  const todayStr = getLocalTodayStr();
+  const waitingDialysisCount = sessions.filter(s => s.status === 'WAITING').length;
+  const waitingClinicsCount = clinicAppointments.filter(a => a.status === 'WAITING').length;
+  const inSessionOrClinicCount =
+    sessions.filter(s => s.status === 'ACTIVE').length +
+    clinicAppointments.filter(a => a.status === 'IN_PROGRESS').length;
+  const totalQueueCount =
+    activeQueue === 'dialysis'
+      ? sessions.length
+      : clinicAppointments.length;
+
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-rose-800 text-sm font-bold">
+            <AlertTriangle size={20} className="text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            onClick={loadData}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-blue-500 flex items-center gap-4">
           <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Users size={24} /></div>
           <div>
-            <p className="text-gray-500 text-sm">إجمالي اليوم</p>
-            <h3 className="text-2xl font-bold">{sessions.length + clinicAppointments.length}</h3>
+            <p className="text-gray-500 text-sm">{activeQueue === 'dialysis' ? 'إجمالي قائمة الغسيل' : 'إجمالي قائمة العيادات'}</p>
+            <h3 className="text-2xl font-bold">{totalQueueCount}</h3>
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-yellow-500 flex items-center gap-4">
           <div className="p-3 bg-yellow-50 text-yellow-600 rounded-xl"><Clock size={24} /></div>
           <div>
             <p className="text-gray-500 text-sm">بانتظار الغسيل</p>
-            <h3 className="text-2xl font-bold">{sessions.filter(s => s.status === 'WAITING').length}</h3>
+            <h3 className="text-2xl font-bold">{waitingDialysisCount}</h3>
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-indigo-500 flex items-center gap-4">
           <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Calendar size={24} /></div>
           <div>
             <p className="text-gray-500 text-sm">بانتظار العيادات</p>
-            <h3 className="text-2xl font-bold">{clinicAppointments.filter(a => a.status === 'WAITING').length}</h3>
+            <h3 className="text-2xl font-bold">{waitingClinicsCount}</h3>
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-green-500 flex items-center gap-4">
           <div className="p-3 bg-green-50 text-green-600 rounded-xl"><Activity size={24} /></div>
           <div>
             <p className="text-gray-500 text-sm">{AR.inSession}</p>
-            <h3 className="text-2xl font-bold">{sessions.filter(s => s.status === 'ACTIVE').length + clinicAppointments.filter(a => a.status === 'IN_PROGRESS').length}</h3>
+            <h3 className="text-2xl font-bold">{inSessionOrClinicCount}</h3>
           </div>
         </div>
       </div>
@@ -240,18 +328,18 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
                       onClick={() => setActiveQueue('dialysis')}
                       className={`px-6 py-2 rounded-xl font-bold text-sm transition-all ${activeQueue === 'dialysis' ? 'bg-primary-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
                     >
-                      قائمة الغسيل
+                      قائمة الغسيل ({sessions.length})
                     </button>
                     <button 
                       onClick={() => setActiveQueue('clinics')}
                       className={`px-6 py-2 rounded-xl font-bold text-sm transition-all ${activeQueue === 'clinics' ? 'bg-primary-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
                     >
-                      قائمة العيادات
+                      قائمة العيادات ({clinicAppointments.length})
                     </button>
                   </>
                 )}
-                {initialMode === 'dialysis' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار الجلسات</div>}
-                {initialMode === 'clinics' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار العيادات</div>}
+                {initialMode === 'dialysis' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار الجلسات ({sessions.length})</div>}
+                {initialMode === 'clinics' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار العيادات ({clinicAppointments.length})</div>}
                 
                 <button
                   onClick={() => {
@@ -339,8 +427,9 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
             ) : (
               clinicAppointments.map(app => {
                 const prof = patientProfilesMap.get(app.patient_id);
+                const isPastWaiting = app.status === 'WAITING' && app.date && app.date < todayStr;
                 return (
-                <div key={app.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${app.status === 'IN_PROGRESS' ? 'border-blue-100 bg-blue-50/20' : app.status === 'WAITING' ? 'border-yellow-100 bg-yellow-50/20' : 'border-gray-100'}`}>
+                <div key={app.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${isPastWaiting ? 'border-amber-300 bg-amber-50/15' : app.status === 'IN_PROGRESS' ? 'border-blue-100 bg-blue-50/20' : app.status === 'WAITING' ? 'border-yellow-100 bg-yellow-50/20' : 'border-gray-100'}`}>
                    <div className="flex items-start gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-lg shrink-0">
                       {app.patients?.name?.[0]}
@@ -369,10 +458,15 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
                             <ShieldAlert size={11} /> حساسية
                           </span>
                         )}
+                        {isPastWaiting && (
+                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded-md text-[10px] font-black flex items-center gap-1">
+                            <AlertTriangle size={11} /> موعد معلق بتاريخ سابق ({app.date})
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-3 mt-1">
                         <span className="text-xs text-indigo-600 flex items-center gap-1 font-bold"><Stethoscope size={12} /> د/ {app.doctors?.name}</span>
-                        <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {app.time}</span>
+                        <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {app.date ? `${app.date} | ` : ''}{app.time}</span>
                       </div>
                     </div>
                   </div>

@@ -1,7 +1,6 @@
 /**
- * نظام موحد ومتقدم للطباعة في تطبيق مركز الهداية الطبي
- * يدعم الطباعة النظيفة عبر Hidden iFrame أو الطباعة المباشرة مع عزل تام لعناصر الواجهة (الشريط الجانبي، القوائم، الخلفيات الداكنة)
- * متوافق مع معايير طب الأسرة وهيئة الاعتماد والرقابة الصحية GAHAR
+ * نظام موحد للطباعة في تطبيق مركز الهداية الطبي
+ * يدعم الطباعة النظيفة عبر Hidden iFrame مع عزل عناصر الواجهة
  */
 
 export interface PrintHeaderOptions {
@@ -9,6 +8,104 @@ export interface PrintHeaderOptions {
   subtitle?: string;
   documentCode?: string;
   date?: string;
+}
+
+const INTERNAL_PRINT_VALUE_MAP: Record<string, string> = {
+  // Water & Sanitation & Housing
+  public: 'شبكة عامة',
+  public_network: 'شبكة عامة',
+  sanitary: 'صرف صحي آمن / شبكة عامة',
+  septic: 'بيارة / خزان أرضي',
+  trench: 'طرنش / حفرة تقليدية',
+  well: 'بئر / طلمبة',
+  tank: 'خزان مياه',
+  bottled: 'مياه معبأة',
+  good: 'جيدة',
+  poor: 'ضعيفة / سيئة',
+  bad: 'سيئة',
+  fair: 'متوسطة',
+  moderate: 'متوسطة',
+  average: 'متوسطة',
+  excellent: 'ممتازة',
+  adequate: 'كافية / مناسبة',
+  inadequate: 'غير كافية',
+  owned: 'ملك',
+  owner: 'ملك',
+  rent: 'إيجار',
+  rented: 'إيجار',
+  shared: 'مشترك / عائلي',
+  hosted: 'استضافة',
+  concrete: 'خرسانة مسلحة',
+  brick: 'طوب أحمر',
+  mud: 'طوب لبن / ريفي',
+  wood: 'خشب / عريش',
+  apartment: 'شقة سكنية',
+  house: 'منزل مستقل',
+  rural_house: 'منزل ريفي',
+  inside: 'داخل المسكن',
+  outside: 'خارج المسكن',
+  electricity: 'شبكة كهرباء عامة',
+  generator: 'مولد كهربائي',
+  solar: 'طاقة شمسية',
+  kerosene: 'كيروسين / تقليدي',
+  natural: 'طبيعية',
+  artificial: 'صناعية',
+  // Social & Income
+  fixed: 'دخل ثابت / راتب شهري',
+  fixed_salary: 'راتب ثابت',
+  variable: 'دخل متغير / أعمال حرة',
+  daily: 'عمالة يومية / غير منتظمة',
+  seasonal: 'عمالة موسمية',
+  pension: 'معاش تقاعدي / تأميني',
+  social_aid: 'مساعدة اجتماعية / تكافل وكرامة',
+  charity: 'مساعدات خيرية',
+  none: 'لا يوجد / غير مستفيد',
+  other: 'أخرى',
+  low: 'منخفضة / محدودة الدخل',
+  medium: 'متوسطة',
+  high: 'ميسورة / مرتفعة',
+  // Gender & General
+  male: 'ذكر',
+  female: 'أنثى',
+  yes: 'نعم',
+  no: 'لا',
+  true: 'متوفر',
+  false: 'غير متوفر',
+  active: 'نشط',
+  waiting: 'في الانتظار',
+  completed: 'مكتمل',
+  paid: 'مدفوع',
+  deferred: 'آجل',
+  free: 'مجاني / معفى',
+  exempt: 'معفى'
+};
+
+/**
+ * تعريب القيم الداخلية (مثل public وsanitary وgood وpoor وtrench وfixed) مع fallback عربي واضح للقيم غير المعروفة
+ */
+export function translatePrintValue(value: any, fallback = 'غير محدد'): string {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'boolean') return value ? 'نعم' : 'لا';
+  const raw = String(value).trim();
+  if (!raw || raw === '---' || raw === 'null' || raw === 'undefined') return fallback;
+
+  const lower = raw.toLowerCase();
+  if (INTERNAL_PRINT_VALUE_MAP[lower]) {
+    return INTERNAL_PRINT_VALUE_MAP[lower];
+  }
+
+  // If the string contains compound tokens like "owned (concrete)" or comma-separated internal values
+  const replaced = raw.replace(/\b([a-zA-Z_]+)\b/g, (match) => {
+    const mapped = INTERNAL_PRINT_VALUE_MAP[match.toLowerCase()];
+    return mapped || match;
+  });
+
+  // If after mapping the string is still purely Latin characters/underscores (an unknown internal code), return Arabic fallback
+  if (/^[a-zA-Z_ -]+$/.test(replaced)) {
+    return fallback;
+  }
+
+  return replaced;
 }
 
 /**
@@ -222,7 +319,7 @@ export function printHtmlDocument(htmlBody: string, options: PrintHeaderOptions)
     <div class="header-right">
       <h1>مركز الهداية الطبي</h1>
       <p>وحدة طب الأسرة والرعاية الصحية الأولية</p>
-      <p>معايير الهيئة العامة للاعتماد والرقابة الصحية GAHAR</p>
+      <p>بيان مطبوع من النظام للمراجعة الداخلية</p>
     </div>
     <div class="header-center">
       <div class="doc-title">${options.title}</div>
@@ -245,18 +342,18 @@ export function printHtmlDocument(htmlBody: string, options: PrintHeaderOptions)
       <div class="sig-line"></div>
     </div>
     <div class="sig-item">
-      <div class="sig-title">طبيب الأسرة المعتمد</div>
+      <div class="sig-title">طبيب الأسرة</div>
       <div class="sig-line"></div>
     </div>
     <div class="sig-item">
-      <div class="sig-title">خاتم المركز والاعتماد</div>
+      <div class="sig-title">توقيع المراجع</div>
       <div class="sig-line"></div>
     </div>
   </div>
 
   <div class="print-footer">
-    <span>مركز الهداية الطبي - سجلات طب الأسرة المعتمدة</span>
-    <span>وثيقة إلكترونية موثقة رسميًا</span>
+    <span>مركز الهداية الطبي - سجل طب الأسرة</span>
+    <span>نسخة مطبوعة للمراجعة الداخلية (غير موثقة بتوقيع إلكتروني رسمي)</span>
   </div>
 </body>
 </html>
@@ -318,13 +415,13 @@ export function printFamilyFileFull(
     <tr>
       <td style="text-align:center; font-weight:bold;">${idx + 1}</td>
       <td style="font-weight:bold;">${m.patients?.name || '---'}</td>
-      <td><span class="badge ${m.is_head ? 'badge-blue' : 'badge-green'}">${m.relationship_to_head || (m.is_head ? 'رب الأسرة' : 'فرد')}</span></td>
-      <td>${m.patients?.gender === 'female' || m.patients?.gender === 'أنثى' ? 'أنثى' : 'ذكر'}</td>
+      <td><span class="badge ${m.is_head ? 'badge-blue' : 'badge-green'}">${translatePrintValue(m.relationship_to_head, m.is_head ? 'رب الأسرة' : 'فرد')}</span></td>
+      <td>${translatePrintValue(m.patients?.gender, 'غير محدد')}</td>
       <td style="text-align:center;">${m.patients?.date_of_birth ? new Date().getFullYear() - new Date(m.patients.date_of_birth).getFullYear() : '---'} سنة</td>
       <td style="font-family:monospace; text-align:center;">${m.patients?.national_id || '---'}</td>
       <td style="font-family:monospace; text-align:center;">${m.patients?.phone || '---'}</td>
       <td style="text-align:center; font-weight:bold; color:#b91c1c;">${m.patients?.blood_type || '---'}</td>
-      <td>${m.notes || m.patients?.address || '---'}</td>
+      <td>${translatePrintValue(m.notes || m.patients?.address, '---')}</td>
     </tr>
   `).join('') : '<tr><td colspan="9" style="text-align:center; color:#64748b;">لا يوجد أفراد مسجلين بالملف</td></tr>';
 
@@ -333,11 +430,15 @@ export function printFamilyFileFull(
       <td style="text-align:center;">${idx + 1}</td>
       <td style="font-weight:bold;">${d.patient_name || '---'}</td>
       <td style="text-align:center;">${d.death_date ? new Date(d.death_date).toLocaleDateString('ar-EG') : '---'}</td>
-      <td>${d.death_cause || 'غير مدون'}</td>
-      <td>${d.place_of_death || '---'}</td>
-      <td>${d.notes || '---'}</td>
+      <td>${translatePrintValue(d.death_cause, 'غير مدون')}</td>
+      <td>${translatePrintValue(d.place_of_death, 'غير محدد')}</td>
+      <td>${translatePrintValue(d.notes, '---')}</td>
     </tr>
   `).join('') : '<tr><td colspan="6" style="text-align:center; color:#15803d; font-weight:bold;">لا توجد وفيات مسجلة بالأسرة (حفظهم الله)</td></tr>';
+
+  const ownershipLabel = housingData
+    ? `${translatePrintValue(housingData.ownership_type, 'غير محدد')}${housingData.building_type ? ` (${translatePrintValue(housingData.building_type, 'غير محدد')})` : ''}`
+    : 'غير محدد';
 
   const html = `
     <!-- البيانات الأساسية للأسرة -->
@@ -361,33 +462,33 @@ export function printFamilyFileFull(
       </div>
       <div class="info-card">
         <span class="info-label">المحافظة</span>
-        <span class="info-value">${familyFile.governorate || '---'}</span>
+        <span class="info-value">${translatePrintValue(familyFile.governorate, 'غير محدد')}</span>
       </div>
       <div class="info-card">
         <span class="info-label">الإدارة الصحية</span>
-        <span class="info-value">${familyFile.administration || '---'}</span>
+        <span class="info-value">${translatePrintValue(familyFile.administration, 'غير محدد')}</span>
       </div>
       <div class="info-card">
         <span class="info-label">القرية / المدينة</span>
-        <span class="info-value">${familyFile.village_city || '---'}</span>
+        <span class="info-value">${translatePrintValue(familyFile.village_city, 'غير محدد')}</span>
       </div>
       <div class="info-card">
         <span class="info-label">الوحدة الصحية التابع لها</span>
-        <span class="info-value" style="color:#0284c7;">${familyFile.health_unit || '---'}</span>
+        <span class="info-value" style="color:#0284c7;">${translatePrintValue(familyFile.health_unit, 'غير محدد')}</span>
       </div>
       <div class="info-card">
-        <span class="info-label">رقم المنزل (للطباعة الرسمية)</span>
+        <span class="info-label">رقم المنزل (بالملف)</span>
         <span class="info-value" style="font-family:monospace; font-weight:bold;">${familyFile.house_number || '............'}</span>
       </div>
       <div class="info-card">
-        <span class="info-label">رقم الأسرة (للطباعة الرسمية)</span>
+        <span class="info-label">رقم الأسرة (بالملف)</span>
         <span class="info-value" style="font-family:monospace; font-weight:bold;">${familyFile.family_number || '............'}</span>
       </div>
     </div>
 
     <div class="info-card" style="margin-top: 8px;">
       <span class="info-label">العنوان التفصيلي والعلامات المميزة</span>
-      <span class="info-value">${familyFile.address || 'غير محدد'} ${familyFile.nearest_landmark ? `(أقرب علامة مميزة: ${familyFile.nearest_landmark})` : ''}</span>
+      <span class="info-value">${translatePrintValue(familyFile.address, 'غير محدد')} ${familyFile.nearest_landmark ? `(أقرب علامة مميزة: ${translatePrintValue(familyFile.nearest_landmark, 'غير محدد')})` : ''}</span>
     </div>
 
     <!-- التركيب الديموغرافي -->
@@ -436,31 +537,31 @@ export function printFamilyFileFull(
     <div class="section-title">٤. بيان حالة المسكن والبيئة السكنية</div>
     ${housingData ? `
       <div class="grid-3">
-        <div class="info-card"><span class="info-label">نوع السكن والملكية</span><span class="info-value">${housingData.ownership_type || '---'} (${housingData.building_type || '---'})</span></div>
-        <div class="info-card"><span class="info-label">عدد الغرف والأفراد</span><span class="info-value">${housingData.rooms_count || '---'} غرف / ${members.length} أفراد</span></div>
-        <div class="info-card"><span class="info-label">مصدر مياه الشرب</span><span class="info-value">${housingData.water_source || 'شبكة عامة'}</span></div>
-        <div class="info-card"><span class="info-label">الصرف الصحي</span><span class="info-value">${housingData.sanitation_type || 'شبكة عامة'}</span></div>
-        <div class="info-card"><span class="info-label">الكهرباء والإنارة</span><span class="info-value">${housingData.electricity_available !== false ? 'متوفرة وآمنة' : 'غير متوفرة'}</span></div>
-        <div class="info-card"><span class="info-label">التهوية والنظافة العامة</span><span class="info-value">${housingData.ventilation_condition || 'جيدة'}</span></div>
+        <div class="info-card"><span class="info-label">نوع السكن والملكية</span><span class="info-value">${ownershipLabel}</span></div>
+        <div class="info-card"><span class="info-label">عدد الغرف والأفراد</span><span class="info-value">${housingData.rooms_count || 'غير محدد'} غرف / ${members.length} أفراد</span></div>
+        <div class="info-card"><span class="info-label">مصدر مياه الشرب</span><span class="info-value">${translatePrintValue(housingData.water_source, 'شبكة عامة')}</span></div>
+        <div class="info-card"><span class="info-label">الصرف الصحي</span><span class="info-value">${translatePrintValue(housingData.sanitation_type, 'شبكة عامة')}</span></div>
+        <div class="info-card"><span class="info-label">الكهرباء والإنارة</span><span class="info-value">${housingData.lighting_source ? translatePrintValue(housingData.lighting_source, 'متوفرة') : (housingData.electricity_available !== false ? 'متوفرة وآمنة' : 'غير متوفرة')}</span></div>
+        <div class="info-card"><span class="info-label">التهوية والنظافة العامة</span><span class="info-value">${translatePrintValue(housingData.ventilation_condition || housingData.ventilation, 'جيدة')}</span></div>
       </div>
     ` : `
-      <p style="font-size:11px; color:#64748b; margin:4px 0;">السكن صحي ومطابق لاشتراطات السلامة والبيئة السكنية بوحدة طب الأسرة.</p>
+      <p style="font-size:11px; color:#64748b; margin:4px 0;">لا توجد بيانات بيئة سكنية مفصلة مسجلة لهذا الملف.</p>
     `}
 
     <!-- بيان البحث الاجتماعي -->
     <div class="section-title">٥. بيان البحث الاجتماعي والتمكين</div>
     ${socialData ? `
       <div class="grid-3">
-        <div class="info-card"><span class="info-label">الحالة الاقتصادية التقديرية</span><span class="info-value">${socialData.economic_status || 'متوسطة'}</span></div>
-        <div class="info-card"><span class="info-label">مصدر الدخل الأساسي</span><span class="info-value">${socialData.income_source || '---'}</span></div>
-        <div class="info-card"><span class="info-label">الدعم التكافلي والضماني</span><span class="info-value">${socialData.social_aid || 'غير مستفيد'}</span></div>
+        <div class="info-card"><span class="info-label">الحالة الاقتصادية التقديرية</span><span class="info-value">${translatePrintValue(socialData.economic_status || socialData.income_level, 'متوسطة')}</span></div>
+        <div class="info-card"><span class="info-label">مصدر الدخل الأساسي</span><span class="info-value">${translatePrintValue(socialData.income_source || socialData.income_type, 'غير محدد')}</span></div>
+        <div class="info-card"><span class="info-label">الدعم التكافلي والضماني</span><span class="info-value">${translatePrintValue(socialData.social_aid || socialData.support_type, 'غير مستفيد')}</span></div>
       </div>
     ` : `
-      <p style="font-size:11px; color:#64748b; margin:4px 0;">لا توجد صعوبات اجتماعية أو اقتصادية تعوق الرعاية الصحية لأفراد الأسرة.</p>
+      <p style="font-size:11px; color:#64748b; margin:4px 0;">لا توجد بيانات بحث اجتماعي مسجلة لهذا الملف.</p>
     `}
 
     <!-- بيان الوفيات بالأسرة -->
-    <div class="section-title">٦. بيان وفيات الأسرة الموثقة</div>
+    <div class="section-title">٦. بيان وفيات الأسرة المسجلة</div>
     <table>
       <thead>
         <tr>
@@ -481,7 +582,7 @@ export function printFamilyFileFull(
   printHtmlDocument(html, {
     title: `ملف صحة الأسرة رقم: ${familyFile.family_code || ''}`,
     subtitle: `رب العائلة: ${familyFile.head_name || ''}`,
-    documentCode: `GAHAR-FF-${familyFile.family_code || '001'}`
+    documentCode: `FF-${familyFile.family_code || '001'}`
   });
 }
 
@@ -515,7 +616,7 @@ export function printInvoiceDocument(invoice: any, patient?: any) {
         </div>
         <div class="info-card">
           <span class="info-label">العيادة / الغرفة</span>
-          <span class="info-value">${invoice.room || 'العيادة العامة'}</span>
+          <span class="info-value">${translatePrintValue(invoice.room, 'العيادة العامة')}</span>
         </div>
       </div>
 
@@ -531,7 +632,7 @@ export function printInvoiceDocument(invoice: any, patient?: any) {
         <tbody>
           <tr>
             <td style="text-align:center;">١</td>
-            <td style="font-weight:bold;">خدمات الفحص والمتابعة الطبية (${invoice.room || 'العيادة العامة'})</td>
+            <td style="font-weight:bold;">خدمات الفحص والمتابعة الطبية (${translatePrintValue(invoice.room, 'العيادة العامة')})</td>
             <td style="text-align:center;">١</td>
             <td style="text-align:left; font-weight:bold; font-family:monospace;">${amount.toLocaleString()} ج.م</td>
           </tr>
@@ -568,16 +669,16 @@ export function printVisitsFormDocument(patient: any, visits: any[], familyFile?
     <tr>
       <td style="text-align:center;">${i + 1}</td>
       <td style="text-align:center; font-family:monospace;">${v.visit_date || '---'}</td>
-      <td>${v.clinic_name || 'طب الأسرة'}</td>
-      <td>${v.chief_complaint || '---'}</td>
-      <td>${v.diagnosis || '---'}</td>
-      <td>${v.treatment || '---'}</td>
-      <td>${v.doctor_name || 'طبيب الوحدة'}</td>
+      <td>${translatePrintValue(v.clinic_name, 'طب الأسرة')}</td>
+      <td>${translatePrintValue(v.chief_complaint, '---')}</td>
+      <td>${translatePrintValue(v.diagnosis, '---')}</td>
+      <td>${translatePrintValue(v.treatment, '---')}</td>
+      <td>${translatePrintValue(v.doctor_name, 'طبيب الوحدة')}</td>
     </tr>
   `).join('') : '<tr><td colspan="7" style="text-align:center; color:#64748b;">لا توجد زيارات مسجلة للمريض</td></tr>';
 
   const html = `
-    <!-- شريط الترقيم الرسمي من 4 مستويات -->
+    <!-- شريط الترقيم من 4 مستويات -->
     <div style="border: 2px solid #0f172a; border-radius: 8px; padding: 8px 12px; margin-bottom: 14px; background-color: #ffffff;">
       <div style="display: grid; grid-template-columns: repeat(4, 1fr); text-align: center; font-size: 11px; font-weight: bold; border-bottom: 1px solid #cbd5e1; padding-bottom: 6px; margin-bottom: 6px; gap: 8px;">
         <div style="border-left: 1px solid #cbd5e1; padding-left: 4px;">
@@ -601,11 +702,11 @@ export function printVisitsFormDocument(patient: any, visits: any[], familyFile?
         <div><span style="color: #64748b;">اسم المريض: </span>${patient?.name || '............'}</div>
         <div><span style="color: #64748b;">الرقم القومي: </span><span style="font-family: monospace;">${patient?.national_id || '............'}</span></div>
         <div><span style="color: #64748b;">تاريخ الميلاد: </span><span style="font-family: monospace;">${patient?.date_of_birth || '............'}</span></div>
-        <div><span style="color: #64748b;">النوع: </span>${patient?.gender === 'female' || patient?.gender === 'أنثى' ? 'أنثى' : (patient?.gender === 'male' || patient?.gender === 'ذكر' ? 'ذكر' : '............')}</div>
+        <div><span style="color: #64748b;">النوع: </span>${translatePrintValue(patient?.gender, 'غير محدد')}</div>
       </div>
     </div>
 
-    <div class="section-title">سجل التردد والزيارات الطبية المعتمد</div>
+    <div class="section-title">سجل التردد والزيارات الطبية</div>
     <table>
       <thead>
         <tr>
@@ -627,6 +728,6 @@ export function printVisitsFormDocument(patient: any, visits: any[], familyFile?
   printHtmlDocument(html, {
     title: 'نموذج التردد والزيارات الطبية (Visits Form)',
     subtitle: `المريض: ${patient.name}`,
-    documentCode: `GAHAR-VF-${patient.id?.slice(0, 6) || '001'}`
+    documentCode: `VF-${patient.id?.slice(0, 6) || '001'}`
   });
 }

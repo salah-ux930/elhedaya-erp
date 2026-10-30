@@ -3,14 +3,55 @@ import React, { useState, useEffect } from 'react';
 import { AR, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
 import { LabTest, Patient, LabTestDefinition } from '../types.ts';
-import { FlaskConical, Plus, Search, Calendar, FileText, CheckCircle, X, Loader2, Beaker, BookOpen, Clock, Lock, UserPlus } from 'lucide-react';
+import { FlaskConical, Plus, Search, Calendar, FileText, CheckCircle, X, Loader2, Beaker, BookOpen, Clock, Lock, UserPlus, AlertTriangle } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect.tsx';
+
+export function validateLabReferenceRange(rangeStr?: string): { valid: boolean; reason?: string } {
+  const raw = (rangeStr || '').trim();
+  if (!raw || raw === '---' || raw === '-') {
+    return { valid: true };
+  }
+  const allowedQualitative = ['سلبي', 'إيجابي', 'طبيعي', 'غير تفاعلي', 'negative', 'positive', 'non-reactive', 'normal'];
+  if (allowedQualitative.includes(raw.toLowerCase())) {
+    return { valid: true };
+  }
+  // Numeric range: min - max [unit]
+  const rangeMatch = raw.match(/^\s*(-?\d+(?:\.\d+)?)\s*(?:-|–|—|إلى|to)\s*(-?\d+(?:\.\d+)?)(?:\s*[a-zA-Z%/µμ0-9^.\u0600-\u06FF\s()]*)?$/i);
+  if (rangeMatch) {
+    const minVal = parseFloat(rangeMatch[1]);
+    const maxVal = parseFloat(rangeMatch[2]);
+    if (isNaN(minVal) || isNaN(maxVal)) {
+      return { valid: false, reason: 'القيم الرقمية للنطاق غير صالحة' };
+    }
+    if (minVal < 0 || maxVal < 0) {
+      return { valid: false, reason: 'لا يقبل النطاق المرجعي قيماً سالبة' };
+    }
+    if (minVal >= maxVal) {
+      return { valid: false, reason: `الحد الأدنى (${minVal}) يجب أن يكون أقل من الحد الأعلى (${maxVal})` };
+    }
+    return { valid: true };
+  }
+  // Comparator range: < max or > min [unit]
+  const compMatch = raw.match(/^\s*(?:<|<=|>|>=|أقل من|أكثر من)\s*(-?\d+(?:\.\d+)?)(?:\s*[a-zA-Z%/µμ0-9^.\u0600-\u06FF\s()]*)?$/i);
+  if (compMatch) {
+    const val = parseFloat(compMatch[1]);
+    if (isNaN(val) || val < 0) {
+      return { valid: false, reason: 'قيمة المقارنة الرقمية غير صالحة' };
+    }
+    return { valid: true };
+  }
+  return {
+    valid: false,
+    reason: 'نطاق غير رقمي أو غير منطقي (استخدم صيغة رقمية مثل: 10 - 50 والحد الأدنى أقل من الأعلى)'
+  };
+}
 
 const LabModule: React.FC = () => {
   const [view, setView] = useState<'results' | 'definitions'>('results');
   const [tests, setTests] = useState<any[]>([]);
   const [definitions, setDefinitions] = useState<LabTestDefinition[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showDefModal, setShowDefModal] = useState(false);
@@ -28,18 +69,45 @@ const LabModule: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const p = await DB.getPatients();
+      const [p, defs, t] = await Promise.all([
+        DB.getPatients(),
+        DB.getLabDefinitions(),
+        DB.getLabTests()
+      ]);
       setPatients(p || []);
-      const defs = await DB.getLabDefinitions();
-      setDefinitions(defs || []);
-      
-      if (view === 'results') {
-        const t = await DB.getLabTests();
-        setTests(t || []);
+
+      // Deduplicate definitions by id and normalized name+category+sample_type
+      const seenDefIds = new Set<string>();
+      const seenDefKeys = new Set<string>();
+      const uniqueDefs: LabTestDefinition[] = [];
+      for (const d of (defs || [])) {
+        if (!d || !d.id || seenDefIds.has(d.id)) continue;
+        const normKey = `${(d.name || '').trim().toLowerCase()}|${(d.category || '').trim().toLowerCase()}|${(d.sample_type || '').trim().toLowerCase()}`;
+        if (seenDefKeys.has(normKey)) continue;
+        seenDefIds.add(d.id);
+        seenDefKeys.add(normKey);
+        uniqueDefs.push(d);
       }
+      setDefinitions(uniqueDefs);
+
+      // Deduplicate lab tests by id and identical patient+definition+date+status+result signature
+      const seenTestIds = new Set<string>();
+      const seenTestSigs = new Set<string>();
+      const uniqueTests: any[] = [];
+      for (const item of (t || [])) {
+        if (!item || !item.id || seenTestIds.has(item.id)) continue;
+        const sig = `${item.patient_id || ''}|${item.test_definition_id || item.lab_test_definitions?.name || ''}|${item.date || ''}|${item.status || ''}|${String(item.result || '').trim()}`;
+        if (seenTestSigs.has(sig)) continue;
+        seenTestIds.add(item.id);
+        seenTestSigs.add(sig);
+        uniqueTests.push(item);
+      }
+      setTests(uniqueTests);
     } catch (err) {
       console.error(err);
+      setLoadError('تعذر تحميل بيانات المعمل. يرجى التحقق من الاتصال والمحاولة مرة أخرى.');
     } finally {
       setLoading(false);
     }
@@ -48,12 +116,14 @@ const LabModule: React.FC = () => {
   const handleAddTestRequest = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedPatientId || !selectedTestDefId) return alert("يرجى اختيار المريض ونوع التحليل");
+    const now = new Date();
+    const localDateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     try {
       await DB.addLabTest({
         // Use snake_case to match LabTest interface
         patient_id: selectedPatientId,
         test_definition_id: selectedTestDefId,
-        date: new Date().toISOString().split('T')[0]
+        date: localDateStr
       });
       setShowAddModal(false);
       setSelectedPatientId('');
@@ -67,15 +137,44 @@ const LabModule: React.FC = () => {
   const handleAddDefinition = async (e: React.FormEvent) => {
     e.preventDefault();
     const target = e.target as any;
+    const nameVal = (target.name.value || '').trim();
+    const rangeMale = (target.rangeMale.value || '').trim();
+    const rangeFemale = (target.rangeFemale.value || '').trim();
+    const rangeChild = (target.rangeChild.value || '').trim();
+
+    if (!nameVal) {
+      alert('يرجى إدخال اسم التحليل.');
+      return;
+    }
+    if (!rangeMale && !rangeFemale && !rangeChild) {
+      alert('يرجى إدخال معدل طبيعي مرجعي واحد على الأقل بصيغة رقمية صحيحة (مثال: 10 - 50).');
+      return;
+    }
+
+    const checks = [
+      { label: 'معدل الذكور', val: rangeMale },
+      { label: 'معدل الإناث', val: rangeFemale },
+      { label: 'معدل الأطفال', val: rangeChild }
+    ];
+    for (const chk of checks) {
+      if (chk.val) {
+        const res = validateLabReferenceRange(chk.val);
+        if (!res.valid) {
+          alert(`خطأ في ${chk.label}: ${res.reason}`);
+          return;
+        }
+      }
+    }
+
     try {
       await DB.addLabDefinition({
-        name: target.name.value,
-        category: target.category.value,
+        name: nameVal,
+        category: (target.category.value || '').trim(),
         // Use snake_case to match LabTestDefinition interface
-        sample_type: target.sampleType.value,
-        normal_range_male: target.rangeMale.value,
-        normal_range_female: target.rangeFemale.value,
-        normal_range_child: target.rangeChild.value
+        sample_type: (target.sampleType.value || '').trim(),
+        normal_range_male: rangeMale,
+        normal_range_female: rangeFemale,
+        normal_range_child: rangeChild
       });
       setShowDefModal(false);
       loadData();
@@ -109,8 +208,13 @@ const LabModule: React.FC = () => {
   const handleUpdateResult = async (e: React.FormEvent) => {
     e.preventDefault();
     const target = e.target as any;
+    const resultVal = (target.result.value || '').trim();
+    if (!resultVal) {
+      alert('يرجى إدخال قيمة النتيجة.');
+      return;
+    }
     try {
-      await DB.updateLabResult(showResultModal.id, target.result.value);
+      await DB.updateLabResult(showResultModal.id, resultVal);
       setShowResultModal(null);
       loadData();
     } catch (err) {
@@ -131,24 +235,58 @@ const LabModule: React.FC = () => {
   };
 
   const filteredTests = tests.filter(t => 
-    t.lab_test_definitions?.name.includes(searchTerm) || t.patients?.name.includes(searchTerm)
+    (t.lab_test_definitions?.name || '').includes(searchTerm) || (t.patients?.name || '').includes(searchTerm)
   );
+
+  const filteredDefinitions = definitions.filter(d =>
+    (d.name || '').includes(searchTerm) || (d.category || '').includes(searchTerm)
+  );
+
+  const renderRangeValue = (rawRange: string | undefined, colorClass: string) => {
+    if (!rawRange || !rawRange.trim() || rawRange.trim() === '---') {
+      return <span className="font-bold text-gray-400">غير محدد</span>;
+    }
+    const check = validateLabReferenceRange(rawRange);
+    if (!check.valid) {
+      return (
+        <span className="font-bold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded text-[10px] inline-flex items-center gap-1" title={check.reason}>
+          <AlertTriangle size={11} /> نطاق غير قياسي يحتاج مراجعة ({rawRange})
+        </span>
+      );
+    }
+    return <span className={`font-bold ${colorClass}`}>{rawRange}</span>;
+  };
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-rose-800 text-sm font-bold">
+            <AlertTriangle size={20} className="text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            onClick={loadData}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       {/* Navigation Tabs */}
       <div className="flex gap-2 p-1 bg-gray-200/50 rounded-xl w-fit">
         <button 
           onClick={() => setView('results')}
           className={`px-6 py-2 rounded-lg font-bold transition-all flex items-center gap-2 ${view === 'results' ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'}`}
         >
-          <FlaskConical size={18} /> سجل النتائج
+          <FlaskConical size={18} /> سجل النتائج ({filteredTests.length})
         </button>
         <button 
           onClick={() => setView('definitions')}
           className={`px-6 py-2 rounded-lg font-bold transition-all flex items-center gap-2 ${view === 'definitions' ? 'bg-white shadow-sm text-primary-600' : 'text-gray-500'}`}
         >
-          <BookOpen size={18} /> قاموس التحاليل
+          <BookOpen size={18} /> قاموس التحاليل ({filteredDefinitions.length})
         </button>
       </div>
 
@@ -187,6 +325,11 @@ const LabModule: React.FC = () => {
             <div className="flex flex-col items-center justify-center py-20 gap-4 text-gray-400">
               <Loader2 className="animate-spin text-primary-600" size={40} />
               <p className="font-bold">جاري تحميل السجلات...</p>
+            </div>
+          ) : filteredTests.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 gap-3 text-gray-400">
+              <FlaskConical size={36} className="text-gray-300" />
+              <p className="font-bold text-sm">لا توجد تحاليل مطابقة للبحث حالياً</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -243,7 +386,7 @@ const LabModule: React.FC = () => {
                             إدخال النتيجة
                           </button>
                         ) : (
-                          <button className="text-gray-400 hover:text-primary-600 transition-colors">
+                          <button className="text-gray-400 hover:text-primary-600 transition-colors" title="النتيجة المعتمدة محفوظة للقراءة فقط">
                             <FileText size={18} />
                           </button>
                         )}
@@ -255,37 +398,57 @@ const LabModule: React.FC = () => {
             </div>
           )}
         </div>
+      ) : loading ? (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center py-20 gap-4 text-gray-400">
+          <Loader2 className="animate-spin text-primary-600" size={40} />
+          <p className="font-bold">جاري تحميل قاموس التحاليل...</p>
+        </div>
+      ) : filteredDefinitions.length === 0 ? (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center justify-center py-20 gap-3 text-gray-400">
+          <BookOpen size={36} className="text-gray-300" />
+          <p className="font-bold text-sm">لا توجد تعريفات تحاليل مطابقة للبحث</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {definitions.filter(d => d.name.includes(searchTerm)).map(def => (
-            <div key={def.id} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm hover:border-indigo-300 transition-all">
-              <div className="flex justify-between items-start mb-4">
-                <div className="bg-indigo-50 text-indigo-600 p-3 rounded-xl"><Beaker size={20} /></div>
-                <span className="text-[10px] font-bold bg-gray-100 px-2 py-1 rounded text-gray-500 uppercase">{def.category}</span>
+          {filteredDefinitions.map(def => {
+            const hasInvalidRange =
+              !validateLabReferenceRange(def.normal_range_male).valid ||
+              !validateLabReferenceRange(def.normal_range_female).valid ||
+              !validateLabReferenceRange(def.normal_range_child).valid;
+            return (
+              <div key={def.id} className={`bg-white p-6 rounded-2xl border shadow-sm transition-all ${hasInvalidRange ? 'border-amber-300 bg-amber-50/10' : 'border-gray-100 hover:border-indigo-300'}`}>
+                <div className="flex justify-between items-start mb-4">
+                  <div className="bg-indigo-50 text-indigo-600 p-3 rounded-xl"><Beaker size={20} /></div>
+                  <div className="flex items-center gap-1.5">
+                    {hasInvalidRange && (
+                      <span className="text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 px-2 py-0.5 rounded flex items-center gap-1">
+                        <AlertTriangle size={11} /> تحذير جودة بيانات
+                      </span>
+                    )}
+                    <span className="text-[10px] font-bold bg-gray-100 px-2 py-1 rounded text-gray-500 uppercase">{def.category}</span>
+                  </div>
+                </div>
+                <h4 className="font-bold text-lg mb-1">{def.name}</h4>
+                {/* Use sample_type to match LabTestDefinition interface */}
+                <p className="text-xs text-gray-400 mb-4">نوع العينة: {def.sample_type}</p>
+                
+                <div className="space-y-2 border-t pt-4">
+                  <div className="flex justify-between items-center text-xs gap-2">
+                    <span className="text-gray-500 shrink-0">للذكور:</span>
+                    {renderRangeValue(def.normal_range_male, 'text-indigo-600')}
+                  </div>
+                  <div className="flex justify-between items-center text-xs gap-2">
+                    <span className="text-gray-500 shrink-0">للإناث:</span>
+                    {renderRangeValue(def.normal_range_female, 'text-pink-600')}
+                  </div>
+                  <div className="flex justify-between items-center text-xs gap-2">
+                    <span className="text-gray-500 shrink-0">للأطفال:</span>
+                    {renderRangeValue(def.normal_range_child, 'text-green-600')}
+                  </div>
+                </div>
               </div>
-              <h4 className="font-bold text-lg mb-1">{def.name}</h4>
-              {/* Use sample_type to match LabTestDefinition interface */}
-              <p className="text-xs text-gray-400 mb-4">نوع العينة: {def.sample_type}</p>
-              
-              <div className="space-y-2 border-t pt-4">
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">للذكور:</span>
-                  {/* Use normal_range_male to match LabTestDefinition interface */}
-                  <span className="font-bold text-indigo-600">{def.normal_range_male || '---'}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">للإناث:</span>
-                  {/* Use normal_range_female to match LabTestDefinition interface */}
-                  <span className="font-bold text-pink-600">{def.normal_range_female || '---'}</span>
-                </div>
-                <div className="flex justify-between text-xs">
-                  <span className="text-gray-500">للأطفال:</span>
-                  {/* Use normal_range_child to match LabTestDefinition interface */}
-                  <span className="font-bold text-green-600">{def.normal_range_child || '---'}</span>
-                </div>
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 

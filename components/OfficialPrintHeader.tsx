@@ -1,5 +1,6 @@
 import React from 'react';
 import { FamilyFile, Patient, FamilyFileMember } from '../types.ts';
+import { translatePrintValue } from '../utils/printUtils.ts';
 
 interface OfficialPrintHeaderProps {
   patient?: Partial<Patient> | null;
@@ -28,7 +29,8 @@ export const OfficialPrintHeader: React.FC<OfficialPrintHeaderProps> = ({
   const dob = patient?.birth_date 
     ? new Date(patient.birth_date).toLocaleDateString('ar-EG') 
     : (patient?.date_of_birth ? new Date(patient.date_of_birth).toLocaleDateString('ar-EG') : null);
-  const gender = patient?.gender?.trim() || null;
+  const rawGender = patient?.gender?.trim() || null;
+  const gender = rawGender ? translatePrintValue(rawGender, 'غير محدد') : null;
 
   const renderDotted = (val: string | null, fallbackDots = '................') => {
     if (val && val.length > 0) {
@@ -42,24 +44,24 @@ export const OfficialPrintHeader: React.FC<OfficialPrintHeaderProps> = ({
       className={`hidden print:block mb-4 border-2 border-slate-900 rounded-2xl p-3.5 bg-white text-slate-900 text-xs shadow-none ${className}`}
       dir="rtl"
     >
-      {/* Top Center Title & GAHAR Accreditation */}
+      {/* Top Center Title */}
       <div className="flex justify-between items-center border-b-2 border-slate-800 pb-2 mb-2.5">
         <div className="text-right">
           <p className="font-black text-sm text-slate-900">مركز الهداية الطبي للرعاية الأولية ووحدة الكلى</p>
-          <p className="text-[10px] text-slate-600 font-bold">AL-HEDAYA PRIMARY HEALTH CARE & FAMILY MEDICINE</p>
+          <p className="text-[10px] text-slate-600 font-bold">وحدة طب الأسرة والرعاية الصحية الأولية</p>
         </div>
         <div className="text-center">
           <span className="font-black text-sm px-3.5 py-1 border-2 border-slate-900 rounded-xl bg-slate-50">
-            {documentTitle || 'بطاقة الملف العائلي — السجل الطبي المعتمد'}
+            {documentTitle || 'بطاقة الملف العائلي — سجل طبي داخلي'}
           </span>
         </div>
         <div className="text-left text-[10px] text-slate-600 font-bold">
-          <p>معايير الاعتماد الوطنية GAHAR</p>
+          <p>نسخة مطبوعة للمراجعة الداخلية</p>
           <p className="font-mono text-[9px] text-slate-400">{new Date().toLocaleDateString('ar-EG')}</p>
         </div>
       </div>
 
-      {/* 4-Level Official Numbering Bar (شريط الترقيم الرسمي من 4 مستويات) */}
+      {/* 4-Level Numbering Bar */}
       <div className="grid grid-cols-4 gap-2 bg-slate-50 p-2 rounded-xl border border-slate-300 font-bold text-center mb-2.5 text-[11px]">
         <div className="border-l border-slate-300 pl-1">
           <span className="text-slate-500 text-[10px] block font-semibold mb-0.5">رقم الملف العائلي</span>
@@ -79,7 +81,7 @@ export const OfficialPrintHeader: React.FC<OfficialPrintHeaderProps> = ({
         </div>
       </div>
 
-      {/* Patient Demographic Bar (شريط البيانات الديموغرافية للمريض) */}
+      {/* Patient Demographic Bar */}
       <div className="grid grid-cols-4 gap-3 px-1.5 text-[11px] font-bold border-t border-slate-200 pt-2">
         <div className="truncate">
           <span className="text-slate-500">الاسم: </span>

@@ -46,12 +46,15 @@ class RealtimeNotificationService {
     const savedMute = localStorage.getItem('med_alerts_sound_muted');
     this.isSoundMuted = savedMute === 'true';
 
-    // Load initial cached alerts
+    // Load initial cached alerts and filter out stale/corrupted test alerts
     try {
       const cached = localStorage.getItem('med_alerts_cache');
       if (cached) {
         const parsed = JSON.parse(cached);
-        this.alerts = Array.isArray(parsed) ? parsed : [];
+        const rawList = Array.isArray(parsed) ? parsed : [];
+        this.alerts = rawList
+          .map(a => this.sanitizeAlertForDisplay(a))
+          .filter((a): a is ClinicalAlert => a !== null);
         this.alerts.forEach(a => {
           if (a.source_id) this.processedSourceIds.add(a.source_id);
         });
@@ -59,6 +62,75 @@ class RealtimeNotificationService {
     } catch (e) {
       console.warn('Could not read cached alerts', e);
     }
+  }
+
+  private getLocalTodayStr(): string {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  }
+
+  private getApprovedProtocolConfig(): any | null {
+    try {
+      const raw = localStorage.getItem('approved_clinical_protocol_config');
+      if (!raw) return null;
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+
+  private sanitizeAlertForDisplay(alert: any): ClinicalAlert | null {
+    if (!alert || typeof alert !== 'object') return null;
+
+    // 1. Filter out false critical fall-risk alerts derived from stale test sessions (e.g. > 720 minutes)
+    if (alert.category === 'FALL_RISK_CHECK') {
+      const valStr = String(alert.recorded_value || '');
+      const minsMatch = valStr.match(/(\d+)\s*دقيقة/);
+      if (minsMatch) {
+        const mins = parseInt(minsMatch[1], 10);
+        if (isNaN(mins) || mins > 720 || mins < 0) {
+          return null;
+        }
+      }
+    }
+
+    // 2. Strip unapproved hardcoded reference ranges and treatment directives from BP / Vitals / Lab alerts
+    const sanitized: ClinicalAlert = { ...alert };
+    if (
+      sanitized.reference_range === '110/70 - 140/90 mmHg' ||
+      sanitized.reference_range === '120/80 mmHg | SpO2 >= 95%'
+    ) {
+      sanitized.reference_range = undefined;
+    }
+
+    // Check if this is an implausible BP reading like 10/80
+    const recVal = String(sanitized.recorded_value || '').trim();
+    const bpMatch = recVal.match(/^(\d+)\s*\/\s*(\d+)/);
+    if (bpMatch) {
+      const sys = parseInt(bpMatch[1], 10);
+      const dia = parseInt(bpMatch[2], 10);
+      if (sys < 40 || dia < 20 || sys <= dia) {
+        sanitized.severity = 'WARNING';
+        sanitized.title = `تحذير جودة بيانات: قراءة ضغط دم غير منطقية (${recVal}) للمراجعة السريرية`;
+        sanitized.message = `القراءة المسجلة (${recVal}) خارج النسق البنيوي المعتاد — معروضة للمراجعة السريرية وتدقيق البيانات فقط دون تشخيص أو توجيه علاجي تلقائي.`;
+        sanitized.reference_range = undefined;
+        sanitized.clinical_action = 'مراجعة القراءة سريرياً والتحقق من صحة الإدخال.';
+        return sanitized;
+      }
+    }
+
+    if (
+      sanitized.category === 'CRITICAL_VITALS' ||
+      sanitized.category === 'URGENT_LAB'
+    ) {
+      const protocol = this.getApprovedProtocolConfig();
+      if (!protocol) {
+        sanitized.reference_range = undefined;
+        sanitized.clinical_action = 'قراءة مسجلة للمراجعة السريرية فقط — يتطلب ضبط بروتوكول معتمد من الإدارة الطبية للتوجيه العلاجي.';
+      }
+    }
+
+    return sanitized;
   }
 
   // --- Sound Chime Engine (Synthesized via Web Audio API) ---
@@ -252,7 +324,7 @@ class RealtimeNotificationService {
       const existing = this.alerts.find(a => a.id === notif.id || (a.source_id && a.source_id === notif.id));
       if (!existing) {
         const meta = notif.metadata || {};
-        const alert: ClinicalAlert = {
+        const rawAlert: ClinicalAlert = {
           id: notif.id,
           category: notif.category,
           severity: notif.severity || (notif.type === 'error' ? 'CRITICAL' : 'WARNING'),
@@ -266,13 +338,16 @@ class RealtimeNotificationService {
           parameter_name: meta.parameter_name || 'تنبيه إكلينيكي',
           recorded_value: meta.recorded_value || '',
           reference_range: meta.reference_range,
-          clinical_action: meta.clinical_action || 'مراجعة الطبيب المعالج والتدخل الإكلينيكي فوراً',
+          clinical_action: meta.clinical_action || 'قراءة مسجلة للمراجعة السريرية فقط',
           timestamp: notif.created_at || new Date().toISOString(),
           is_read: notif.is_read || false,
           acknowledged_at: notif.acknowledged_at,
           acknowledged_by: notif.acknowledged_by
         };
-        this.addAlert(alert);
+        const sanitized = this.sanitizeAlertForDisplay(rawAlert);
+        if (sanitized) {
+          this.addAlert(sanitized);
+        }
       }
     }
   }
@@ -350,145 +425,36 @@ class RealtimeNotificationService {
     }
   }
 
-  // --- Clinical Rules Evaluation ---
+  // --- Clinical Rules Evaluation (Configurable Protocol Only — No Unapproved Hardcoded Ranges or Directives) ---
 
   public evaluateAndTriggerLabAlert(test: any): ClinicalAlert | null {
     const resultStr = String(test.result || '').trim();
     const defName = test.lab_test_definitions?.name || 'تحليل معملي';
     const patientName = test.patients?.name || 'مريض';
     const patientId = test.patient_id;
-    const numVal = parseFloat(resultStr.replace(/[^0-9.-]/g, ''));
+    const protocol = this.getApprovedProtocolConfig();
 
-    let isUrgent = false;
-    let severity: 'CRITICAL' | 'WARNING' = 'WARNING';
-    let title = '';
-    let message = '';
-    let clinicalAction = 'إبلاغ الطبيب المعالج والتقييم السريري العاجل';
-    let refRange = test.lab_test_definitions?.normal_range_male || '';
-
-    const lowerName = defName.toLowerCase();
     const lowerResult = resultStr.toLowerCase();
-
-    // 1. Text flags
     const hasUrgentFlag =
       lowerResult.includes('عاجل') ||
       lowerResult.includes('urgent') ||
       lowerResult.includes('critical') ||
       lowerResult.includes('حرجة') ||
-      lowerResult.includes('خطر') ||
-      lowerResult.includes('مرتفع جدا') ||
-      lowerResult.includes('منخفض جدا') ||
       lowerResult.includes('panic') ||
       resultStr.includes('!!') ||
       resultStr.includes('***');
 
-    // 2. Potassium (K+)
-    if (lowerName.includes('potassium') || lowerName.includes('بوتاسيوم') || lowerName.includes('k+')) {
-      refRange = '3.5 - 5.1 mEq/L';
-      if (!isNaN(numVal)) {
-        if (numVal >= 6.2) {
-          isUrgent = true;
-          severity = 'CRITICAL';
-          title = `إنذار حرج: ارتفاع خطير في البوتاسيوم (${numVal} mEq/L)`;
-          message = `المريض ${patientName}: تركيز البوتاسيوم وصل إلى ${numVal} mEq/L، مما يشكل خطراً وشيكاً لاضطراب كهربية وتوقف عضلة القلب.`;
-          clinicalAction = 'إجراء رسم قلب ECG فوراً، إعطاء كالسيوم جلوكونات ومخفضات البوتاسيوم وبدء جلسة غسيل طارئة.';
-        } else if (numVal <= 2.8) {
-          isUrgent = true;
-          severity = 'CRITICAL';
-          title = `إنذار حرج: هبوط حاد في البوتاسيوم (${numVal} mEq/L)`;
-          message = `المريض ${patientName}: نقص حاد في بوتاسيوم الدم (${numVal} mEq/L) وخطر حدوث اضطراب النظم البطيني.`;
-          clinicalAction = 'بدء تعويض البوتاسيوم الوريدي بحذر تحت مراقبة المونيتور.';
-        } else if (numVal >= 5.8 || numVal <= 3.2) {
-          isUrgent = true;
-          severity = 'WARNING';
-          title = `تنبيه معملي: قيمة غير طبيعية للبوتاسيوم (${numVal} mEq/L)`;
-          message = `المريض ${patientName}: البوتاسيوم خارج النطاق الآمن (${numVal} mEq/L).`;
-          clinicalAction = 'مراجعة جرعات الأدوية ومحلول الديلزة.';
-        }
-      }
+    // Only trigger automatic lab alerts if flagged urgent in result text or if an approved protocol is configured
+    if (!hasUrgentFlag && !protocol?.labThresholds) {
+      return null;
     }
-
-    // 3. Hemoglobin (Hb)
-    else if (lowerName.includes('hemoglobin') || lowerName.includes('هيموجلوبين') || lowerName.includes('hb') || lowerName.includes('cbc')) {
-      refRange = '11.5 - 16.0 g/dL';
-      if (!isNaN(numVal)) {
-        if (numVal <= 6.5) {
-          isUrgent = true;
-          severity = 'CRITICAL';
-          title = `إنذار حرج: أنيميا حادة وهبوط الهيموجلوبين (${numVal} g/dL)`;
-          message = `المريض ${patientName}: انخفاض حاد في الهيموجلوبين (${numVal} g/dL) مع مخاطر نقص الأكسجين الحاد وفشل الدورة الدموية.`;
-          clinicalAction = 'طلب نقل كرات دم حمراء مكدسة (PRBCs) فورياً ومراجعة مصادر النزيف.';
-        } else if (numVal <= 8.0) {
-          isUrgent = true;
-          severity = 'WARNING';
-          title = `تنبيه عاجل: فقر دم ملحوظ (${numVal} g/dL)`;
-          message = `المريض ${patientName}: الهيموجلوبين منخفض عند (${numVal} g/dL).`;
-          clinicalAction = 'تعديل جرعات محفزات تكوين كريات الدم الحمر (EPO) والحديد الوريدي.';
-        }
-      }
-    }
-
-    // 4. Creatinine
-    else if (lowerName.includes('creatinine') || lowerName.includes('كرياتينين')) {
-      refRange = '0.7 - 1.3 mg/dL';
-      if (!isNaN(numVal) && numVal >= 9.5) {
-        isUrgent = true;
-        severity = numVal >= 12 ? 'CRITICAL' : 'WARNING';
-        title = `تنبيه معملي: ارتفاع شديد في الكرياتينين (${numVal} mg/dL)`;
-        message = `المريض ${patientName}: وظائف الكلى تسجل كرياتينين مرتفع (${numVal} mg/dL).`;
-        clinicalAction = 'تقييم كفاءة ومعدل تدفق جلسات الغسيل وفحص وصلة الغسيل.';
-      }
-    }
-
-    // 5. Blood Glucose (السكر)
-    else if (lowerName.includes('glucose') || lowerName.includes('سكر') || lowerName.includes('sugar') || lowerName.includes('rbs')) {
-      refRange = '70 - 140 mg/dL';
-      if (!isNaN(numVal)) {
-        if (numVal <= 55) {
-          isUrgent = true;
-          severity = 'CRITICAL';
-          title = `إنذار حرج: هبوط حاد في سكر الدم (${numVal} mg/dL)`;
-          message = `المريض ${patientName}: غيبوبة سكر وشيكة بسبب نقص حاد في الجلوكوز (${numVal} mg/dL).`;
-          clinicalAction = 'إعطاء جلوكوز 25% وريدياً فوراً ومتابعة مستوى الوعي.';
-        } else if (numVal >= 420) {
-          isUrgent = true;
-          severity = 'CRITICAL';
-          title = `إنذار حرج: ارتفاع مفرط في سكر الدم (${numVal} mg/dL)`;
-          message = `المريض ${patientName}: سكر دم شديد الارتفاع (${numVal} mg/dL) مع خطر الحماض الكيتوني السكري.`;
-          clinicalAction = 'إعطاء أنسولين سريع المفعول وفحص غازات الدم والأسيتون.';
-        }
-      }
-    }
-
-    // 6. Platelets (الصفائح الدموية)
-    else if (lowerName.includes('platelet') || lowerName.includes('صفائح') || lowerName.includes('plt')) {
-      refRange = '150,000 - 450,000 /uL';
-      if (!isNaN(numVal) && numVal <= 45) {
-        isUrgent = true;
-        severity = 'CRITICAL';
-        title = `إنذار حرج: نقص حاد في الصفائح الدموية (${numVal} ألف)`;
-        message = `المريض ${patientName}: خطر النزيف التلقائي الحاد أثناء أو بعد جلسة الغسيل.`;
-        clinicalAction = 'إيقاف أو تقليل جرعة الهيبارين تماماً وتجهيز صفائح دموية لنقلها.';
-      }
-    }
-
-    // 7. General text flag trigger
-    if (!isUrgent && hasUrgentFlag) {
-      isUrgent = true;
-      severity = 'CRITICAL';
-      title = `نتيجة تحليل عاجلة وخطيرة: ${defName}`;
-      message = `المريض ${patientName}: نتيجة التحليل (${resultStr}) تتضمن مؤشرات حرجة تستدعي التدخل السريع.`;
-      clinicalAction = 'مراجعة استشاري المختبر والطبيب المناوب.';
-    }
-
-    if (!isUrgent) return null;
 
     const alert: ClinicalAlert = {
       id: `lab_alert_${test.id}_${Date.now()}`,
       category: 'URGENT_LAB',
-      severity,
-      title,
-      message,
+      severity: 'WARNING',
+      title: `نتيجة تحليل للمراجعة السريرية: ${defName}`,
+      message: `المريض ${patientName}: تم تسجيل نتيجة التحليل (${resultStr}) وهي معروضة للمراجعة السريرية.`,
       patient_id: patientId,
       patient_name: patientName,
       patient_national_id: test.patients?.national_id,
@@ -496,14 +462,13 @@ class RealtimeNotificationService {
       source_id: test.id,
       parameter_name: defName,
       recorded_value: resultStr,
-      reference_range: refRange,
-      clinical_action: clinicalAction,
+      reference_range: protocol?.labThresholds?.[defName]?.referenceRange || undefined,
+      clinical_action: protocol?.labThresholds?.[defName]?.clinicalAction || 'قراءة مسجلة للمراجعة السريرية فقط — يتطلب ضبط بروتوكول معتمد للتوجيه العلاجي.',
       timestamp: new Date().toISOString(),
       is_read: false
     };
 
     this.addAlert(alert);
-    this.persistNotificationToDB(alert);
     return alert;
   }
 
@@ -511,156 +476,100 @@ class RealtimeNotificationService {
     const patientName = patient?.name || 'مريض الجلسة';
     const patientId = patient?.id || session?.patient_id;
     const roomName = session?.room ? `غرفة ${session.room}` : '';
-
-    const sysBP = Number(vitals.systolic_bp || 0);
-    const hr = Number(vitals.heart_rate || 0);
-    const spo2 = Number(vitals.oxygen_saturation || 0);
-    const temp = Number(vitals.temperature_celsius || 0);
-    const rr = Number(vitals.respiratory_rate || 0);
     const totalEws = Number(vitals.total_ews_score || 0);
+    const protocol = this.getApprovedProtocolConfig();
 
-    let isUrgent = false;
-    let severity: 'CRITICAL' | 'WARNING' = 'WARNING';
-    let title = '';
-    let message = '';
-    let param = '';
-    let val = '';
-    let clinicalAction = 'تقييم سريري عاجل ومراجعة طبيب الوحدة';
-
-    // 1. Total EWS Score
-    if (totalEws >= 5) {
-      isUrgent = true;
-      severity = totalEws >= 7 ? 'CRITICAL' : 'WARNING';
-      param = 'مقياس الإنذار المبكر (EWS)';
-      val = `${totalEws} نقاط`;
-      title = totalEws >= 7 
-        ? `إنذار أحمر: تدهور إكلينيكي حرج EWS (${totalEws} نقاط)`
-        : `إنذار أصفر: تدهور في مقياس الإنذار المبكر EWS (${totalEws} نقاط)`;
-      message = `المريض ${patientName} (${roomName}): مجموع نقاط الإنذار المبكر وصل إلى ${totalEws}، مما يشير إلى خطر تدهور الوظائف الحيوية.`;
-      clinicalAction = vitals.escalation_action || 'استدعاء طبيب العناية / الوحدة فوراً، وتوفير دعم أكسجين ومراقبة مستمرة كل 15 دقيقة.';
+    if (totalEws < 5 && !protocol?.vitalsThresholds) {
+      return null;
     }
-
-    // 2. Severe Blood Pressure Changes
-    else if (sysBP >= 190) {
-      isUrgent = true;
-      severity = 'CRITICAL';
-      param = 'ضغط الدم الانقباضي';
-      val = `${sysBP} mmHg`;
-      title = `إنذار حرج: أزمة ارتفاع ضغط دم شديدة (${sysBP} mmHg)`;
-      message = `المريض ${patientName} (${roomName}): ارتفاع انقباضي حاد (${sysBP} mmHg) وخطر اعتلال دماغي أو نزيف.`;
-      clinicalAction = 'إعطاء خافض ضغط دم إسعافي وريدياً ومراقبة قاع العين والحالة العصبية.';
-    } else if (sysBP > 0 && sysBP <= 85) {
-      isUrgent = true;
-      severity = 'CRITICAL';
-      param = 'ضغط الدم الانقباضي';
-      val = `${sysBP} mmHg`;
-      title = `إنذار حرج: هبوط حاد في ضغط الدم وصدمة دورية (${sysBP} mmHg)`;
-      message = `المريض ${patientName} (${roomName}): هبوط انقباضي خطير (${sysBP} mmHg) ونقص تروية الأعضاء الحيوية.`;
-      clinicalAction = 'خفض معدل سحب السوائل (Ultrafiltration) فوراً، وضعية ترندلينبورغ وإعطاء محلول ملحي وريدي تعويضي.';
-    }
-
-    // 3. Severe Hypoxemia
-    else if (spo2 > 0 && spo2 < 89) {
-      isUrgent = true;
-      severity = 'CRITICAL';
-      param = 'تشبع الأكسجين (SpO2)';
-      val = `${spo2}%`;
-      title = `إنذار حرج: نقص حاد في أكسجين الدم (${spo2}%)`;
-      message = `المريض ${patientName} (${roomName}): انخفاض تشبع الأكسجين إلى (${spo2}%)، اشتباه ارتشاح رئوي أو انصمام هوائي.`;
-      clinicalAction = 'وضع قناع أكسجين عالي التدفق (High Flow O2) وفحص الصدر وإيقاف الجلسة إن تطلب الأمر.';
-    }
-
-    // 4. Extreme Heart Rate
-    else if (hr >= 135) {
-      isUrgent = true;
-      severity = 'CRITICAL';
-      param = 'معدل النبض';
-      val = `${hr} نبضة/دقيقة`;
-      title = `إنذار حرج: تسارع حاد في نبضات القلب (${hr} bpm)`;
-      message = `المريض ${patientName} (${roomName}): تسارع قلبي خطير (${hr} bpm).`;
-      clinicalAction = 'توصيل شاشة رسم قلب عاجلة (ECG monitor) واستبعاد الرجفان الأذيني.';
-    } else if (hr > 0 && hr <= 42) {
-      isUrgent = true;
-      severity = 'CRITICAL';
-      param = 'معدل النبض';
-      val = `${hr} نبضة/دقيقة`;
-      title = `إنذار حرج: تباطؤ شديد في نبضات القلب (${hr} bpm)`;
-      message = `المريض ${patientName} (${roomName}): تباطؤ حاد في النبض (${hr} bpm) مع خطر توقف القلب.`;
-      clinicalAction = 'تجهيز أتروبين واستدعاء فريق الطوارئ فوراً.';
-    }
-
-    // 5. Hyperpyrexia
-    else if (temp >= 38.8) {
-      isUrgent = true;
-      severity = 'WARNING';
-      param = 'درجة الحرارة';
-      val = `${temp}°C`;
-      title = `تنبيه حيوي: حمى شديدة واشتباه تجرثم دم (${temp}°C)`;
-      message = `المريض ${patientName} (${roomName}): ارتفاع ملحوظ في الحرارة مع رجفة محتملة أثناء الجلسة.`;
-      clinicalAction = 'أخذ مزرعة دم من خط الغسيل والوريد وإعطاء خافض حرارة ومضاد حيوي حسب البروتوكول.';
-    }
-
-    if (!isUrgent) return null;
 
     const alert: ClinicalAlert = {
       id: `vitals_alert_${vitals.id}_${Date.now()}`,
       category: 'CRITICAL_VITALS',
-      severity,
-      title,
-      message,
+      severity: totalEws >= 7 ? 'CRITICAL' : 'WARNING',
+      title: `قراءة علامات حيوية للمراجعة السريرية (${totalEws} نقاط EWS)`,
+      message: `المريض ${patientName} (${roomName}): تم تسجيل قراءة مقياس الإنذار المبكر (${totalEws} نقاط) للمراجعة السريرية.`,
       patient_id: patientId,
       patient_name: patientName,
       patient_national_id: patient?.national_id,
       source_table: 'dialysis_vital_signs_ews',
       source_id: vitals.id,
-      parameter_name: param,
-      recorded_value: val,
-      clinical_action: clinicalAction,
+      parameter_name: 'مقياس الإنذار المبكر (EWS)',
+      recorded_value: `${totalEws} نقاط`,
+      reference_range: protocol?.vitalsThresholds?.referenceRange || undefined,
+      clinical_action: protocol?.vitalsThresholds?.clinicalAction || 'قراءة مسجلة للمراجعة السريرية فقط — لا يوجد توجيه علاجي تلقائي بدون بروتوكول معتمد.',
       timestamp: vitals.recorded_time || new Date().toISOString(),
       is_read: false
     };
 
     this.addAlert(alert);
-    this.persistNotificationToDB(alert);
     return alert;
   }
 
   public evaluateAndTriggerSessionBPAlert(session: any): ClinicalAlert | null {
+    // Only evaluate currently ACTIVE sessions from today
+    if (!session || session.status !== 'ACTIVE') return null;
+    const todayStr = this.getLocalTodayStr();
+    const sessDate = typeof session.date === 'string' ? session.date.trim().slice(0, 10) : '';
+    if (sessDate && sessDate !== todayStr) return null;
+
     const bpStr = String(session.blood_pressure || '').trim();
     const parts = bpStr.split('/');
     if (parts.length !== 2) return null;
 
     const sys = parseInt(parts[0], 10);
     const dia = parseInt(parts[1], 10);
-    if (isNaN(sys)) return null;
+    if (isNaN(sys) || isNaN(dia)) return null;
 
-    let isUrgent = false;
-    let severity: 'CRITICAL' | 'WARNING' = 'WARNING';
-    let title = '';
-    let message = '';
     const patientName = session.patients?.name || 'مريض الغسيل';
     const roomName = session.room ? `غرفة ${session.room}` : '';
 
-    if (sys >= 195 || dia >= 120) {
-      isUrgent = true;
-      severity = 'CRITICAL';
-      title = `إنذار حرج: أزمة ضغط دم حادة بالجلسة (${bpStr})`;
-      message = `المريض ${patientName} (${roomName}): تسجيل قراءة ضغط دم خطيرة ${bpStr} mmHg أثناء جلسة الغسيل.`;
-    } else if (sys <= 85 || (dia > 0 && dia <= 48)) {
-      isUrgent = true;
-      severity = 'CRITICAL';
-      title = `إنذار حرج: هبوط حاد في ضغط دم الجلسة (${bpStr})`;
-      message = `المريض ${patientName} (${roomName}): هبوط مفاجئ في الضغط ${bpStr} mmHg وخطر الصدمة ونقص تروية الوصلة.`;
+    // Data quality check: structurally implausible readings (e.g., 10/80 where sys < 40 or sys <= dia)
+    // Do NOT trigger a critical clinical alert or attach a hardcoded reference range / treatment directive!
+    if (sys < 40 || dia < 20 || sys <= dia) {
+      const dqAlert: ClinicalAlert = {
+        id: `session_bp_dq_${session.id}`,
+        category: 'CLINICAL_ALERT',
+        severity: 'WARNING',
+        title: `تحذير جودة بيانات: قراءة ضغط دم غير منطقية (${bpStr})`,
+        message: `المريض ${patientName} (${roomName}): القراءة المسجلة (${bpStr}) غير متسقة بنيوياً (الانقباضي أقل من أو يساوي الانبساطي أو خارج نطاق الإدخال الصحيح). معروضة للمراجعة السريرية وتدقيق الإدخال فقط.`,
+        patient_id: session.patient_id,
+        patient_name: patientName,
+        patient_national_id: session.patients?.national_id,
+        source_table: 'dialysis_sessions',
+        source_id: `dq_bp_${session.id}_${bpStr}`,
+        parameter_name: 'ضغط الدم بالجلسة (مراجعة جودة البيانات)',
+        recorded_value: bpStr,
+        reference_range: undefined,
+        clinical_action: 'تدقيق القراءة المدخلة ومراجعتها سريرياً فقط — لا يصدر توجيه علاجي تلقائي من قراءة غير صالحة.',
+        timestamp: new Date().toISOString(),
+        is_read: false
+      };
+      this.addAlert(dqAlert);
+      return dqAlert;
     }
 
-    if (!isUrgent) return null;
+    // For structurally valid BP readings, only trigger clinical threshold alerts if an approved protocol is configured
+    const protocol = this.getApprovedProtocolConfig();
+    if (!protocol?.bpThresholds) {
+      return null;
+    }
+
+    const { maxSys, minSys, maxDia, minDia, referenceRange, clinicalAction } = protocol.bpThresholds;
+    const isOut =
+      (typeof maxSys === 'number' && sys >= maxSys) ||
+      (typeof minSys === 'number' && sys <= minSys) ||
+      (typeof maxDia === 'number' && dia >= maxDia) ||
+      (typeof minDia === 'number' && dia <= minDia);
+
+    if (!isOut) return null;
 
     const alert: ClinicalAlert = {
       id: `session_bp_${session.id}_${Date.now()}`,
       category: 'CRITICAL_VITALS',
-      severity,
-      title,
-      message,
+      severity: 'WARNING',
+      title: `تنبيه مراجعة قراءة ضغط الدم بالجلسة (${bpStr})`,
+      message: `المريض ${patientName} (${roomName}): تم تسجيل قراءة ضغط دم ${bpStr} mmHg للمراجعة السريرية وفق البروتوكول.`,
       patient_id: session.patient_id,
       patient_name: patientName,
       patient_national_id: session.patients?.national_id,
@@ -668,14 +577,13 @@ class RealtimeNotificationService {
       source_id: session.id,
       parameter_name: 'ضغط الدم بالجلسة',
       recorded_value: bpStr,
-      reference_range: '110/70 - 140/90 mmHg',
-      clinical_action: 'مراجعة المريض على الجهاز فوراً وضبط كمية السحب وتوفير دعم طبي.',
+      reference_range: referenceRange || undefined,
+      clinical_action: clinicalAction || 'قراءة مسجلة للمراجعة السريرية فقط.',
       timestamp: new Date().toISOString(),
       is_read: false
     };
 
     this.addAlert(alert);
-    this.persistNotificationToDB(alert);
     return alert;
   }
 
@@ -795,8 +703,8 @@ class RealtimeNotificationService {
         });
       }
 
-      // 2. Fetch completed lab tests from today or yesterday
-      const today = new Date().toISOString().split('T')[0];
+      // 2. Fetch completed lab tests from today
+      const today = this.getLocalTodayStr();
       const { data: recentLabs } = await supabase
         .from('lab_tests')
         .select('*, patients(*), lab_test_definitions(*)')
@@ -815,10 +723,12 @@ class RealtimeNotificationService {
         });
       }
 
-      // 3. Fetch active sessions with vital signs
+      // 3. Fetch ONLY currently active sessions from today with vital signs
       const { data: activeSessions } = await supabase
         .from('dialysis_sessions')
         .select('*, patients(*)')
+        .eq('status', 'ACTIVE')
+        .eq('date', today)
         .order('date', { ascending: false })
         .limit(15);
 
@@ -868,9 +778,11 @@ class RealtimeNotificationService {
     }
   }
 
-  // --- Periodic Check for Dialysis Fall Risk Procedures (Every 2 hours per session) ---
+  // --- Periodic Check for Dialysis Fall Risk Procedures (Every 2 hours per active session with valid time) ---
   public async checkActiveSessionsFallRisk() {
     try {
+      const todayStr = this.getLocalTodayStr();
+
       // 1. Fetch active sessions with patient info
       const { data: activeSessions, error: sessErr } = await supabase
         .from('dialysis_sessions')
@@ -879,7 +791,16 @@ class RealtimeNotificationService {
 
       if (sessErr || !activeSessions || activeSessions.length === 0) return;
 
-      const sessionIds = activeSessions.map(s => s.id);
+      // Deduplicate by session.id
+      const uniqueSessionsMap = new Map<string, any>();
+      activeSessions.forEach(s => {
+        if (s && s.id && !uniqueSessionsMap.has(String(s.id))) {
+          uniqueSessionsMap.set(String(s.id), s);
+        }
+      });
+      const dedupedActiveSessions = Array.from(uniqueSessionsMap.values());
+
+      const sessionIds = dedupedActiveSessions.map(s => s.id);
 
       // 2. Fetch all fall risk reviews recorded for these active sessions
       const { data: reviews } = await supabase
@@ -896,39 +817,41 @@ class RealtimeNotificationService {
 
       const now = new Date();
 
-      for (const session of activeSessions) {
-        let elapsedMinutes = 0;
+      for (const session of dedupedActiveSessions) {
+        const sessionDateStr = typeof session.date === 'string' ? session.date.trim().slice(0, 10) : '';
         let startDateTime: Date | null = null;
 
-        if (session.start_time) {
-          const parts = session.start_time.split(':');
-          if (parts.length >= 2) {
-            const dateStr = session.date || now.toISOString().split('T')[0];
-            const parsed = new Date(`${dateStr}T${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:00`);
-            if (!isNaN(parsed.getTime())) {
-              startDateTime = parsed;
+        if (session.start_time && typeof session.start_time === 'string') {
+          const timeMatch = session.start_time.trim().match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+          const dateMatch = (sessionDateStr || todayStr).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+          if (timeMatch && dateMatch) {
+            const year = parseInt(dateMatch[1], 10);
+            const month = parseInt(dateMatch[2], 10);
+            const day = parseInt(dateMatch[3], 10);
+            const hours = parseInt(timeMatch[1], 10);
+            const mins = parseInt(timeMatch[2], 10);
+            const secs = timeMatch[3] ? parseInt(timeMatch[3], 10) : 0;
+            if (hours >= 0 && hours <= 23 && mins >= 0 && mins <= 59) {
+              const parsedLocal = new Date(year, month - 1, day, hours, mins, secs);
+              if (!isNaN(parsedLocal.getTime())) {
+                startDateTime = parsedLocal;
+              }
             }
           }
         }
 
-        if (!startDateTime && session.created_at) {
-          const parsed = new Date(session.created_at);
-          if (!isNaN(parsed.getTime())) {
-            startDateTime = parsed;
-          }
+        // Do not emit critical alerts for missing/invalid time or stale historical/test sessions (> 720 minutes)
+        if (!startDateTime) continue;
+        const elapsedMinutes = Math.floor((now.getTime() - startDateTime.getTime()) / 60000);
+        if (elapsedMinutes < 0 || elapsedMinutes > 720 || (sessionDateStr && sessionDateStr < todayStr)) {
+          continue;
         }
-
-        if (startDateTime) {
-          elapsedMinutes = Math.floor((now.getTime() - startDateTime.getTime()) / 60000);
-        }
-
-        if (elapsedMinutes < 0) elapsedMinutes = 0;
 
         const patientName = session.patients?.name || 'مريض الغسيل الكلوي';
         const roomName = session.room ? `قاعة / سرير ${session.room}` : 'الصالة العامة';
         const hoursElapsed = (elapsedMinutes / 60).toFixed(1);
 
-        // STAGE 1: 2-Hour Review (At or after 120 minutes)
+        // STAGE 1: 2-Hour Review (At or after 120 minutes, up to 720 minutes)
         if (elapsedMinutes >= 120) {
           const has2HourReview = reviewsBySessionAndStage.get(`${session.id}_2_HOURS`);
           const alertKey = `fall_risk_${session.id}_2_HOURS`;
@@ -947,7 +870,7 @@ class RealtimeNotificationService {
                 title: isCrit
                   ? `إنذار متأخر: مراجعة إجراءات السقوط (تجاوزت ${hoursElapsed} ساعة)`
                   : `تنبيه تمريض الصالة: حان موعد المراجعة الأولى لمخاطر السقوط (ساعتان)`,
-                message: `مرت ${hoursElapsed} ساعة على بدء جلسة المريض ${patientName} (${roomName}). يرجى مراجعة وتوثيق إجراءات أمان السرير والفرامل والحواجز فوراً.`,
+                message: `مرت ${hoursElapsed} ساعة على بدء جلسة المريض ${patientName} (${roomName}). يرجى مراجعة وتوثيق إجراءات أمان السرير والفرامل والحواجز.`,
                 patient_id: session.patient_id,
                 patient_name: patientName,
                 patient_national_id: session.patients?.national_id,
@@ -958,7 +881,7 @@ class RealtimeNotificationService {
                 parameter_name: 'مراجعة الساعتين لمخاطر السقوط',
                 recorded_value: `${elapsedMinutes} دقيقة بالجلسة`,
                 reference_range: 'مراجعة كل ساعتين (مرتان بالجلسة)',
-                clinical_action: 'التأكد من خفض السرير، قفل الفرامل، رفع الحواجز الجانبية، وقرب جرس الاستدعاء ومنع القيام منفرداً.',
+                clinical_action: 'التأكد من خفض السرير، قفل الفرامل، رفع الحواجز الجانبية، وقرب جرس الاستدعاء.',
                 timestamp: now.toISOString(),
                 is_read: false
               };
@@ -970,7 +893,7 @@ class RealtimeNotificationService {
           }
         }
 
-        // STAGE 2: 4-Hour / Pre-Termination Review (At or after 240 minutes)
+        // STAGE 2: 4-Hour / Pre-Termination Review (At or after 240 minutes, up to 720 minutes)
         if (elapsedMinutes >= 240) {
           const has4HourReview = reviewsBySessionAndStage.get(`${session.id}_4_HOURS`);
           const alertKey = `fall_risk_${session.id}_4_HOURS`;
@@ -997,7 +920,7 @@ class RealtimeNotificationService {
                 parameter_name: 'مراجعة 4 ساعات لمخاطر السقوط',
                 recorded_value: `${elapsedMinutes} دقيقة بالجلسة`,
                 reference_range: 'المراجعة الثانية قبل إنهاء الجلسة',
-                clinical_action: 'تقييم اتزان المريض بعد السحب، قياس ضغط الدم، وتوفير مرافقة تمريضية مباشرة عند المغادرة.',
+                clinical_action: 'تقييم اتزان المريض بعد السحب وتوفير مرافقة تمريضية عند المغادرة.',
                 timestamp: now.toISOString(),
                 is_read: false
               };

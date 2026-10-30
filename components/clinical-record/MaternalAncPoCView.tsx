@@ -6,6 +6,7 @@ import {
   Activity, Stethoscope, Droplets
 } from 'lucide-react';
 import { ClinicalSectionCard, ClinicalFormField } from './ClinicalFormComponents.tsx';
+import { evaluateClinicalModuleEligibility } from '../../services/followupSuggestions.ts';
 
 interface MaternalAncPoCViewProps {
   patient: any;
@@ -33,6 +34,7 @@ export const MaternalAncPoCView: React.FC<MaternalAncPoCViewProps> = ({
   const [showAddForm, setShowAddForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [showLaboratoriesAccordion, setShowLaboratoriesAccordion] = useState(false);
+  const eligibility = useMemo(() => evaluateClinicalModuleEligibility(patient, 'maternal'), [patient]);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -152,6 +154,10 @@ export const MaternalAncPoCView: React.FC<MaternalAncPoCViewProps> = ({
   // Handle Form Submit
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!eligibility.eligible) {
+      setErrors((prev) => ({ ...prev, eligibility: eligibility.reason }));
+      return;
+    }
     if (!validateForm()) return;
 
     setSubmitting(true);
@@ -239,8 +245,17 @@ export const MaternalAncPoCView: React.FC<MaternalAncPoCViewProps> = ({
         <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-auto">
           <button
             type="button"
-            onClick={onBookClinic}
-            className="px-4 py-2.5 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-black shadow-md flex items-center gap-2 transition-all cursor-pointer"
+            disabled={!eligibility.eligible}
+            onClick={() => {
+              if (!eligibility.eligible) return;
+              onBookClinic();
+            }}
+            title={!eligibility.eligible ? eligibility.reason : 'حجز عيادة الحوامل'}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black shadow-md flex items-center gap-2 transition-all ${
+              !eligibility.eligible
+                ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                : 'bg-rose-700 hover:bg-rose-800 text-white cursor-pointer'
+            }`}
           >
             <CalendarCheck size={16} />
             <span>حجز عيادة الحوامل</span>
@@ -248,7 +263,9 @@ export const MaternalAncPoCView: React.FC<MaternalAncPoCViewProps> = ({
           
           <button
             type="button"
+            disabled={!eligibility.eligible}
             onClick={() => {
+              if (!eligibility.eligible) return;
               if (showAddForm && isFormDirty) {
                 if (!window.confirm('هل تريد إلغاء تسجيل الزيارة؟ ستفقد البيانات غير المحفوظة.')) {
                   return;
@@ -257,10 +274,13 @@ export const MaternalAncPoCView: React.FC<MaternalAncPoCViewProps> = ({
               }
               setShowAddForm(!showAddForm);
             }}
-            className={`px-4 py-2.5 rounded-xl text-xs font-black shadow-sm flex items-center gap-2 transition-all cursor-pointer ${
-              showAddForm
-                ? 'bg-slate-200 hover:bg-slate-300 text-slate-800'
-                : 'bg-white hover:bg-rose-50 text-rose-800 border border-rose-300'
+            title={!eligibility.eligible ? eligibility.reason : 'تسجيل متابعة حمل جديدة'}
+            className={`px-4 py-2.5 rounded-xl text-xs font-black shadow-sm flex items-center gap-2 transition-all ${
+              !eligibility.eligible
+                ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
+                : showAddForm
+                ? 'bg-slate-200 hover:bg-slate-300 text-slate-800 cursor-pointer'
+                : 'bg-white hover:bg-rose-50 text-rose-800 border border-rose-300 cursor-pointer'
             }`}
           >
             <Plus size={16} className={showAddForm ? 'rotate-45 transition-transform' : ''} />
@@ -269,8 +289,18 @@ export const MaternalAncPoCView: React.FC<MaternalAncPoCViewProps> = ({
         </div>
       </div>
 
+      {!eligibility.eligible && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-amber-900 text-xs font-bold">
+          <ShieldAlert size={18} className="text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="font-black text-amber-950">التوثيق والحجز متوقف لهذه الوحدة السريرية:</p>
+            <p className="mt-0.5 leading-relaxed">{eligibility.reason}</p>
+          </div>
+        </div>
+      )}
+
       {/* ANC Add Form (Progressive Disclosure & Keyboard First) */}
-      {showAddForm && (
+      {showAddForm && eligibility.eligible && (
         <form onSubmit={handleSubmit} className="space-y-4 animate-in fade-in duration-200">
           
           {/* Card 1: التاريخ التوليدي والتواريخ المحورية */}
@@ -565,10 +595,10 @@ export const MaternalAncPoCView: React.FC<MaternalAncPoCViewProps> = ({
                     g/dL
                   </span>
                 </div>
-                {formData.hb_result && Number(formData.hb_result) < 11.0 && (
-                  <p className="text-[10px] font-black text-rose-600 flex items-center gap-1 mt-1">
-                    <ShieldAlert size={12} />
-                    <span>تنبيه: قراءة الهيموجلوبين تشير لأنيميا حمل (يُوصى بوصف جرعة علاجية للحديد)</span>
+                {formData.hb_result && (
+                  <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 mt-1">
+                    <Info size={12} />
+                    <span>قراءة مسجلة للمراجعة السريرية من الطبيب المعالج (لا يصدر توجيه علاجي آلي بدون بروتوكول معتمد)</span>
                   </p>
                 )}
               </ClinicalFormField>
@@ -594,10 +624,10 @@ export const MaternalAncPoCView: React.FC<MaternalAncPoCViewProps> = ({
                     mg/dL
                   </span>
                 </div>
-                {formData.blood_glucose && Number(formData.blood_glucose) >= 140 && (
-                  <p className="text-[10px] font-black text-amber-700 flex items-center gap-1 mt-1">
-                    <ShieldAlert size={12} />
-                    <span>تنبيه: القراءة مرتفعة (≥ 140 mg/dL) - يوصى بإجراء منحنى السكر (OGTT)</span>
+                {formData.blood_glucose && (
+                  <p className="text-[10px] font-bold text-slate-500 flex items-center gap-1 mt-1">
+                    <Info size={12} />
+                    <span>قراءة مسجلة للمراجعة السريرية من الطبيب المعالج (لا يصدر توجيه تشخيصي أو علاجي آلي بدون بروتوكول معتمد)</span>
                   </p>
                 )}
               </ClinicalFormField>
@@ -813,14 +843,12 @@ export const MaternalAncPoCView: React.FC<MaternalAncPoCViewProps> = ({
                       </div>
                     </td>
                     <td className="p-3.5 text-center whitespace-nowrap">
-                      <button
-                        type="button"
-                        onClick={() => onDeleteRecord(r.id, 'متابعة الحمل')}
-                        className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
-                        title="حذف هذا السجل"
+                      <span
+                        className="px-2 py-1 text-[10px] font-bold bg-slate-100 text-slate-500 rounded-lg border border-slate-200 inline-block"
+                        title="السجلات السريرية التاريخية محمية للقراءة فقط"
                       >
-                        <Trash2 size={15} />
-                      </button>
+                        سجل تاريخي (للقراءة فقط)
+                      </span>
                     </td>
                   </tr>
                 ))}
