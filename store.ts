@@ -8,7 +8,19 @@ import {
 } from './types.ts';
 import { supabase } from './supabase.ts';
 import { realtimeNotificationService } from './services/realtimeNotificationService.ts';
+import {
+  assertClientCrudPermission,
+  normalizeIdentifier,
+  validateNewFamilyFileInput,
+  validateNewFamilyMemberInput,
+  validateNewWaitingDateNotInPast
+} from './utils/permissions.ts';
 
+/**
+ * ملاحظة أمنية: دوال الحراسة المستدعاة عبر assertClientCrudPermission تمنع تنفيذ العمليات غير المصرح بها
+ * من جانب العميل (Client-Side CRUD Guards)، لكنها لا تغني عن تفعيل مصادقة Supabase Auth وسياسات RLS
+ * على الخادم في المرحلة النهائية لحماية قاعدة البيانات من الاستدعاءات المباشرة.
+ */
 const handleError = (error: any, fallbackMessage: string) => {
   console.warn("Database Operation Note:", error?.message || error);
   const msg = error?.message || (typeof error === 'string' ? error : '') || error?.details || '';
@@ -31,10 +43,24 @@ export class DB {
 
   // --- Patients ---
   static async addPatient(p: Partial<Patient>) {
+    assertClientCrudPermission('patients', 'create');
     // Phone validation (Must start with 01 and have 11 digits)
     const phoneRegex = /^01\d{9}$/;
     if (p.phone && !phoneRegex.test(p.phone)) {
       throw new Error("رقم الهاتف غير صحيح. يجب أن يبدأ بـ 01 ويتكون من 11 رقم.");
+    }
+
+    const cleanNat = normalizeIdentifier(p.national_id);
+    if (cleanNat) {
+      const existingPatients = await this.getPatients();
+      const duplicatePatient = (existingPatients || []).find(
+        (ep: any) => normalizeIdentifier(ep?.national_id) === cleanNat
+      );
+      if (duplicatePatient) {
+        throw new Error(
+          `لا يمكن إنشاء سجل مكرر: الرقم القومي (${cleanNat}) مسجل بالفعل للمريض «${duplicatePatient.name || duplicatePatient.id}».`
+        );
+      }
     }
 
     const { data, error } = await supabase.from('patients').insert([p]).select();
@@ -79,6 +105,7 @@ export class DB {
   }
 
   static async addStockTransaction(tx: Partial<StockTransaction>) {
+    assertClientCrudPermission('inventory', 'create', tx.store_id);
     // PREVENT NEGATIVE STOCK
     if (tx.type === 'DEDUCT' || tx.type === 'TRANSFER') {
       const current = await this.getCurrentStock(tx.product_id!, tx.store_id!);
@@ -94,6 +121,7 @@ export class DB {
 
   // --- Transfer Requests & Notifications ---
   static async addTransferRequest(req: Partial<TransferRequest>) {
+    assertClientCrudPermission('inventory', 'create', req.from_store_id);
     const { data, error } = await supabase.from('transfer_requests').insert([req]).select();
     if (error) return handleError(error, "فشل إضافة الطلب");
 
@@ -110,6 +138,9 @@ export class DB {
   static async updateTransferStatus(id: string, status: string) {
     const { data: requestData, error: fetchError } = await supabase.from('transfer_requests').select('*').eq('id', id).single();
     if (fetchError) return handleError(fetchError, "فشل جلب الطلب");
+
+    const requiredStoreId = status === 'COMPLETED' ? requestData?.to_store_id : requestData?.from_store_id;
+    assertClientCrudPermission('inventory', 'update', requiredStoreId);
 
     const { data, error } = await supabase.from('transfer_requests').update({ status }).eq('id', id).select();
     if (error) return handleError(error, "فشل تحديث الحالة");
@@ -134,6 +165,7 @@ export class DB {
 
   // --- Financials ---
   static async addFinanceTx(tx: Partial<Transaction>) {
+    assertClientCrudPermission('finance_tx', 'create', tx.account_id);
     const { data, error } = await supabase.from('transactions').insert([tx]).select();
     if (error) return handleError(error, "فشل تسجيل العملية المالية");
     
@@ -147,6 +179,7 @@ export class DB {
   }
 
   static async resetShifts() {
+    assertClientCrudPermission('payroll', 'delete');
     const { error } = await supabase.from('shift_records').delete().neq('id', '00000000-0000-0000-0000-000000000000');
     if (error) return handleError(error, "فشل تصفير الدورة المالية");
   }
@@ -329,28 +362,29 @@ export class DB {
   }
 
   // Admin Crud Helpers
-  static async addEmployee(e: any) { const { data, error } = await supabase.from('employees').insert([e]).select(); if (error) return handleError(error, "فشل إضافة الموظف"); return data?.[0]; }
-  static async updateEmployee(id: string, e: any) { const { data, error } = await supabase.from('employees').update(e).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث بيانات الموظف"); return data?.[0]; }
-  static async deleteEmployee(id: string) { const { error } = await supabase.from('employees').delete().eq('id', id); if (error) return handleError(error, "فشل حذف الموظف"); }
-  static async addService(s: any) { const { data, error } = await supabase.from('services').insert([s]).select(); if (error) return handleError(error, "فشل إضافة الخدمة"); return data?.[0]; }
-  static async updateService(id: string, s: any) { const { data, error } = await supabase.from('services').update(s).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث الخدمة"); return data?.[0]; }
-  static async deleteService(id: string) { const { error } = await supabase.from('services').delete().eq('id', id); if (error) return handleError(error, "فشل حذف الخدمة"); }
-  static async addStore(s: any) { const { data, error } = await supabase.from('stores').insert([s]).select(); if (error) return handleError(error, "فشل إضافة المخزن"); return data?.[0]; }
-  static async updateStore(id: string, s: any) { const { data, error } = await supabase.from('stores').update(s).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث المخزن"); return data?.[0]; }
-  static async deleteStore(id: string) { const { error } = await supabase.from('stores').delete().eq('id', id); if (error) return handleError(error, "فشل حذف المخزن"); }
-  static async addProduct(p: any) { const { data, error } = await supabase.from('products').insert([p]).select(); if (error) return handleError(error, "فشل إضافة المنتج"); return data?.[0]; }
-  static async updateProduct(id: string, p: any) { const { data, error } = await supabase.from('products').update(p).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث المنتج"); return data?.[0]; }
-  static async addFinancialAccount(a: any) { const { data, error } = await supabase.from('financial_accounts').insert([a]).select(); if (error) return handleError(error, "فشل إضافة الحساب"); return data?.[0]; }
-  static async updateFinancialAccount(id: string, a: any) { const { data, error } = await supabase.from('financial_accounts').update(a).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث الحساب"); return data?.[0]; }
-  static async deleteFinancialAccount(id: string) { const { error } = await supabase.from('financial_accounts').delete().eq('id', id); if (error) return handleError(error, "فشل حذف الحساب"); }
-  static async addFundingEntity(fe: any) { const { data, error } = await supabase.from('funding_entities').insert([fe]).select(); if (error) return handleError(error, "فشل إضافة جهة التعاقد"); return data?.[0]; }
-  static async deleteFundingEntity(id: string) { const { error } = await supabase.from('funding_entities').delete().eq('id', id); if (error) return handleError(error, "فشل حذف جهة التعاقد"); }
-  static async addUser(u: any) { const { data, error } = await supabase.from('system_users').insert([u]).select(); if (error) return handleError(error, "فشل إضافة المستخدم"); return data?.[0]; }
-  static async updateUser(id: string, u: any) { const { data, error } = await supabase.from('system_users').update(u).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث المستخدم"); return data?.[0]; }
-  static async deleteUser(id: string) { const { error } = await supabase.from('system_users').delete().eq('id', id); if (error) return handleError(error, "فشل حذف المستخدم"); }
-  static async addLabTest(t: any) { const { data, error } = await supabase.from('lab_tests').insert([t]).select(); if (error) return handleError(error, "فشل إضافة التحليل"); return data?.[0]; }
-  static async addLabDefinition(d: any) { const { data, error } = await supabase.from('lab_test_definitions').insert([d]).select(); if (error) return handleError(error, "فشل إضافة تعريف التحليل"); return data?.[0]; }
+  static async addEmployee(e: any) { assertClientCrudPermission('payroll', 'create'); const { data, error } = await supabase.from('employees').insert([e]).select(); if (error) return handleError(error, "فشل إضافة الموظف"); return data?.[0]; }
+  static async updateEmployee(id: string, e: any) { assertClientCrudPermission('payroll', 'update', id); const { data, error } = await supabase.from('employees').update(e).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث بيانات الموظف"); return data?.[0]; }
+  static async deleteEmployee(id: string) { assertClientCrudPermission('payroll', 'delete', id); const { error } = await supabase.from('employees').delete().eq('id', id); if (error) return handleError(error, "فشل حذف الموظف"); }
+  static async addService(s: any) { assertClientCrudPermission('setup', 'create'); const { data, error } = await supabase.from('services').insert([s]).select(); if (error) return handleError(error, "فشل إضافة الخدمة"); return data?.[0]; }
+  static async updateService(id: string, s: any) { assertClientCrudPermission('setup', 'update', id); const { data, error } = await supabase.from('services').update(s).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث الخدمة"); return data?.[0]; }
+  static async deleteService(id: string) { assertClientCrudPermission('setup', 'delete', id); const { error } = await supabase.from('services').delete().eq('id', id); if (error) return handleError(error, "فشل حذف الخدمة"); }
+  static async addStore(s: any) { assertClientCrudPermission('stores', 'create'); const { data, error } = await supabase.from('stores').insert([s]).select(); if (error) return handleError(error, "فشل إضافة المخزن"); return data?.[0]; }
+  static async updateStore(id: string, s: any) { assertClientCrudPermission('stores', 'update', id); const { data, error } = await supabase.from('stores').update(s).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث المخزن"); return data?.[0]; }
+  static async deleteStore(id: string) { assertClientCrudPermission('stores', 'delete', id); const { error } = await supabase.from('stores').delete().eq('id', id); if (error) return handleError(error, "فشل حذف المخزن"); }
+  static async addProduct(p: any) { assertClientCrudPermission('setup', 'create'); const { data, error } = await supabase.from('products').insert([p]).select(); if (error) return handleError(error, "فشل إضافة المنتج"); return data?.[0]; }
+  static async updateProduct(id: string, p: any) { assertClientCrudPermission('setup', 'update', id); const { data, error } = await supabase.from('products').update(p).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث المنتج"); return data?.[0]; }
+  static async addFinancialAccount(a: any) { assertClientCrudPermission('financial_accounts', 'create'); const { data, error } = await supabase.from('financial_accounts').insert([a]).select(); if (error) return handleError(error, "فشل إضافة الحساب"); return data?.[0]; }
+  static async updateFinancialAccount(id: string, a: any) { assertClientCrudPermission('financial_accounts', 'update', id); const { data, error } = await supabase.from('financial_accounts').update(a).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث الحساب"); return data?.[0]; }
+  static async deleteFinancialAccount(id: string) { assertClientCrudPermission('financial_accounts', 'delete', id); const { error } = await supabase.from('financial_accounts').delete().eq('id', id); if (error) return handleError(error, "فشل حذف الحساب"); }
+  static async addFundingEntity(fe: any) { assertClientCrudPermission('setup', 'create'); const { data, error } = await supabase.from('funding_entities').insert([fe]).select(); if (error) return handleError(error, "فشل إضافة جهة التعاقد"); return data?.[0]; }
+  static async deleteFundingEntity(id: string) { assertClientCrudPermission('setup', 'delete', id); const { error } = await supabase.from('funding_entities').delete().eq('id', id); if (error) return handleError(error, "فشل حذف جهة التعاقد"); }
+  static async addUser(u: any) { assertClientCrudPermission('users', 'create'); const { data, error } = await supabase.from('system_users').insert([u]).select(); if (error) return handleError(error, "فشل إضافة المستخدم"); return data?.[0]; }
+  static async updateUser(id: string, u: any) { assertClientCrudPermission('users', 'update', id); const { data, error } = await supabase.from('system_users').update(u).eq('id', id).select(); if (error) return handleError(error, "فشل تحديث المستخدم"); return data?.[0]; }
+  static async deleteUser(id: string) { assertClientCrudPermission('users', 'delete', id); const { error } = await supabase.from('system_users').delete().eq('id', id); if (error) return handleError(error, "فشل حذف المستخدم"); }
+  static async addLabTest(t: any) { assertClientCrudPermission('lab', 'create'); const { data, error } = await supabase.from('lab_tests').insert([t]).select(); if (error) return handleError(error, "فشل إضافة التحليل"); return data?.[0]; }
+  static async addLabDefinition(d: any) { assertClientCrudPermission('lab', 'create'); const { data, error } = await supabase.from('lab_test_definitions').insert([d]).select(); if (error) return handleError(error, "فشل إضافة تعريف التحليل"); return data?.[0]; }
   static async updateLabResult(id: string, res: string) { 
+    assertClientCrudPermission('lab', 'update', id);
     const { data, error } = await supabase.from('lab_tests').update({ result: res, status: 'COMPLETED' }).eq('id', id).select(); 
     if (error) return handleError(error, "فشل تحديث نتيجة التحليل"); 
 
@@ -378,7 +412,7 @@ export class DB {
       return data || [];
     } catch (e) { return []; }
   }
-  static async addClinic(c: any) { const { data, error } = await supabase.from('clinics').insert([c]).select(); if (error) return handleError(error, "فشل إضافة العيادة"); return data?.[0]; }
+  static async addClinic(c: any) { assertClientCrudPermission('clinics', 'create'); const { data, error } = await supabase.from('clinics').insert([c]).select(); if (error) return handleError(error, "فشل إضافة العيادة"); return data?.[0]; }
   
   static async getDoctors() {
     try {
@@ -390,7 +424,7 @@ export class DB {
       return data || [];
     } catch (e) { return []; }
   }
-  static async addDoctor(d: any) { const { data, error } = await supabase.from('doctors').insert([d]).select(); if (error) return handleError(error, "فشل إضافة الطبيب"); return data?.[0]; }
+  static async addDoctor(d: any) { assertClientCrudPermission('clinics', 'create'); const { data, error } = await supabase.from('doctors').insert([d]).select(); if (error) return handleError(error, "فشل إضافة الطبيب"); return data?.[0]; }
 
   static async getClinicAppointments(clinicId?: string, doctorId?: string, date?: string, patientId?: string) { 
     try {
@@ -407,8 +441,18 @@ export class DB {
       return data || [];
     } catch (e) { return []; }
   }
-  static async addClinicAppointment(a: any) { const { data, error } = await supabase.from('clinic_appointments').insert([a]).select(); if (error) return handleError(error, "فشل إضافة الموعد"); return data?.[0]; }
+  static async addClinicAppointment(a: any) {
+    assertClientCrudPermission('clinic_reception', 'create');
+    const dateCheck = validateNewWaitingDateNotInPast(a?.date, a?.status || 'WAITING');
+    if (!dateCheck.valid) {
+      throw new Error(dateCheck.reason);
+    }
+    const { data, error } = await supabase.from('clinic_appointments').insert([a]).select();
+    if (error) return handleError(error, "فشل إضافة الموعد");
+    return data?.[0];
+  }
   static async updateAppointmentStatus(id: string, status: string, diagnosis?: string, prescription?: string) {
+    assertClientCrudPermission('clinics', 'update', id);
     const { data, error } = await supabase.from('clinic_appointments').update({ status, diagnosis, prescription }).eq('id', id).select();
     if (error) return handleError(error, "فشل تحديث حالة الموعد");
     return data?.[0];
@@ -426,26 +470,55 @@ export class DB {
     } catch (e) { return []; }
   }
   static async addFamilyFile(f: any) {
+    assertClientCrudPermission('family_files', 'create');
+    const [existingFiles, existingPatients] = await Promise.all([
+      this.getFamilyFiles(),
+      this.getPatients()
+    ]);
+    const dupCheck = validateNewFamilyFileInput(f || {}, existingFiles, existingPatients);
+    if (!dupCheck.valid) {
+      throw new Error(dupCheck.reason);
+    }
     const { data, error } = await supabase.from('family_files').insert([f]).select();
     if (error) return handleError(error, "فشل إنشاء الملف العائلي");
     return data?.[0];
   }
   static async updateFamilyFile(id: string, f: any) {
+    assertClientCrudPermission('family_files', 'update', id);
+    const [existingFiles, existingPatients] = await Promise.all([
+      this.getFamilyFiles(),
+      this.getPatients()
+    ]);
+    const dupCheck = validateNewFamilyFileInput(f || {}, existingFiles, existingPatients, id);
+    if (!dupCheck.valid) {
+      throw new Error(dupCheck.reason);
+    }
     const { data, error } = await supabase.from('family_files').update(f).eq('id', id).select();
     if (error) return handleError(error, "فشل تحديث الملف العائلي");
     return data?.[0];
   }
   static async addFamilyMember(m: any) {
+    assertClientCrudPermission('family_files', 'create');
+    const [existingFiles, existingPatients] = await Promise.all([
+      this.getFamilyFiles(),
+      this.getPatients()
+    ]);
+    const dupCheck = validateNewFamilyMemberInput(m || {}, existingFiles, existingPatients);
+    if (!dupCheck.valid) {
+      throw new Error(dupCheck.reason);
+    }
     const { data, error } = await supabase.from('family_file_members').insert([m]).select();
     if (error) return handleError(error, "فشل إضافة فرد للأسرة");
     return data?.[0];
   }
   static async updateFamilyMember(id: string, m: any) {
+    assertClientCrudPermission('family_files', 'update', id);
     const { data, error } = await supabase.from('family_file_members').update(m).eq('id', id).select();
     if (error) return handleError(error, "فشل تحديث بيانات الفرد");
     return data?.[0];
   }
   static async deleteFamilyMember(id: string) {
+    assertClientCrudPermission('family_files', 'delete', id);
     const { error } = await supabase.from('family_file_members').delete().eq('id', id);
     if (error) return handleError(error, "فشل حذف الفرد من الأسرة");
     return true;
@@ -934,6 +1007,11 @@ export class DB {
 
 
   static async addSession(s: any, storeId?: string) { 
+    assertClientCrudPermission('sessions', 'create');
+    const dateCheck = validateNewWaitingDateNotInPast(s?.date, s?.status || 'WAITING');
+    if (!dateCheck.valid) {
+      throw new Error(dateCheck.reason);
+    }
     if (storeId && s.service_id) {
       // Auto consume consumables if config exists
       const { data: service, error: sError } = await supabase.from('services').select('*').eq('id', s.service_id).single();

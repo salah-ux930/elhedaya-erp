@@ -1,14 +1,14 @@
-
 import React, { useState, useEffect } from 'react';
 import { DB } from '../store.ts';
 import { 
   Loader2, TrendingUp, DollarSign, Activity, Users, 
-  BarChart3, PieChart as PieChartIcon, Download, FileText, Calendar
+  BarChart3, PieChart as PieChartIcon, Download, FileText, Calendar, Lock
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   ResponsiveContainer, Cell, PieChart, Pie, LineChart, Line, Legend
 } from 'recharts';
+import { analyzeUserAccountPermissions, getCurrentStoredUser } from '../utils/permissions.ts';
 
 const ReportsModule: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -16,8 +16,12 @@ const ReportsModule: React.FC = () => {
     revenueByDay: [],
     sessionStats: [],
     stockUsage: [],
-    totals: { revenue: 0, sessions: 0, patients: 0 }
+    totals: { revenue: 0, sessions: 0, patients: 0 },
+    permittedAccountsSummary: '',
+    hasPermittedAccounts: false
   });
+
+  const currentUser = getCurrentStoredUser();
 
   useEffect(() => {
     loadReportData();
@@ -26,13 +30,18 @@ const ReportsModule: React.FC = () => {
   const loadReportData = async () => {
     setLoading(true);
     try {
-      const [txs, sessions, patients] = await Promise.all([
+      const [accounts, txs, sessions, patients] = await Promise.all([
+        DB.getAccounts(),
         DB.getTransactions(),
         DB.getSessions(),
         DB.getPatients()
       ]);
+
+      const accAnalysis = analyzeUserAccountPermissions(currentUser, accounts || []);
+      const allowedAccountIds = new Set(accAnalysis.visibleAccounts.map((a) => a.id));
+      const permittedTxs = (txs || []).filter((t) => allowedAccountIds.has(t.account_id));
       
-      // Process revenue (last 10 days)
+      // Process revenue (last 10 days) for permitted financial accounts only
       const last10Days = Array.from({length: 10}, (_, i) => {
         const d = new Date();
         d.setDate(d.getDate() - i);
@@ -40,7 +49,7 @@ const ReportsModule: React.FC = () => {
       }).reverse();
 
       const revenueByDay = last10Days.map(date => {
-        const dailyTxs = txs.filter(t => t.date === date && t.type === 'INCOME');
+        const dailyTxs = permittedTxs.filter(t => t.date === date && t.type === 'INCOME');
         const amount = dailyTxs.reduce((sum, t) => sum + Number(t.amount), 0);
         return { date: date.split('-').slice(1).join('/'), value: amount };
       });
@@ -51,7 +60,7 @@ const ReportsModule: React.FC = () => {
         { name: 'انتظار', value: sessions.filter(s => s.status === 'WAITING').length }
       ];
 
-      const totalRevenue = txs.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + Number(t.amount), 0);
+      const totalRevenue = permittedTxs.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + Number(t.amount), 0);
 
       setData({
         revenueByDay,
@@ -60,7 +69,9 @@ const ReportsModule: React.FC = () => {
           revenue: totalRevenue,
           sessions: sessions.length,
           patients: patients.length
-        }
+        },
+        permittedAccountsSummary: accAnalysis.summaryText,
+        hasPermittedAccounts: accAnalysis.visibleAccounts.length > 0
       });
     } catch (e) {
       console.error(e);
@@ -97,8 +108,12 @@ const ReportsModule: React.FC = () => {
             <DollarSign size={32}/>
           </div>
           <div>
-            <p className="text-xs font-black text-gray-400 uppercase mb-1">إجمالي الإيرادات</p>
+            <p className="text-xs font-black text-gray-400 uppercase mb-1">إجمالي الإيرادات (للخزن المسموحة)</p>
             <h4 className="text-3xl font-black text-emerald-700">{data.totals.revenue.toLocaleString()} ج.م</h4>
+            <p className="text-[10px] font-bold text-slate-400 mt-1 flex items-center gap-1">
+              {!data.hasPermittedAccounts && <Lock size={11} className="text-amber-500 shrink-0" />}
+              <span>{data.permittedAccountsSummary}</span>
+            </p>
           </div>
         </div>
         <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-primary-50 flex items-center gap-6">

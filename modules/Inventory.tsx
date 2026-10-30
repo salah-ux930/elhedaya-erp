@@ -76,15 +76,11 @@ const InventoryModule: React.FC = () => {
   };
 
   const visibleStores = stores.filter(s => 
-    userPerms.includes('MANAGE_INVENTORY') || 
-    userPerms.includes('SYSTEM_SETUP') ||
     userPerms.includes(`STORE_VIEW:${s.id}`) || 
     userPerms.includes(`STORE_MANAGE:${s.id}`)
   );
 
   const manageableStores = stores.filter(s => 
-    userPerms.includes('MANAGE_INVENTORY') || 
-    userPerms.includes('SYSTEM_SETUP') ||
     userPerms.includes(`STORE_MANAGE:${s.id}`)
   );
 
@@ -93,11 +89,9 @@ const InventoryModule: React.FC = () => {
     if (voucherItems.length === 0) return alert("يرجى إضافة أصناف أولاً");
     
     const storeId = sourceStoreId;
-    const canManage = userPerms.includes('MANAGE_INVENTORY') || 
-                      userPerms.includes('SYSTEM_SETUP') ||
-                      userPerms.includes(`STORE_MANAGE:${storeId}`);
+    const canManage = userPerms.includes(`STORE_MANAGE:${storeId}`);
 
-    if (!canManage) return alert("عذراً، لا تملك صلاحية الإدارة على هذا المخزن.");
+    if (!canManage) return alert("عذراً، لا تملك صلاحية الإدارة (STORE_MANAGE) على هذا المخزن المحدد.");
 
     setLoading(true);
     try {
@@ -256,13 +250,13 @@ const InventoryModule: React.FC = () => {
                      </div>
                   </div>
                   <div className="flex gap-2 w-full md:w-auto">
-                     {req.status === 'PENDING' && (userPerms.includes('MANAGE_INVENTORY') || userPerms.includes('SYSTEM_SETUP') || userPerms.includes(`STORE_MANAGE:${req.from_store_id}`)) && (
+                     {req.status === 'PENDING' && userPerms.includes(`STORE_MANAGE:${req.from_store_id}`) && (
                        <>
                          <button onClick={() => handleRequestStatus(req.id, 'APPROVED')} className="flex-1 md:flex-none bg-indigo-600 text-white px-6 py-3 rounded-xl text-xs font-black shadow-lg">موافقة</button>
                          <button onClick={() => handleRequestStatus(req.id, 'REJECTED')} className="flex-1 md:flex-none bg-white text-rose-600 border border-rose-100 px-6 py-3 rounded-xl text-xs font-black">رفض</button>
                        </>
                      )}
-                     {req.status === 'APPROVED' && (userPerms.includes('MANAGE_INVENTORY') || userPerms.includes('SYSTEM_SETUP') || userPerms.includes(`STORE_MANAGE:${req.to_store_id}`)) && (
+                     {req.status === 'APPROVED' && userPerms.includes(`STORE_MANAGE:${req.to_store_id}`) && (
                         <button onClick={() => handleRequestStatus(req.id, 'COMPLETED')} className="w-full md:w-auto bg-emerald-600 text-white px-8 py-3 rounded-xl text-xs font-black shadow-lg">تأكيد الاستلام والتحريك</button>
                      )}
                      <span className={`px-6 py-3 rounded-xl text-[10px] font-black uppercase tracking-widest border ${req.status === 'PENDING' ? 'bg-amber-50 text-amber-600 border-amber-100' : req.status === 'APPROVED' ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : req.status === 'COMPLETED' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' : 'bg-rose-50 text-rose-600 border-rose-100'}`}>

@@ -16,6 +16,7 @@ const MedicalRecordsModule: React.FC = () => {
   const [familyFiles, setFamilyFiles] = useState<any[]>([]);
   const [patientsList, setPatientsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState('');
   
@@ -31,6 +32,7 @@ const MedicalRecordsModule: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [sessionsData, filesData, patientsData] = await Promise.all([
         DB.getSessions(),
@@ -40,8 +42,9 @@ const MedicalRecordsModule: React.FC = () => {
       setSessions(sessionsData || []);
       setFamilyFiles(filesData || []);
       setPatientsList(patientsData || []);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
+      setLoadError(e?.message || 'تعذر تحميل السجلات الطبية. يرجى المحاولة مرة أخرى.');
     } finally {
       setLoading(false);
     }
@@ -98,6 +101,20 @@ const MedicalRecordsModule: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-rose-800 text-sm font-bold">
+            <span>{loadError}</span>
+          </div>
+          <button
+            onClick={loadData}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
 
       {/* Real-time Clinical Alerts Banner & Live Monitor */}
       <MedicalRecordsAlertsBanner 

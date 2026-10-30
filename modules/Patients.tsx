@@ -6,6 +6,7 @@ import PatientTimeline from '../components/PatientTimeline.tsx';
 import FamilyComprehensiveHealthRecordModal from '../components/FamilyComprehensiveHealthRecordModal.tsx';
 import QuickClinicBookingModal from '../components/QuickClinicBookingModal.tsx';
 import { calculatePatientSuggestedFollowups } from '../services/followupSuggestions.ts';
+import { deduplicateFollowupsById, normalizeIdentifier } from '../utils/permissions.ts';
 import { Patient, FundingEntity, DialysisSession, Service, Store, SuggestedFollowup } from '../types.ts';
 import { 
   Plus, Search, UserPlus, History, Phone, FileText, Loader2, 
@@ -21,6 +22,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
   const [familyFiles, setFamilyFiles] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [prefillData, setPrefillData] = useState<{ name?: string; phone?: string; national_id?: string }>({});
@@ -48,6 +50,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [p, fe, ff, appts] = await Promise.all([
         DB.getPatients(),
@@ -59,7 +62,12 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
       setFundingEntities(fe || []);
       setFamilyFiles(ff || []);
       setAppointments(appts || []);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+    } catch (err: any) {
+      console.error(err);
+      setLoadError(err?.message || 'تعذر تحميل سجلات المرضى. يرجى المحاولة مرة أخرى.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleOpenComprehensiveRecord = (p: Patient, initialModule: string = 'history') => {
@@ -81,6 +89,15 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
     if (!/^01\d{9}$/.test(phone)) {
       alert("رقم الهاتف غير صحيح! يجب أن يبدأ بـ 01 ويتكون من 11 رقم.");
       return;
+    }
+
+    const natVal = normalizeIdentifier(target.national_id?.value);
+    if (natVal) {
+      const existingDup = patients.find(p => normalizeIdentifier(p.national_id) === natVal);
+      if (existingDup) {
+        alert(`لا يمكن إنشاء تكرار جديد: الرقم القومي (${natVal}) مسجل بالفعل للمريض «${existingDup.name}».`);
+        return;
+      }
     }
 
     try {
@@ -163,6 +180,21 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
 
   return (
     <div className="space-y-6">
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-rose-800 text-sm font-bold">
+            <AlertCircle size={20} className="text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            onClick={loadData}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       {view === 'list' ? (
         <>
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -211,7 +243,9 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
                       ff.members?.some((m: any) => m.patient_id === p.id || m.patients?.id === p.id)
                     );
 
-                    const suggestions = calculatePatientSuggestedFollowups(p, { appointments });
+                    const suggestions = deduplicateFollowupsById(
+                      calculatePatientSuggestedFollowups(p, { appointments })
+                    );
                     const hasHighUrgency = suggestions.some(s => s.urgency === 'high');
 
                     return (

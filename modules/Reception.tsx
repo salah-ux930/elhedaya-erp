@@ -6,6 +6,11 @@ import QuickClinicBookingModal from '../components/QuickClinicBookingModal.tsx';
 import PatientClinical360Modal from '../components/PatientClinical360Modal.tsx';
 import { HospitalOperationalEngine, PatientOperationalProfile } from '../services/hospitalOperationalEngine.ts';
 import { evaluateClinicalModuleEligibility } from '../services/followupSuggestions.ts';
+import {
+  classifyAndDeduplicateSessions,
+  classifyAndDeduplicateAppointments,
+  isRecordDateInPast
+} from '../utils/permissions.ts';
 import { DialysisSession, Patient } from '../types.ts';
 import { 
   UserPlus, Search, Clock, Activity, ArrowRight, 
@@ -260,15 +265,28 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
   };
 
   const todayStr = getLocalTodayStr();
-  const waitingDialysisCount = sessions.filter(s => s.status === 'WAITING').length;
-  const waitingClinicsCount = clinicAppointments.filter(a => a.status === 'WAITING').length;
+  const classifiedSessions = useMemo(
+    () => classifyAndDeduplicateSessions(sessions, todayStr),
+    [sessions, todayStr]
+  );
+  const classifiedAppointments = useMemo(
+    () => classifyAndDeduplicateAppointments(clinicAppointments, todayStr),
+    [clinicAppointments, todayStr]
+  );
+
+  // القائمة النشطة الموحدة: تستبعد السجلات المكتملة/الملغاة تماماً وتمنع تكرار نفس المعرف
+  const activeDialysisList = classifiedSessions.allNonCompletedSessions;
+  const activeClinicsList = classifiedAppointments.allNonCompletedAppointments;
+
+  const waitingDialysisCount = classifiedSessions.currentWaitingSessions.length;
+  const waitingClinicsCount = classifiedAppointments.currentWaitingAppointments.length;
   const inSessionOrClinicCount =
-    sessions.filter(s => s.status === 'ACTIVE').length +
-    clinicAppointments.filter(a => a.status === 'IN_PROGRESS').length;
+    classifiedSessions.currentActiveSessions.length +
+    classifiedAppointments.currentInProgressAppointments.length;
   const totalQueueCount =
     activeQueue === 'dialysis'
-      ? sessions.length
-      : clinicAppointments.length;
+      ? activeDialysisList.length
+      : activeClinicsList.length;
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -291,28 +309,38 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-blue-500 flex items-center gap-4">
           <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><Users size={24} /></div>
           <div>
-            <p className="text-gray-500 text-sm">{activeQueue === 'dialysis' ? 'إجمالي قائمة الغسيل' : 'إجمالي قائمة العيادات'}</p>
+            <p className="text-gray-500 text-sm">{activeQueue === 'dialysis' ? 'إجمالي قائمة الغسيل النشطة' : 'إجمالي قائمة العيادات النشطة'}</p>
             <h3 className="text-2xl font-bold">{totalQueueCount}</h3>
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-yellow-500 flex items-center gap-4">
           <div className="p-3 bg-yellow-50 text-yellow-600 rounded-xl"><Clock size={24} /></div>
           <div>
-            <p className="text-gray-500 text-sm">بانتظار الغسيل</p>
+            <p className="text-gray-500 text-sm">بانتظار الغسيل (اليوم)</p>
             <h3 className="text-2xl font-bold">{waitingDialysisCount}</h3>
+            {classifiedSessions.abandonedOldSessions.length > 0 && (
+              <span className="text-[11px] font-bold text-amber-700 block mt-0.5">
+                +{classifiedSessions.abandonedOldSessions.length} جلسة قديمة متروكة
+              </span>
+            )}
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-indigo-500 flex items-center gap-4">
           <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><Calendar size={24} /></div>
           <div>
-            <p className="text-gray-500 text-sm">بانتظار العيادات</p>
+            <p className="text-gray-500 text-sm">بانتظار العيادات (اليوم)</p>
             <h3 className="text-2xl font-bold">{waitingClinicsCount}</h3>
+            {classifiedAppointments.abandonedOldAppointments.length > 0 && (
+              <span className="text-[11px] font-bold text-amber-700 block mt-0.5">
+                +{classifiedAppointments.abandonedOldAppointments.length} موعد قديم متروك
+              </span>
+            )}
           </div>
         </div>
         <div className="bg-white p-6 rounded-2xl shadow-sm border-r-4 border-green-500 flex items-center gap-4">
           <div className="p-3 bg-green-50 text-green-600 rounded-xl"><Activity size={24} /></div>
           <div>
-            <p className="text-gray-500 text-sm">{AR.inSession}</p>
+            <p className="text-gray-500 text-sm">{AR.inSession} (اليوم)</p>
             <h3 className="text-2xl font-bold">{inSessionOrClinicCount}</h3>
           </div>
         </div>
@@ -328,18 +356,18 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
                       onClick={() => setActiveQueue('dialysis')}
                       className={`px-6 py-2 rounded-xl font-bold text-sm transition-all ${activeQueue === 'dialysis' ? 'bg-primary-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
                     >
-                      قائمة الغسيل ({sessions.length})
+                      قائمة الغسيل النشطة ({activeDialysisList.length})
                     </button>
                     <button 
                       onClick={() => setActiveQueue('clinics')}
                       className={`px-6 py-2 rounded-xl font-bold text-sm transition-all ${activeQueue === 'clinics' ? 'bg-primary-600 text-white shadow-md' : 'text-gray-500 hover:bg-gray-50'}`}
                     >
-                      قائمة العيادات ({clinicAppointments.length})
+                      قائمة العيادات النشطة ({activeClinicsList.length})
                     </button>
                   </>
                 )}
-                {initialMode === 'dialysis' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار الجلسات ({sessions.length})</div>}
-                {initialMode === 'clinics' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار العيادات ({clinicAppointments.length})</div>}
+                {initialMode === 'dialysis' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار الجلسات ({activeDialysisList.length})</div>}
+                {initialMode === 'clinics' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار العيادات ({activeClinicsList.length})</div>}
                 
                 <button
                   onClick={() => {
@@ -360,12 +388,13 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
 
           <div className="space-y-3">
             {activeQueue === 'dialysis' ? (
-              sessions.map(session => {
+              activeDialysisList.map(session => {
                 const prof = patientProfilesMap.get(session.patient_id);
+                const isOldAbandonedSession = isRecordDateInPast(session.date, todayStr);
                 return (
-                <div key={session.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${session.status === 'ACTIVE' ? 'border-green-100 bg-green-50/20' : session.status === 'WAITING' ? 'border-yellow-100 bg-yellow-50/20' : 'border-gray-100'}`}>
+                <div key={session.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${isOldAbandonedSession ? 'border-amber-300 bg-amber-50/15' : session.status === 'ACTIVE' ? 'border-green-100 bg-green-50/20' : 'border-yellow-100 bg-yellow-50/20'}`}>
                    <div className="flex items-start gap-4">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg shrink-0 ${session.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : session.status === 'WAITING' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg shrink-0 ${isOldAbandonedSession ? 'bg-amber-100 text-amber-800' : session.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-700'}`}>
                       {session.patients?.name?.[0] || '?'}
                     </div>
                     <div>
@@ -395,10 +424,15 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
                             <ShieldAlert size={11} /> حساسية دوائية
                           </span>
                         )}
+                        {isOldAbandonedSession && (
+                          <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded-md text-[10px] font-black flex items-center gap-1">
+                            <AlertTriangle size={11} /> جلسة قديمة متروكة ({session.date})
+                          </span>
+                        )}
                       </div>
                       <div className="flex flex-wrap items-center gap-3 mt-1">
                         <span className="text-xs text-gray-500 flex items-center gap-1"><MapPin size={12} /> {session.room || 'بانتظار التخصيص'}</span>
-                        <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {session.start_time || '--:--'}</span>
+                        <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {session.date ? `${session.date} | ` : ''}{session.start_time || '--:--'}</span>
                         {prof && prof.familyDueFollowUps.length > 0 && (
                           <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
                             تنبيه أسري: {prof.familyDueFollowUps[0].memberName} ({prof.familyDueFollowUps[0].title})
@@ -418,18 +452,22 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
                     >
                       <Activity size={13} className="text-primary-600" /> بطاقة المريض
                     </button>
-                    <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${session.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : session.status === 'WAITING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-gray-50 text-gray-600'}`}>
-                      {session.status === 'ACTIVE' ? AR.inSession : session.status === 'FINISHED' ? AR.completed : AR.waiting}
+                    <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${isOldAbandonedSession ? 'bg-amber-50 text-amber-800 border-amber-300' : session.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>
+                      {isOldAbandonedSession
+                        ? 'جلسة قديمة متروكة'
+                        : session.status === 'ACTIVE'
+                        ? AR.inSession
+                        : AR.waiting}
                     </div>
                   </div>
                 </div>
               )})
             ) : (
-              clinicAppointments.map(app => {
+              activeClinicsList.map(app => {
                 const prof = patientProfilesMap.get(app.patient_id);
-                const isPastWaiting = app.status === 'WAITING' && app.date && app.date < todayStr;
+                const isOldAbandonedAppointment = isRecordDateInPast(app.date, todayStr);
                 return (
-                <div key={app.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${isPastWaiting ? 'border-amber-300 bg-amber-50/15' : app.status === 'IN_PROGRESS' ? 'border-blue-100 bg-blue-50/20' : app.status === 'WAITING' ? 'border-yellow-100 bg-yellow-50/20' : 'border-gray-100'}`}>
+                <div key={app.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${isOldAbandonedAppointment ? 'border-amber-300 bg-amber-50/15' : app.status === 'IN_PROGRESS' ? 'border-blue-100 bg-blue-50/20' : 'border-yellow-100 bg-yellow-50/20'}`}>
                    <div className="flex items-start gap-4">
                     <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-lg shrink-0">
                       {app.patients?.name?.[0]}
@@ -458,9 +496,9 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
                             <ShieldAlert size={11} /> حساسية
                           </span>
                         )}
-                        {isPastWaiting && (
+                        {isOldAbandonedAppointment && (
                           <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded-md text-[10px] font-black flex items-center gap-1">
-                            <AlertTriangle size={11} /> موعد معلق بتاريخ سابق ({app.date})
+                            <AlertTriangle size={11} /> موعد قديم متروك ({app.date})
                           </span>
                         )}
                       </div>
@@ -481,10 +519,14 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
                     >
                       <Activity size={13} className="text-primary-600" /> بطاقة المريض
                     </button>
-                    <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${app.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 border-blue-200' : app.status === 'WAITING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
-                       {app.status === 'WAITING' ? 'انتظار الكشف' : app.status === 'IN_PROGRESS' ? 'داخل العيادة' : 'مكتمل'}
+                    <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${isOldAbandonedAppointment ? 'bg-amber-50 text-amber-800 border-amber-300' : app.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}`}>
+                       {isOldAbandonedAppointment
+                         ? 'موعد قديم متروك'
+                         : app.status === 'WAITING'
+                         ? 'انتظار الكشف'
+                         : 'داخل العيادة'}
                     </div>
-                    {app.status === 'WAITING' && (
+                    {app.status === 'WAITING' && !isOldAbandonedAppointment && (
                        <button 
                          onClick={() => updateAppointmentStatus(app.id, 'IN_PROGRESS')}
                          className="px-4 py-1.5 bg-primary-600 text-white rounded-lg text-xs font-bold shadow-md hover:bg-primary-700"
@@ -497,11 +539,11 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
               )})
             )}
             
-            {activeQueue === 'dialysis' && sessions.length === 0 && !loading && (
-              <div className="text-center py-20 text-gray-300">لا توجد جلسات غسيل مسجلة اليوم</div>
+            {activeQueue === 'dialysis' && activeDialysisList.length === 0 && !loading && (
+              <div className="text-center py-20 text-gray-400 font-bold">لا توجد جلسات غسيل نشطة حالياً</div>
             )}
-            {activeQueue === 'clinics' && clinicAppointments.length === 0 && !loading && (
-              <div className="text-center py-20 text-gray-300">لا توجد مواعيد عيادات اليوم</div>
+            {activeQueue === 'clinics' && activeClinicsList.length === 0 && !loading && (
+              <div className="text-center py-20 text-gray-400 font-bold">لا توجد مواعيد عيادات نشطة حالياً</div>
             )}
           </div>
         </div>

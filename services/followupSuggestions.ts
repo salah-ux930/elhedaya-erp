@@ -1,4 +1,5 @@
 import { Patient, SuggestedFollowup, LinkedModuleType } from '../types.ts';
+import { deduplicateFollowupsById } from '../utils/permissions.ts';
 
 export interface ClinicalEligibilityResult {
   eligible: boolean;
@@ -473,5 +474,5 @@ export function calculatePatientSuggestedFollowups(
     }
   }
 
-  return suggestions;
+  return deduplicateFollowupsById(suggestions);
 }

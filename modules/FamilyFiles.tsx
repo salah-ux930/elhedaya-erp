@@ -10,6 +10,12 @@ import { calculatePatientSuggestedFollowups, evaluateClinicalModuleEligibility }
 import { HospitalOperationalEngine, OperationalWorkItem } from "../services/hospitalOperationalEngine.ts";
 import PatientClinical360Modal from "../components/PatientClinical360Modal.tsx";
 import {
+  detectFamilyFileDuplicates,
+  validateNewFamilyFileInput,
+  validateNewFamilyMemberInput,
+  deduplicateFollowupsById
+} from "../utils/permissions.ts";
+import {
   FolderOpen,
   Users,
   Plus,
@@ -83,6 +89,7 @@ const FamilyFilesModule: React.FC = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [fundingEntities, setFundingEntities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
   // Operational Hub vs Directory View State
@@ -258,6 +265,7 @@ const FamilyFilesModule: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [f, p, fe, probs, deaths, exams, visits, appts] = await Promise.all([
         DB.getFamilyFiles(),
@@ -269,16 +277,17 @@ const FamilyFilesModule: React.FC = () => {
         DB.getPatientVisits(),
         DB.getClinicAppointments ? DB.getClinicAppointments() : Promise.resolve([])
       ]);
-      setFamilyFiles(f);
-      setPatients(p);
-      setFundingEntities(fe);
-      setPatientProblems(probs);
-      setPatientDeaths(deaths);
-      setPhysicalExams(exams);
+      setFamilyFiles(f || []);
+      setPatients(p || []);
+      setFundingEntities(fe || []);
+      setPatientProblems(probs || []);
+      setPatientDeaths(deaths || []);
+      setPhysicalExams(exams || []);
       setPatientVisits(visits || []);
       setAppointments(appts || []);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
+      setLoadError(err?.message || "تعذر تحميل بيانات الملفات العائلية. يرجى المحاولة مرة أخرى.");
     } finally {
       setLoading(false);
     }
@@ -501,17 +510,36 @@ const FamilyFilesModule: React.FC = () => {
     }
 
     try {
+      const candidateFamilyCode = (target.family_code?.value || `FF-${Math.floor(1000 + Math.random() * 9000)}`).trim();
+      const candidateFamilyNumber = target.family_number?.value?.trim() || null;
+      const candidateHeadName = (target.head_name?.value || "").trim();
+
+      const preSaveCheck = validateNewFamilyFileInput(
+        {
+          family_code: candidateFamilyCode,
+          family_number: candidateFamilyNumber || undefined,
+          national_id: nationalId,
+          head_name: candidateHeadName
+        },
+        familyFiles,
+        patients
+      );
+      if (!preSaveCheck.valid) {
+        setFormError(preSaveCheck.reason);
+        return;
+      }
+
       const createdFile = await DB.addFamilyFile({
-        family_code: (target.family_code?.value || `FF-${Math.floor(1000 + Math.random() * 9000)}`).trim(),
+        family_code: candidateFamilyCode,
         national_id: nationalId,
-        head_name: (target.head_name?.value || "").trim(),
+        head_name: candidateHeadName,
         governorate: (target.governorate?.value || "الجيزة").trim(),
         administration: (target.administration?.value || "إدارة البدرشين").trim(),
         village_city: (target.village_city?.value || "").trim(),
         health_unit: (target.health_unit?.value || "مركز الهداية الطبي").trim(),
         address: (target.address?.value || target.village_city?.value || "").trim(),
         house_number: target.house_number?.value?.trim() || null,
-        family_number: target.family_number?.value?.trim() || null,
+        family_number: candidateFamilyNumber,
         phone: phone || null,
         home_number: workPhone || null,
         nearest_landmark: nearestPhone || null,
@@ -596,6 +624,22 @@ const FamilyFilesModule: React.FC = () => {
       : (selectedFamilyFileForMember.members?.length || 0) + 1;
 
     try {
+      const selectedPatientRecord = patients.find((p) => p.id === patientId);
+      const memberDupCheck = validateNewFamilyMemberInput(
+        {
+          family_file_id: selectedFamilyFileForMember.id,
+          patient_id: patientId,
+          national_id: selectedPatientRecord?.national_id,
+          name: memberName || selectedPatientRecord?.name
+        },
+        familyFiles,
+        patients
+      );
+      if (!memberDupCheck.valid) {
+        setFormError(memberDupCheck.reason);
+        return;
+      }
+
       // 1. تحديث بيانات المريض في قاعدة البيانات لضمان دقة الاسم رباعي، النوع، تاريخ الميلاد، ونوع التأمين
       const { error: patientErr } = await supabase
         .from("patients")
@@ -688,8 +732,43 @@ const FamilyFilesModule: React.FC = () => {
     );
   });
 
+  // كشف التكرار في السجلات الحالية (كود الأسرة / الرقم الأسري / الرقم القومي / المريض المربوط) دون دمج أو تعديل السجلات الموجودة
+  const duplicateReport = detectFamilyFileDuplicates(familyFiles, patients);
+
   return (
     <div className="space-y-6" dir="rtl">
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 text-rose-800 text-xs font-bold">
+            <AlertCircle size={18} className="text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={loadData}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shrink-0"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
+      {duplicateReport.hasDuplicates && (
+        <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 space-y-2" role="alert">
+          <div className="flex items-center gap-2 text-amber-900 font-black text-xs">
+            <ShieldAlert size={18} className="text-amber-600 shrink-0" />
+            <span>
+              تنبيه سلامة السجلات: تم رصد ({duplicateReport.duplicateGroups.length}) حالات تكرار في أرقام التعريف الأسرية أو الأرقام القومية المسجلة سابقاً (تم الحفاظ على السجلات الحالية كما هي دون دمج أو تعديل تلقائي):
+            </span>
+          </div>
+          <ul className="list-disc list-inside space-y-1 text-[11px] font-bold text-amber-800 pr-2">
+            {duplicateReport.duplicateGroups.map((grp, idx) => (
+              <li key={`${grp.type}-${grp.value}-${idx}`}>{grp.label}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Top Operational Workspace Switcher & Search Bar */}
       <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
         <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -1711,7 +1790,9 @@ const FamilyFilesModule: React.FC = () => {
                             gender: member.patients?.gender,
                           };
 
-                        const memberSuggestions = calculatePatientSuggestedFollowups(fullPatient, { appointments });
+                        const memberSuggestions = deduplicateFollowupsById(
+                          calculatePatientSuggestedFollowups(fullPatient, { appointments })
+                        );
 
                         return (
                           <tr
@@ -4658,13 +4739,27 @@ const FamilyFilesModule: React.FC = () => {
                         className="hover:bg-primary-50/20 transition-colors cursor-pointer"
                       >
                         <td className="p-4 text-center font-mono tabular-nums text-primary-600 font-extrabold text-sm">
-                          {file.family_code}
+                          <div>{file.family_code}</div>
+                          {duplicateReport.byFileId[file.id] && (
+                            <span
+                              className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black"
+                              title={duplicateReport.byFileId[file.id].reasons.join(" | ")}
+                            >
+                              <ShieldAlert size={11} className="text-amber-700 shrink-0" />
+                              سجل مكرر التعريف
+                            </span>
+                          )}
                         </td>
                         <td className="p-4 text-gray-900 text-base">
                           <div>{file.head_name || "غير مسجل"}</div>
                           {file.has_chronic_diseases && (
                             <span className="text-[11px] text-amber-700 font-bold block mt-0.5">
                               مسجل أمراض مزمنة بالأسرة
+                            </span>
+                          )}
+                          {duplicateReport.byFileId[file.id] && (
+                            <span className="text-[10px] text-amber-800 font-bold block mt-0.5">
+                              {duplicateReport.byFileId[file.id].reasons[0]}
                             </span>
                           )}
                         </td>

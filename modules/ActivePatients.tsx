@@ -12,6 +12,7 @@ import {
 import DialysisNursingAssessmentModal from '../components/DialysisNursingAssessmentModal.tsx';
 import DialysisFallRiskReviewModal from '../components/DialysisFallRiskReviewModal.tsx';
 import { realtimeNotificationService } from '../services/realtimeNotificationService.ts';
+import { classifyAndDeduplicateSessions, isRecordDateInPast } from '../utils/permissions.ts';
 
 const parseTimeToMinutes = (timeStr?: string | null): number | null => {
   if (!timeStr || typeof timeStr !== 'string') return null;
@@ -38,7 +39,7 @@ const ActivePatients: React.FC = () => {
   
   // Search and Filter States
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'WAITING'>('ALL');
+  const [statusFilter, setStatusFilter] = useState<'ALL' | 'ACTIVE' | 'WAITING' | 'ABANDONED'>('ALL');
   const [roomFilter, setRoomFilter] = useState<string>('ALL');
   const [fundingFilter, setFundingFilter] = useState<string>('ALL');
 
@@ -72,23 +73,16 @@ const ActivePatients: React.FC = () => {
         DB.getServices(),
         DB.getStores()
       ]);
-      // Show both WAITING and ACTIVE sessions, deduplicated strictly by actual session key (id) without merging independent sessions
-      const rawCurrent = (sess || []).filter(session => session && (session.status === 'ACTIVE' || session.status === 'WAITING'));
-      const uniqueSessionsMap = new Map<string, any>();
-      rawCurrent.forEach((session, idx) => {
-        const sessionKey = session.id ? String(session.id).trim() : `fallback_sess_${idx}`;
-        if (!uniqueSessionsMap.has(sessionKey)) {
-          uniqueSessionsMap.set(sessionKey, session);
-        }
-      });
-      const current = Array.from(uniqueSessionsMap.values());
+      const todayStr = getLocalTodayDateStr();
+      const classified = classifyAndDeduplicateSessions(sess || [], todayStr);
+      const current = classified.allNonCompletedSessions;
 
       setAllSessions(current);
       setServices(serv || []);
       setStores(stor || []);
 
-      // Load Fall Risk Reviews for active sessions
-      const activeIds = current.filter(s => s.status === 'ACTIVE' && s.id).map(s => s.id);
+      // Load Fall Risk Reviews for currently active sessions
+      const activeIds = classified.currentActiveSessions.filter(s => s.id).map(s => s.id);
       if (activeIds.length > 0) {
         try {
           const fallReviews = await DB.getFallRiskReviewsForSessions(activeIds);
@@ -230,25 +224,29 @@ const ActivePatients: React.FC = () => {
     };
   };
 
-  // Summary counts (aligned with the exact deduplicated allSessions list)
+  // Summary counts (aligned with the exact deduplicated allSessions list and separating old abandoned records)
   const stats = useMemo(() => {
-    const total = allSessions.length;
-    const active = allSessions.filter(s => s.status === 'ACTIVE').length;
-    const waiting = allSessions.filter(s => s.status === 'WAITING').length;
+    const todayStr = getLocalTodayDateStr();
+    const classified = classifyAndDeduplicateSessions(allSessions, todayStr);
+    const total = classified.allNonCompletedSessions.length;
+    const active = classified.currentActiveSessions.length;
+    const waiting = classified.currentWaitingSessions.length;
+    const abandoned = classified.abandonedOldSessions.length;
     
     let fallRiskOverdue = 0;
-    let dataQualityIssuesCount = 0;
-    allSessions.filter(s => s.status === 'ACTIVE').forEach(s => {
+    let dataQualityIssuesCount = abandoned;
+    classified.currentActiveSessions.forEach(s => {
       const st = getSessionFallRiskStatus(s);
       if (st.isOverdue) fallRiskOverdue++;
       if (st.hasDataQualityIssue) dataQualityIssuesCount++;
     });
 
-    return { total, active, waiting, fallRiskOverdue, dataQualityIssuesCount };
+    return { total, active, waiting, abandoned, fallRiskOverdue, dataQualityIssuesCount };
   }, [allSessions, fallReviewsBySession]);
 
   // Filtered sessions
   const filteredSessions = useMemo(() => {
+    const todayStr = getLocalTodayDateStr();
     return allSessions.filter(session => {
       // 1. Search filter
       if (searchTerm.trim()) {
@@ -269,9 +267,14 @@ const ActivePatients: React.FC = () => {
         if (!matches) return false;
       }
 
-      // 2. Status filter
-      if (statusFilter !== 'ALL' && session.status !== statusFilter) {
-        return false;
+      // 2. Status filter (aligned with stats.active, stats.waiting, stats.abandoned)
+      const isOldAbandoned = isRecordDateInPast(session.date, todayStr);
+      if (statusFilter === 'ACTIVE') {
+        if (isOldAbandoned || session.status !== 'ACTIVE') return false;
+      } else if (statusFilter === 'WAITING') {
+        if (isOldAbandoned || session.status !== 'WAITING') return false;
+      } else if (statusFilter === 'ABANDONED') {
+        if (!isOldAbandoned) return false;
       }
 
       // 3. Room filter
@@ -546,7 +549,7 @@ const ActivePatients: React.FC = () => {
           </div>
 
           {/* Status Tabs / Pills */}
-          <div className="md:col-span-4 flex items-center gap-1.5 p-1 bg-gray-100/80 rounded-2xl">
+          <div className="md:col-span-4 flex items-center gap-1.5 p-1 bg-gray-100/80 rounded-2xl flex-wrap">
             <button
               onClick={() => setStatusFilter('ALL')}
               className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all ${
@@ -566,7 +569,7 @@ const ActivePatients: React.FC = () => {
               }`}
             >
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-300"></span>
-              في الجلسة ({stats.active})
+              في الجلسة الآن ({stats.active})
             </button>
             <button
               onClick={() => setStatusFilter('WAITING')}
@@ -579,6 +582,18 @@ const ActivePatients: React.FC = () => {
               <span className="w-1.5 h-1.5 rounded-full bg-amber-300"></span>
               انتظار ({stats.waiting})
             </button>
+            {stats.abandoned > 0 && (
+              <button
+                onClick={() => setStatusFilter('ABANDONED')}
+                className={`flex-1 py-2 px-3 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
+                  statusFilter === 'ABANDONED'
+                    ? 'bg-slate-700 text-white shadow-sm'
+                    : 'text-amber-800 hover:text-slate-900'
+                }`}
+              >
+                متروكة ({stats.abandoned})
+              </button>
+            )}
           </div>
 
           {/* Room Dropdown */}
@@ -649,12 +664,15 @@ const ActivePatients: React.FC = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredSessions.map(session => {
           const fallStatus = getSessionFallRiskStatus(session);
+          const isOldAbandonedSession = isRecordDateInPast(session.date, getLocalTodayDateStr());
 
           return (
             <div 
               key={session.id} 
               className={`bg-white p-7 rounded-[2rem] border-2 shadow-sm hover:shadow-xl transition-all relative overflow-hidden group ${
-                fallStatus.isOverdue
+                isOldAbandonedSession
+                  ? 'border-amber-300 bg-amber-50/10'
+                  : fallStatus.isOverdue
                   ? 'border-rose-300 ring-2 ring-rose-500/20'
                   : session.status === 'ACTIVE' 
                   ? 'border-emerald-200' 
@@ -663,7 +681,9 @@ const ActivePatients: React.FC = () => {
             >
               <div 
                 className={`absolute top-0 right-0 w-36 h-36 rounded-full -mr-16 -mt-16 transition-colors ${
-                  fallStatus.isOverdue
+                  isOldAbandonedSession
+                    ? 'bg-amber-50'
+                    : fallStatus.isOverdue
                     ? 'bg-rose-50'
                     : session.status === 'ACTIVE' 
                     ? 'bg-emerald-50 group-hover:bg-emerald-100' 
@@ -675,7 +695,9 @@ const ActivePatients: React.FC = () => {
                 <div className="flex items-center gap-3.5">
                   <div 
                     className={`w-14 h-14 rounded-2xl flex items-center justify-center font-black text-xl shadow-md border-2 ${
-                      fallStatus.isOverdue
+                      isOldAbandonedSession
+                        ? 'bg-amber-700 border-amber-200 text-white'
+                        : fallStatus.isOverdue
                         ? 'bg-rose-600 border-rose-200 text-white'
                         : session.status === 'ACTIVE' 
                         ? 'bg-emerald-600 border-emerald-100 text-white' 
@@ -704,16 +726,22 @@ const ActivePatients: React.FC = () => {
                 <div className="flex flex-col items-end gap-1">
                   <div 
                     className={`text-[11px] font-black px-3 py-1 rounded-full shrink-0 flex items-center gap-1.5 shadow-sm ${
-                      session.status === 'ACTIVE' 
+                      isOldAbandonedSession
+                        ? 'text-amber-900 bg-amber-100 border border-amber-300'
+                        : session.status === 'ACTIVE' 
                         ? 'text-emerald-700 bg-emerald-50 border border-emerald-200' 
                         : 'text-amber-700 bg-amber-50 border border-amber-200'
                     }`}
                   >
-                    <span className={`w-2 h-2 rounded-full ${session.status === 'ACTIVE' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
-                    {session.status === 'ACTIVE' ? 'في الجلسة الآن' : 'في قائمة الانتظار'}
+                    <span className={`w-2 h-2 rounded-full ${isOldAbandonedSession ? 'bg-amber-600' : session.status === 'ACTIVE' ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`}></span>
+                    {isOldAbandonedSession
+                      ? `جلسة قديمة متروكة (${session.date})`
+                      : session.status === 'ACTIVE'
+                      ? 'في الجلسة الآن'
+                      : 'في قائمة الانتظار'}
                   </div>
 
-                  {fallStatus.isOverdue && (
+                  {!isOldAbandonedSession && fallStatus.isOverdue && (
                     <span className="text-[10px] font-black text-rose-700 bg-rose-100/90 px-2 py-0.5 rounded-full border border-rose-300 flex items-center gap-1 animate-pulse">
                       <AlertCircle size={11} /> مراجعة سقوط مستحقة!
                     </span>

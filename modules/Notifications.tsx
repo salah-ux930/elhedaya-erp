@@ -15,6 +15,7 @@ const NotificationsModule: React.FC = () => {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [liveAlerts, setLiveAlerts] = useState<ClinicalAlert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'ALL' | 'LAB' | 'VITALS' | 'FALL_RISK' | 'SYSTEM'>('ALL');
   const [isMuted, setIsMuted] = useState(realtimeNotificationService.getIsSoundMuted());
 
@@ -30,11 +31,13 @@ const NotificationsModule: React.FC = () => {
 
   const loadNotifications = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const data = await DB.getNotifications();
       setNotifications(data || []);
-    } catch (e) {
+    } catch (e: any) {
       console.warn(e);
+      setLoadError(e?.message || 'تعذر تحميل الإشعارات. يرجى المحاولة مرة أخرى.');
     } finally {
       setLoading(false);
     }
@@ -93,6 +96,21 @@ const NotificationsModule: React.FC = () => {
 
   return (
     <div className="max-w-5xl mx-auto space-y-6 pb-16" dir="rtl">
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-rose-800 text-sm font-bold">
+            <AlertTriangle size={20} className="text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            onClick={loadNotifications}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div className="bg-white p-6 rounded-3xl border border-gray-200 shadow-sm flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
         <div className="flex items-center gap-4">

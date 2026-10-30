@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { AR, PERMISSIONS_MAP } from '../constants.ts';
 import { DB } from '../store.ts';
@@ -6,8 +5,17 @@ import { User, Permission, Store, FinancialAccount } from '../types.ts';
 import { 
   UserPlus, Search, Trash2, UserCheck, Shield, Check, X, 
   Loader2, Package, Wallet, Edit, AlertCircle, RefreshCw, 
-  Fingerprint, Database, Eye, Settings2
+  Fingerprint, Database, Eye, Settings2, AlertTriangle, Info, Lock
 } from 'lucide-react';
+import {
+  analyzeUserAccountPermissions,
+  getVisibleStores,
+  canManageStore,
+  canManageAccount,
+  canPerformCrud,
+  getCurrentStoredUser,
+  CLIENT_GUARD_SECURITY_NOTICE
+} from '../utils/permissions.ts';
 
 const UsersModule: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -21,6 +29,9 @@ const UsersModule: React.FC = () => {
   const [availableStores, setAvailableStores] = useState<Store[]>([]);
   const [availableAccounts, setAvailableAccounts] = useState<FinancialAccount[]>([]);
   const [isSchemaError, setIsSchemaError] = useState(false);
+
+  const currentUser = getCurrentStoredUser();
+  const canManageUsers = canPerformCrud(currentUser, 'users', 'update');
 
   useEffect(() => {
     loadData();
@@ -60,6 +71,10 @@ const UsersModule: React.FC = () => {
 
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageUsers) {
+      alert("غير مصرح لك بتعديل أو إضافة حسابات النظام (يتطلب صلاحية MANAGE_USERS).");
+      return;
+    }
     if (!userData.name || !userData.username) {
         alert("يرجى إكمال البيانات الأساسية");
         return;
@@ -91,6 +106,15 @@ const UsersModule: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {/* تنبيه أمني حول حراسة الواجهة الأمامية ومصادقة الخادم */}
+      <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-4 flex items-start gap-3 text-amber-900 text-xs font-bold leading-relaxed">
+        <Info size={18} className="text-amber-600 shrink-0 mt-0.5" />
+        <div>
+          <span className="font-black">ملاحظة معمارية هامة: </span>
+          <span>{CLIENT_GUARD_SECURITY_NOTICE}</span>
+        </div>
+      </div>
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div className="relative w-full md:w-96">
           <Search className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -100,7 +124,11 @@ const UsersModule: React.FC = () => {
             value={searchTerm} onChange={e => setSearchTerm(e.target.value)}
           />
         </div>
-        <button onClick={() => { setEditingUserId(null); setUserData({ permissions: [] }); setShowModal(true); }} className="bg-primary-600 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-black shadow-lg hover:bg-primary-700 transition-all">
+        <button
+          disabled={!canManageUsers}
+          onClick={() => { setEditingUserId(null); setUserData({ permissions: [] }); setShowModal(true); }}
+          className="bg-primary-600 text-white px-8 py-4 rounded-2xl flex items-center gap-2 font-black shadow-lg hover:bg-primary-700 disabled:opacity-50 transition-all"
+        >
           <UserPlus size={20} /> حساب جديد
         </button>
       </div>
@@ -108,39 +136,141 @@ const UsersModule: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {loading ? (
           <div className="col-span-full py-20 flex justify-center"><Loader2 className="animate-spin text-primary-600" size={48} /></div>
-        ) : filteredUsers.map(user => (
-          <div key={user.id} className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-8 hover:shadow-xl transition-all group">
-             <div className="flex justify-between items-start mb-6">
+        ) : filteredUsers.map(user => {
+          const accAnalysis = analyzeUserAccountPermissions(user, availableAccounts);
+          const userVisibleStores = getVisibleStores(user, availableStores);
+          const generalPerms = (user.permissions || []).filter(p => !p.includes(':'));
+
+          return (
+            <div key={user.id} className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 p-8 hover:shadow-xl transition-all group space-y-5">
+              <div className="flex justify-between items-start">
                 <div className="flex items-center gap-4">
-                   <div className="w-16 h-16 bg-primary-600 text-white rounded-2xl flex items-center justify-center font-black text-2xl uppercase">
-                      {user.name ? user.name[0] : '?'}
-                   </div>
-                   <div>
-                      <h4 className="font-black text-xl text-gray-800">{user.name}</h4>
-                      <div className="text-xs text-gray-400 mt-1 flex items-center gap-1 font-mono tracking-tighter">
-                        <Fingerprint size={12} /> @{user.username}
-                      </div>
-                   </div>
+                  <div className="w-16 h-16 bg-primary-600 text-white rounded-2xl flex items-center justify-center font-black text-2xl uppercase">
+                    {user.name ? user.name[0] : '?'}
+                  </div>
+                  <div>
+                    <h4 className="font-black text-xl text-gray-800">{user.name}</h4>
+                    <div className="text-xs text-gray-400 mt-1 flex items-center gap-1 font-mono tracking-tighter">
+                      <Fingerprint size={12} /> @{user.username}
+                    </div>
+                  </div>
                 </div>
                 <div className="flex gap-2">
-                   <button onClick={() => { setEditingUserId(user.id); setUserData(user); setShowModal(true); }} className="p-3 bg-primary-50 text-primary-600 rounded-xl hover:bg-primary-600 hover:text-white transition-all"><Edit size={18} /></button>
-                   <button onClick={async () => { if(confirm('هل أنت متأكد من حذف هذا الحساب؟')) { await DB.deleteUser(user.id); loadData(); } }} className="p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white transition-all"><Trash2 size={18} /></button>
+                  <button
+                    disabled={!canManageUsers}
+                    onClick={() => { setEditingUserId(user.id); setUserData(user); setShowModal(true); }}
+                    className="p-3 bg-primary-50 text-primary-600 rounded-xl hover:bg-primary-600 hover:text-white disabled:opacity-50 transition-all"
+                    title="تعديل الصلاحيات"
+                  >
+                    <Edit size={18} />
+                  </button>
+                  <button
+                    disabled={!canManageUsers}
+                    onClick={async () => { if(confirm('هل أنت متأكد من حذف هذا الحساب؟')) { await DB.deleteUser(user.id); loadData(); } }}
+                    className="p-3 bg-red-50 text-red-600 rounded-xl hover:bg-red-600 hover:text-white disabled:opacity-50 transition-all"
+                    title="حذف الحساب"
+                  >
+                    <Trash2 size={18} />
+                  </button>
                 </div>
-             </div>
-             <div className="flex flex-wrap gap-2 pt-4 border-t border-gray-50">
-                {user.permissions?.filter(p => !p.includes(':')).map(p => (
-                   <span key={p} className="px-3 py-1 bg-gray-50 text-gray-500 rounded-lg text-[10px] font-bold border border-gray-100">
-                     {PERMISSIONS_MAP[p] || p}
-                   </span>
-                ))}
-                {(user.permissions?.filter(p => p.includes(':')).length || 0) > 0 && (
-                  <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-lg text-[10px] font-bold border border-indigo-100">
-                    +{user.permissions?.filter(p => p.includes(':')).length} صلاحية مخصصة
+              </div>
+
+              {/* الصلاحيات العامة للتبويبات */}
+              <div className="pt-4 border-t border-gray-100">
+                <div className="text-[11px] font-black text-slate-400 mb-2">صلاحيات الأقسام والتبويبات ({generalPerms.length}):</div>
+                <div className="flex flex-wrap gap-1.5">
+                  {generalPerms.length > 0 ? generalPerms.map(p => (
+                    <span key={p} className="px-2.5 py-1 bg-slate-50 text-slate-700 rounded-lg text-[10px] font-bold border border-slate-200">
+                      {PERMISSIONS_MAP[p] || p}
+                    </span>
+                  )) : (
+                    <span className="px-3 py-1 bg-rose-50 text-rose-600 rounded-lg text-[10px] font-bold border border-rose-200">
+                      مستخدم بلا صلاحيات أقسام
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* تفصيل الخزن والحسابات المالية المسموحة بدقة */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-black text-slate-700 flex items-center gap-1.5">
+                    <Wallet size={14} className="text-emerald-600" />
+                    <span>الخزن والحسابات المسموحة فعلياً ({accAnalysis.visibleAccounts.length} من {availableAccounts.length}):</span>
                   </span>
+                </div>
+                {accAnalysis.visibleAccounts.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {accAnalysis.visibleAccounts.map(acc => {
+                      const isManage = canManageAccount(user, acc.id);
+                      return (
+                        <span
+                          key={acc.id}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-black border flex items-center gap-1 ${
+                            isManage
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}
+                        >
+                          {isManage ? <Settings2 size={11} /> : <Eye size={11} />}
+                          <span>{acc.name}</span>
+                          <span className="opacity-75">({isManage ? 'إدارة: قبض/صرف' : 'مشاهدة فقط'})</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1.5">
+                    <Lock size={12} className="text-slate-400 shrink-0" />
+                    <span>لا توجد أي خزينة نشطة مخصصة لهذا المستخدم حالياً.</span>
+                  </div>
                 )}
-             </div>
-          </div>
-        ))}
+
+                {accAnalysis.hasContradiction && (
+                  <div className="mt-2 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-bold flex items-start gap-2 leading-relaxed">
+                    <AlertTriangle size={15} className="text-amber-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-black">تنبيه تعارض صلاحيات مالية: </span>
+                      <span>
+                        هذا المستخدم يملك صلاحية فتح قسم المالية/تعريف الخزن
+                        {accAnalysis.orphanedAccountIds.length > 0
+                          ? ` مع وجود معرّف خزينة قديم/محذوف (${accAnalysis.orphanedAccountIds.join(', ')})`
+                          : ''}
+                        ، لكن لم يتم تخصيص أي خزينة نشطة له من الخزن الحالية ({availableAccounts.map(a => a.name).join('، ')}). لن يتم توسيع الوصول افتراضياً؛ يرجى فتح «تعديل الصلاحيات» وتحديد الخزينة المسموحة له صراحةً.
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* تفصيل المخازن المسموحة بدقة */}
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-1.5">
+                <div className="text-[11px] font-black text-slate-700 flex items-center gap-1.5">
+                  <Package size={14} className="text-indigo-600" />
+                  <span>المخازن المسموحة فعلياً ({userVisibleStores.length} من {availableStores.length}):</span>
+                </div>
+                {userVisibleStores.length > 0 ? (
+                  <div className="flex flex-wrap gap-1.5">
+                    {userVisibleStores.map(st => {
+                      const isManage = canManageStore(user, st.id);
+                      return (
+                        <span
+                          key={st.id}
+                          className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-800 border border-indigo-200 text-[10px] font-black flex items-center gap-1"
+                        >
+                          <span>{st.name}</span>
+                          <span className="opacity-75">({isManage ? 'إدارة' : 'مشاهدة'})</span>
+                        </span>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="text-[11px] font-bold text-slate-400">لا توجد مخازن مخصصة لهذا المستخدم.</div>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       {showModal && (

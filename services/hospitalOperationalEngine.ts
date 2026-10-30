@@ -1,6 +1,7 @@
 import { DB } from '../store.ts';
 import { Patient, FamilyFile, SuggestedFollowup, LinkedModuleType } from '../types.ts';
 import { calculatePatientSuggestedFollowups } from './followupSuggestions.ts';
+import { deduplicateFollowupsById } from '../utils/permissions.ts';
 
 export interface PatientClinicalAlert {
   id: string;
@@ -415,8 +416,11 @@ export class HospitalOperationalEngine {
       }
     }
 
-    // Check other members of the same family file
+    const uniqueDueFollowups = deduplicateFollowupsById(dueFollowups);
+
+    // Check other members of the same family file (deduplicated strictly by task id)
     const familyOtherMembersDue: PatientOperationalProfile['familyOtherMembersDue'] = [];
+    const seenOtherFollowupIds = new Set<string>();
     if (linkedFamily && linkedFamily.members) {
       for (const m of linkedFamily.members) {
         const mPat: Patient | undefined = m.patients;
@@ -425,6 +429,8 @@ export class HospitalOperationalEngine {
           appointments: contextData.appointments || []
         });
         mFollowups.forEach((f) => {
+          if (!f?.id || seenOtherFollowupIds.has(f.id)) return;
+          seenOtherFollowupIds.add(f.id);
           familyOtherMembersDue.push({
             patientId: mPat.id,
             patientName: mPat.name,
@@ -458,7 +464,7 @@ export class HospitalOperationalEngine {
       latestVitals,
       latestLabs: patientLabs,
       latestMedications,
-      dueFollowups,
+      dueFollowups: uniqueDueFollowups,
       familyOtherMembersDue,
       familyDueFollowUps
     };

@@ -26,36 +26,51 @@ import {
 } from 'lucide-react';
 import { Permission } from '../types';
 import { realtimeNotificationService } from '../services/realtimeNotificationService.ts';
+import { canAccessTab } from '../utils/permissions.ts';
 
 interface SidebarItemProps {
   icon: React.ReactNode;
   label: string;
   badge?: string;
   active: boolean;
+  allowed?: boolean;
   onClick: () => void;
 }
 
-const SidebarItem: React.FC<SidebarItemProps> = ({ icon, label, badge, active, onClick }) => (
+const SidebarItem: React.FC<SidebarItemProps> = ({ icon, label, badge, active, allowed = true, onClick }) => (
   <button
     onClick={onClick}
+    title={allowed ? label : `${label} (غير مصرح لحسابك الحالي)`}
     className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl transition-all text-right cursor-pointer ${
       active
         ? 'bg-primary-600 text-white shadow-sm font-black'
-        : 'text-slate-600 hover:bg-primary-50/70 hover:text-primary-800 font-bold'
+        : allowed
+        ? 'text-slate-600 hover:bg-primary-50/70 hover:text-primary-800 font-bold'
+        : 'text-slate-400 hover:bg-rose-50/60 hover:text-rose-700 font-semibold opacity-75'
     }`}
   >
     <div className="flex items-center gap-3 min-w-0">
       <span className="shrink-0">{icon}</span>
       <span className="text-sm truncate">{label}</span>
     </div>
-    {badge && (
+    {!allowed ? (
       <span
         className={`text-[10px] px-2 py-0.5 rounded-md font-bold shrink-0 ${
-          active ? 'bg-white/20 text-white' : 'bg-primary-50 text-primary-700'
+          active ? 'bg-white/20 text-white' : 'bg-rose-50 text-rose-600 border border-rose-200'
         }`}
       >
-        {badge}
+        غير مصرح
       </span>
+    ) : (
+      badge && (
+        <span
+          className={`text-[10px] px-2 py-0.5 rounded-md font-bold shrink-0 ${
+            active ? 'bg-white/20 text-white' : 'bg-primary-50 text-primary-700'
+          }`}
+        >
+          {badge}
+        </span>
+      )
     )}
   </button>
 );
@@ -200,6 +215,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
                   label={item.label}
                   badge={item.badge}
                   active={isTabActive(item.id)}
+                  allowed={canAccessTab(user, item.id)}
                   onClick={() => setActiveTab(item.id)}
                 />
               ))}
@@ -370,6 +386,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
                       label={item.label}
                       badge={item.badge}
                       active={isTabActive(item.id)}
+                      allowed={canAccessTab(user, item.id)}
                       onClick={() => {
                         setActiveTab(item.id);
                         setIsMobileMenuOpen(false);

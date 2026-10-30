@@ -14,6 +14,7 @@ import QuickClinicBookingModal from '../components/QuickClinicBookingModal.tsx';
 import PatientClinical360Modal from '../components/PatientClinical360Modal.tsx';
 import { HospitalOperationalEngine, PatientOperationalProfile } from '../services/hospitalOperationalEngine.ts';
 import { evaluateClinicalModuleEligibility } from '../services/followupSuggestions.ts';
+import { classifyAndDeduplicateAppointments, isRecordDateInPast } from '../utils/permissions.ts';
 
 function getLocalTodayStr(): string {
   const now = new Date();
@@ -204,12 +205,9 @@ const ClinicsModule: React.FC = () => {
     );
   });
 
-  const activeQueueAppointments = searchMatchedAppointments.filter(
-    a => a.status === 'WAITING' || a.status === 'IN_PROGRESS'
-  );
-  const historyAppointments = searchMatchedAppointments.filter(
-    a => a.status === 'COMPLETED' || a.status === 'CANCELLED'
-  );
+  const classifiedAppointments = classifyAndDeduplicateAppointments(searchMatchedAppointments, todayStr);
+  const activeQueueAppointments = classifiedAppointments.allNonCompletedAppointments;
+  const historyAppointments = classifiedAppointments.completedAppointments;
 
   const filteredAppointments =
     activeTab === 'appointments'
@@ -218,9 +216,9 @@ const ClinicsModule: React.FC = () => {
         ? historyAppointments
         : searchMatchedAppointments;
 
-  const waitingTodayCount = activeQueueAppointments.filter(a => a.status === 'WAITING' && (!a.date || a.date >= todayStr)).length;
-  const pastWaitingCount = activeQueueAppointments.filter(a => a.status === 'WAITING' && a.date && a.date < todayStr).length;
-  const inProgressCount = activeQueueAppointments.filter(a => a.status === 'IN_PROGRESS').length;
+  const waitingTodayCount = classifiedAppointments.currentWaitingAppointments.length;
+  const pastWaitingCount = classifiedAppointments.abandonedOldAppointments.length;
+  const inProgressCount = classifiedAppointments.currentInProgressAppointments.length;
   const completedCount = historyAppointments.filter(a => a.status === 'COMPLETED').length;
 
   return (
@@ -299,12 +297,18 @@ const ClinicsModule: React.FC = () => {
             {loading ? (
               <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-primary-600" size={40} /></div>
             ) : activeTab === 'appointments' ? (
+              filteredAppointments.length === 0 ? (
+                <div className="bg-white p-14 rounded-2xl border border-gray-100 text-center text-gray-400 font-bold">
+                  <Calendar size={42} className="mx-auto mb-3 text-gray-300" />
+                  لا توجد مواعيد نشطة حالياً في قائمة العيادات
+                </div>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filteredAppointments.map((app: any) => {
                   const prof = patientProfilesMap.get(app.patient_id);
-                  const isPastWaiting = app.status === 'WAITING' && app.date && app.date < todayStr;
+                  const isOldAbandoned = isRecordDateInPast(app.date, todayStr);
                   return (
-                  <div key={app.id} className={`bg-white p-6 rounded-2xl border shadow-sm hover:shadow-md transition-all ${isPastWaiting ? 'border-amber-300 bg-amber-50/10' : 'border-gray-100'}`}>
+                  <div key={app.id} className={`bg-white p-6 rounded-2xl border shadow-sm hover:shadow-md transition-all ${isOldAbandoned ? 'border-amber-300 bg-amber-50/10' : 'border-gray-100'}`}>
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex items-center gap-3">
                          <div className="w-12 h-12 bg-primary-50 text-primary-600 rounded-xl flex items-center justify-center font-bold">
@@ -324,21 +328,30 @@ const ClinicsModule: React.FC = () => {
                                   <ShieldAlert size={11} /> حساسية
                                 </span>
                               )}
-                              {isPastWaiting && (
+                              {isOldAbandoned && (
                                 <span className="px-2 py-0.5 bg-amber-100 text-amber-800 border border-amber-300 rounded text-[10px] font-black flex items-center gap-1">
-                                  <AlertTriangle size={11} /> موعد معلق بتاريخ سابق
+                                  <AlertTriangle size={11} /> موعد قديم متروك ({app.date})
                                 </span>
                               )}
                             </div>
                          </div>
                       </div>
                       <span className={`px-3 py-1 rounded-full text-[10px] font-bold border ${
+                        isOldAbandoned ? 'bg-amber-100 text-amber-900 border-amber-300' :
                         app.status === 'WAITING' ? 'bg-yellow-50 text-yellow-600 border-yellow-200' :
                         app.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-600 border-blue-200' :
                         app.status === 'COMPLETED' ? 'bg-green-50 text-green-600 border-green-200' :
                         'bg-red-50 text-red-600 border-red-200'
                       }`}>
-                        {app.status === 'WAITING' ? 'في الانتظار' : app.status === 'IN_PROGRESS' ? 'قيد الكشف' : app.status === 'COMPLETED' ? 'مكتمل' : 'ملغي'}
+                        {isOldAbandoned
+                          ? 'موعد قديم متروك'
+                          : app.status === 'WAITING'
+                          ? 'في الانتظار'
+                          : app.status === 'IN_PROGRESS'
+                          ? 'قيد الكشف الآن'
+                          : app.status === 'COMPLETED'
+                          ? 'مكتمل'
+                          : 'ملغي'}
                       </span>
                     </div>
 
@@ -363,7 +376,7 @@ const ClinicsModule: React.FC = () => {
                        >
                          <Activity size={13} className="text-primary-600" /> بطاقة المريض
                        </button>
-                       {app.status === 'WAITING' && (
+                       {app.status === 'WAITING' && !isOldAbandoned && (
                          <button 
                            onClick={() => updateAppointmentStatus(app.id, 'IN_PROGRESS')}
                            className="flex-1 py-2 bg-blue-50 text-blue-600 text-xs font-bold rounded-lg hover:bg-blue-600 hover:text-white transition-all"
@@ -371,12 +384,20 @@ const ClinicsModule: React.FC = () => {
                            دخول للطبيب
                          </button>
                        )}
-                       {app.status === 'IN_PROGRESS' && (
+                       {app.status === 'IN_PROGRESS' && !isOldAbandoned && (
                          <button 
                            onClick={() => setSelectedAppointment(app)}
                            className="flex-1 py-2 bg-green-50 text-green-600 text-xs font-bold rounded-lg hover:bg-green-600 hover:text-white transition-all flex items-center justify-center gap-1"
                          >
                            <ClipboardList size={14} /> تسجيل الكشف
+                         </button>
+                       )}
+                       {isOldAbandoned && (
+                         <button 
+                           onClick={() => setSelectedAppointment(app)}
+                           className="flex-1 py-2 bg-amber-50 text-amber-800 border border-amber-200 text-xs font-bold rounded-lg hover:bg-amber-100 transition-all flex items-center justify-center gap-1"
+                         >
+                           <ClipboardList size={14} /> مراجعة السجل القديم
                          </button>
                        )}
                        {app.status === 'COMPLETED' && (
@@ -388,6 +409,7 @@ const ClinicsModule: React.FC = () => {
                   </div>
                 )})}
               </div>
+              )
             ) : activeTab === 'clinic_history' ? (
               <div className="space-y-4">
                 {filteredAppointments.map((app: any) => (

@@ -13,6 +13,7 @@ const PayrollModule: React.FC = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [shifts, setShifts] = useState<ShiftRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   
    const [showEmpModal, setShowEmpModal] = useState(false);
    const [showConfirmReset, setShowConfirmReset] = useState(false);
@@ -25,11 +26,17 @@ const PayrollModule: React.FC = () => {
 
   const loadData = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const [e, s] = await Promise.all([DB.getEmployees(), DB.getShifts()]);
       setEmployees(e || []);
       setShifts(s || []);
-    } catch (err) { console.error(err); } finally { setLoading(false); }
+    } catch (err: any) {
+      console.error(err);
+      setLoadError(err?.message || 'تعذر تحميل بيانات الموظفين والرواتب. يرجى المحاولة مرة أخرى.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleResetCycle = async () => {
@@ -63,6 +70,20 @@ const PayrollModule: React.FC = () => {
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500 pb-20">
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-rose-800 text-sm font-bold">
+            <span>{loadError}</span>
+          </div>
+          <button
+            onClick={loadData}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
         <div className="flex gap-2 p-1 bg-gray-200/50 rounded-[1.2rem] w-fit">
           <button onClick={() => setActiveTab('payroll')} className={`px-8 py-3 rounded-[1rem] font-black transition-all ${activeTab === 'payroll' ? 'bg-white text-primary-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>مسير الرواتب</button>

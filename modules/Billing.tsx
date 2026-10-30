@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { AR, ROOMS, calculateAge, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
 import { Patient, Service } from '../types.ts';
-import { FileDown, Filter, Printer, MoreVertical, CheckCircle, Clock, Plus, Search, X, UserPlus, ShieldCheck, Activity, FolderOpen, CreditCard } from 'lucide-react';
+import { FileDown, Filter, Printer, MoreVertical, CheckCircle, Clock, Plus, Search, X, UserPlus, ShieldCheck, Activity, FolderOpen, CreditCard, Loader2, AlertCircle } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect.tsx';
 import { printInvoiceDocument } from '../utils/printUtils.ts';
 import { HospitalOperationalEngine } from '../services/hospitalOperationalEngine.ts';
@@ -29,23 +29,35 @@ const BillingModule: React.FC = () => {
     { id: '3', patientName: 'إبراهيم حسن', date: '2024-05-14', amount: 0, status: 'FREE', room: 'A1', dob: '1970-01-01', eligibilityNote: 'إعفاء بحث اجتماعي (ملف عائلي)' },
   ]);
 
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
-    const [p, s, ff, fe] = await Promise.all([
-      DB.getPatients(),
-      DB.getServices(),
-      DB.getFamilyFiles(),
-      DB.getFundingEntities()
-    ]);
-    setPatients(p || []);
-    setServices(s || []);
-    setFamilyFiles(ff || []);
-    setFundingEntities(fe || []);
-    if (s && s.length > 0 && !selectedServiceId) {
-      setSelectedServiceId(s[0].id);
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const [p, s, ff, fe] = await Promise.all([
+        DB.getPatients(),
+        DB.getServices(),
+        DB.getFamilyFiles(),
+        DB.getFundingEntities()
+      ]);
+      setPatients(p || []);
+      setServices(s || []);
+      setFamilyFiles(ff || []);
+      setFundingEntities(fe || []);
+      if (s && s.length > 0 && !selectedServiceId) {
+        setSelectedServiceId(s[0].id);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setLoadError(err?.message || 'تعذر تحميل بيانات الفواتير والخدمات. يرجى المحاولة مرة أخرى.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -131,6 +143,21 @@ const BillingModule: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      {loadError && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-3 text-rose-800 text-sm font-bold">
+            <AlertCircle size={20} className="text-rose-600 shrink-0" />
+            <span>{loadError}</span>
+          </div>
+          <button
+            onClick={loadData}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-black transition-all shrink-0 cursor-pointer"
+          >
+            إعادة المحاولة
+          </button>
+        </div>
+      )}
+
       <div className="flex flex-col md:flex-row gap-4 items-center">
         <div className="flex-1 w-full relative">
           <Search className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
@@ -240,6 +267,17 @@ const BillingModule: React.FC = () => {
                 </td>
               </tr>
             ))}
+            {filteredInvoices.length === 0 && (
+              <tr>
+                <td colSpan={8} className="p-16 text-center text-gray-400 font-bold">
+                  {loading ? (
+                    <span className="inline-flex items-center gap-2"><Loader2 className="animate-spin text-primary-600" size={20} /> جاري التحميل...</span>
+                  ) : (
+                    'لا توجد فواتير مطابقة لمعايير البحث الحالية'
+                  )}
+                </td>
+              </tr>
+            )}
           </tbody>
         </table>
       </div>
