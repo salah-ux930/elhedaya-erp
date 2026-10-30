@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { DB } from '../store.ts';
-import { classifyAndDeduplicateSessions, getTodayIsoDateString } from '../utils/permissions.ts';
+import { classifyAndDeduplicateAppointments, getTodayIsoDateString } from '../utils/permissions.ts';
 import { 
   Loader2, Package, CreditCard, Activity, Users, TrendingUp, BarChart3, AlertCircle
 } from 'lucide-react';
@@ -23,7 +23,7 @@ const DashboardModule: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [stats, setStats] = useState({
     patients: 0,
-    activeSessions: 0,
+    activeAppointments: 0,
     lowStock: 0,
     pendingPayments: 0
   });
@@ -42,14 +42,14 @@ const DashboardModule: React.FC = () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [patients, sessions] = await Promise.all([
+      const [patients, appointments] = await Promise.all([
         DB.getPatients(),
-        DB.getSessions()
+        DB.getClinicAppointments ? DB.getClinicAppointments() : Promise.resolve([])
       ]);
-      const classified = classifyAndDeduplicateSessions(sessions || [], getTodayIsoDateString());
+      const classified = classifyAndDeduplicateAppointments(appointments || [], getTodayIsoDateString());
       setStats({
         patients: patients?.length || 0,
-        activeSessions: classified.currentActiveSessions.length,
+        activeAppointments: classified.currentWaitingAppointments.length + classified.currentInProgressAppointments.length,
         lowStock: 8,
         pendingPayments: 5
       });
@@ -93,21 +93,21 @@ const DashboardModule: React.FC = () => {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
          <QuickStat label="المرضى المسجلين" value={stats.patients} icon={Users} color="bg-blue-600 shadow-blue-200 shadow-lg" />
-         <QuickStat label="جلسات جارية الآن" value={stats.activeSessions} icon={Activity} color="bg-emerald-600 shadow-emerald-200 shadow-lg" />
+         <QuickStat label="مواعيد العيادات اليوم" value={stats.activeAppointments} icon={Activity} color="bg-emerald-600 shadow-emerald-200 shadow-lg" />
          <QuickStat label="نواقص مخزنية" value={stats.lowStock} icon={Package} color="bg-amber-600 shadow-amber-200 shadow-lg" />
          <QuickStat label="تحصيلات متأخرة" value={stats.pendingPayments} icon={CreditCard} color="bg-rose-600 shadow-rose-200 shadow-lg" />
       </div>
 
-      {stats.patients === 0 && stats.activeSessions === 0 && (
+      {stats.patients === 0 && stats.activeAppointments === 0 && (
         <div className="bg-white p-10 rounded-3xl border border-gray-100 text-center text-gray-400 font-bold">
-          لا توجد سجلات مرضى أو جلسات نشطة حالياً للعرض الإحصائي.
+          لا توجد سجلات مرضى أو مواعيد نشطة حالياً للعرض الإحصائي.
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
          <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm">
             <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
-               <TrendingUp className="text-primary-600" /> إحصائيات الجلسات الأسبوعية
+               <TrendingUp className="text-primary-600" /> إحصائيات الزيارات الأسبوعية
             </h3>
             <div className="h-80 w-full">
                <ResponsiveContainer width="100%" height="100%">

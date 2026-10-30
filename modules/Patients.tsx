@@ -326,14 +326,14 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
                               <span>الملف الصحي الشامل</span>
                             </button>
 
-                            {/* المسار المخصص: جلسات الغسيل الكلوي */}
+                            {/* المسار المخصص: الأرشيف والسجل الطبي */}
                             <button
                               onClick={() => { setSelectedPatient(p); setView('details'); }}
                               className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all border border-slate-200"
-                              title="عرض سجل وتاريخ جلسات الغسيل الكلوي"
+                              title="عرض الأرشيف والسجل الطبي للمريض"
                             >
-                              <Activity size={14} className="text-primary-600" />
-                              <span>سجل جلسات الغسيل</span>
+                              <FileText size={14} className="text-primary-600" />
+                              <span>الأرشيف الطبي</span>
                             </button>
                           </div>
                         </td>
@@ -354,7 +354,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
                           <p className="text-xs text-slate-500 mt-1 font-medium leading-relaxed">
                             {searchTerm.trim()
                               ? 'المريض غير مسجل في قاعدة البيانات. يمكنك إضافته وتجهيز سجله الطبي الآن بضغطة واحدة.'
-                              : 'ابدأ بتسجيل أول مريض لإدارة السجلات الطبية والملفات العائلية وجلسات الغسيل.'}
+                              : 'ابدأ بتسجيل أول مريض لإدارة السجلات الطبية والملفات العائلية وزيارات العيادات.'}
                           </p>
                         </div>
                         <div className="flex items-center justify-center gap-3 pt-2">

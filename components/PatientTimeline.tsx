@@ -37,7 +37,7 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
     setLoading(true);
     try {
       const data = await DB.getPatientHistory(patient.id);
-      setHistory(data);
+      setHistory((data || []).filter((item: any) => item.type !== 'SESSION'));
     } catch (e) {
       console.error(e);
     } finally {
@@ -263,17 +263,6 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
           </button>
 
           <button
-            onClick={() => setActiveFilter('SESSION')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all shrink-0 flex items-center gap-1.5 ${
-              activeFilter === 'SESSION'
-                ? 'bg-primary-600 text-white shadow-sm'
-                : 'bg-primary-50 text-primary-700 hover:bg-primary-100'
-            }`}
-          >
-            <Activity size={13}/> جلسات الغسيل ({history.filter(i => i.type === 'SESSION').length})
-          </button>
-
-          <button
             onClick={() => setActiveFilter('LAB')}
             className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all shrink-0 flex items-center gap-1.5 ${
               activeFilter === 'LAB'
@@ -337,7 +326,7 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
           </div>
           <div className="text-left font-mono text-xs text-gray-500">
             <div>تاريخ الطباعة: {new Date().toLocaleDateString('ar-EG')}</div>
-            <div>وحدة الكلى والرعاية الأساسية</div>
+            <div>العيادات التخصصية وطب الأسرة</div>
           </div>
         </div>
 

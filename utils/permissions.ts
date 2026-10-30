@@ -81,7 +81,6 @@ export const TAB_MANAGE_PERMISSIONS_MAP: Record<TabId, Permission[]> = {
 export const ORDERED_TABS: TabId[] = [
   'dashboard',
   'reception',
-  'activePatients',
   'clinics',
   'familyFiles',
   'patients',

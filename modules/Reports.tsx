@@ -30,10 +30,10 @@ const ReportsModule: React.FC = () => {
   const loadReportData = async () => {
     setLoading(true);
     try {
-      const [accounts, txs, sessions, patients] = await Promise.all([
+      const [accounts, txs, appointments, patients] = await Promise.all([
         DB.getAccounts(),
         DB.getTransactions(),
-        DB.getSessions(),
+        DB.getClinicAppointments ? DB.getClinicAppointments() : Promise.resolve([]),
         DB.getPatients()
       ]);
 
@@ -54,20 +54,21 @@ const ReportsModule: React.FC = () => {
         return { date: date.split('-').slice(1).join('/'), value: amount };
       });
 
-      const sessionStats = [
-        { name: 'مكتملة', value: sessions.filter(s => s.status === 'FINISHED').length },
-        { name: 'قيد التنفيذ', value: sessions.filter(s => s.status === 'ACTIVE').length },
-        { name: 'انتظار', value: sessions.filter(s => s.status === 'WAITING').length }
+      const apptsList = appointments || [];
+      const visitStats = [
+        { name: 'مكتملة', value: apptsList.filter((a: any) => a.status === 'COMPLETED' || a.status === 'FINISHED').length },
+        { name: 'داخل العيادة', value: apptsList.filter((a: any) => a.status === 'IN_PROGRESS' || a.status === 'ACTIVE').length },
+        { name: 'انتظار', value: apptsList.filter((a: any) => a.status === 'WAITING').length }
       ];
 
       const totalRevenue = permittedTxs.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + Number(t.amount), 0);
 
       setData({
         revenueByDay,
-        sessionStats,
+        sessionStats: visitStats,
         totals: {
           revenue: totalRevenue,
-          sessions: sessions.length,
+          sessions: apptsList.length,
           patients: patients.length
         },
         permittedAccountsSummary: accAnalysis.summaryText,
@@ -121,8 +122,8 @@ const ReportsModule: React.FC = () => {
             <Activity size={32}/>
           </div>
           <div>
-            <p className="text-xs font-black text-gray-400 uppercase mb-1">إجمالي الجلسات</p>
-            <h4 className="text-3xl font-black text-primary-700">{data.totals.sessions} جلسة</h4>
+            <p className="text-xs font-black text-gray-400 uppercase mb-1">إجمالي زيارات العيادات</p>
+            <h4 className="text-3xl font-black text-primary-700">{data.totals.sessions} زيارة</h4>
           </div>
         </div>
         <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-indigo-50 flex items-center gap-6">
@@ -155,10 +156,10 @@ const ReportsModule: React.FC = () => {
            </div>
         </div>
 
-        {/* Sessions Distribution */}
+        {/* Visits Distribution */}
         <div className="bg-white p-8 rounded-[2.5rem] shadow-sm border border-gray-100">
            <h3 className="text-xl font-black mb-6 flex items-center gap-3">
-             <Activity className="text-primary-500" /> الحالة التشغيلية للجلسات
+             <Activity className="text-primary-500" /> الحالة التشغيلية لمواعيد العيادات
            </h3>
            <div className="h-80 flex flex-col items-center">
              <ResponsiveContainer width="100%" height="100%">
@@ -192,10 +193,10 @@ const ReportsModule: React.FC = () => {
         <div className="h-96">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={[
-              { name: 'غسيل كلى', value: 450, growth: 12 },
+              { name: 'العيادات التخصصية', value: 450, growth: 12 },
               { name: 'تحاليل معملية', value: 280, growth: 8 },
               { name: 'صيدلية', value: 390, growth: 15 },
-              { name: 'أخرى', value: 120, growth: 5 }
+              { name: 'طب الأسرة', value: 210, growth: 10 }
             ]}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f1f1" />
               <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12, fontWeight: 'bold'}} />

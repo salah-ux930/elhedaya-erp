@@ -131,7 +131,7 @@ const NotificationsModule: React.FC = () => {
               )}
             </div>
             <p className="text-xs text-gray-500 font-bold mt-1">
-              متابعة لحظية ومباشرة للنتائج المعملية العاجلة، المؤشرات الحيوية، وتنبيهات مراجعة مخاطر السقوط لتمريض الصالة.
+              متابعة لحظية ومباشرة للنتائج المعملية العاجلة، المؤشرات الحيوية، وإشعارات النظام الطبية.
             </p>
           </div>
         </div>
@@ -162,13 +162,6 @@ const NotificationsModule: React.FC = () => {
             className="px-3 py-2 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded-xl text-xs font-bold flex items-center gap-1 transition-all"
           >
             <HeartPulse size={14} /> تجربة علامات حيوية
-          </button>
-
-          <button
-            onClick={() => realtimeNotificationService.simulateTestAlert('fall_risk_check')}
-            className="px-3 py-2 bg-orange-50 text-orange-800 hover:bg-orange-100 border border-orange-200 rounded-xl text-xs font-black flex items-center gap-1 transition-all"
-          >
-            <ShieldAlert size={14} className="text-orange-600" /> تجربة تنبيه سقوط تمريض الصالة
           </button>
 
           <button 
@@ -206,14 +199,6 @@ const NotificationsModule: React.FC = () => {
           }`}
         >
           <HeartPulse size={16} /> علامات حيوية وإنذار مبكر ({allMergedAlerts.filter(a => a.category === 'CRITICAL_VITALS').length})
-        </button>
-        <button
-          onClick={() => setActiveTab('FALL_RISK')}
-          className={`px-4 py-2 rounded-xl transition-all flex items-center gap-1.5 ${
-            activeTab === 'FALL_RISK' ? 'bg-white text-orange-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'
-          }`}
-        >
-          <ShieldAlert size={16} className="text-orange-600" /> مخاطر السقوط / تمريض الصالة ({allMergedAlerts.filter(a => a.category === 'FALL_RISK_CHECK').length})
         </button>
         <button
           onClick={() => setActiveTab('SYSTEM')}

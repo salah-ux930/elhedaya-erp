@@ -45,7 +45,7 @@ const LoginModule: React.FC<LoginProps> = ({ onLoginSuccess }) => {
               <ShieldCheck size={40} className="text-white" />
             </div>
             <h1 className="text-2xl font-bold text-white mb-2">مركز الهدايه الطبى</h1>
-            <p className="text-primary-100 text-sm">نظام إدارة وحدة غسيل الكلى المتكامل</p>
+            <p className="text-primary-100 text-sm">نظام إدارة المستشفى والعيادات المتكامل</p>
           </div>
 
           <div className="p-10">

@@ -24,9 +24,9 @@ const BillingModule: React.FC = () => {
   const [showPatientModal, setShowPatientModal] = useState(false);
   const [patientFor360, setPatientFor360] = useState<Patient | null>(null);
   const [customInvoices, setCustomInvoices] = useState<any[]>([
-    { id: '1', patientName: 'أحمد محمد علي', date: '2024-05-15', amount: 500, status: 'PAID', room: 'A1', dob: '1985-05-05', eligibilityNote: 'سداد نقدي' },
-    { id: '2', patientName: 'سارة محمود خليل', date: '2024-05-14', amount: 1200, status: 'DEFERRED', room: 'B2', dob: '1992-10-10', eligibilityNote: 'تعاقد / آجل' },
-    { id: '3', patientName: 'إبراهيم حسن', date: '2024-05-14', amount: 0, status: 'FREE', room: 'A1', dob: '1970-01-01', eligibilityNote: 'إعفاء بحث اجتماعي (ملف عائلي)' },
+    { id: '1', patientName: 'أحمد محمد علي', date: '2024-05-15', amount: 500, status: 'PAID', room: 'عيادة 1', dob: '1985-05-05', eligibilityNote: 'سداد نقدي' },
+    { id: '2', patientName: 'سارة محمود خليل', date: '2024-05-14', amount: 1200, status: 'DEFERRED', room: 'عيادة 2', dob: '1992-10-10', eligibilityNote: 'تعاقد / آجل' },
+    { id: '3', patientName: 'إبراهيم حسن', date: '2024-05-14', amount: 0, status: 'FREE', room: 'عيادة 1', dob: '1970-01-01', eligibilityNote: 'إعفاء بحث اجتماعي (ملف عائلي)' },
   ]);
 
   const [loading, setLoading] = useState(true);
@@ -133,7 +133,7 @@ const BillingModule: React.FC = () => {
       date: new Date().toISOString().split('T')[0],
       amount: computedInvoiceAmount,
       status: invoicePaymentStatus,
-      room: ROOMS[0] || 'A1',
+      room: ROOMS[0] || 'عيادة 1',
       dob: pObj.date_of_birth,
       eligibilityNote: selectedPatientProfile?.billingEligibility.badgeText || 'سداد نقدي'
     };
@@ -171,10 +171,10 @@ const BillingModule: React.FC = () => {
         </div>
         <div className="flex gap-2 w-full md:w-auto">
           <select 
-            className="flex-1 md:w-40 py-3 px-4 border rounded-xl bg-white shadow-sm outline-none"
+            className="flex-1 md:w-44 py-3 px-4 border rounded-xl bg-white shadow-sm outline-none"
             onChange={(e) => setFilterRoom(e.target.value)}
           >
-            <option value="">كل الغرف</option>
+            <option value="">كل العيادات والأقسام</option>
             {ROOMS.map(r => <option key={r} value={r}>{r}</option>)}
           </select>
           <select 

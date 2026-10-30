@@ -126,11 +126,10 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
         { id: 'dashboard', label: AR.dashboard, icon: <LayoutDashboard size={19} /> },
         {
           id: 'reception',
-          label: 'بوابة الاستقبال والفرز الموحدة',
-          badge: 'غسيل + عيادات',
+          label: 'بوابة الاستقبال والفرز',
+          badge: 'عيادات',
           icon: <Clock size={19} />
         },
-        { id: 'activePatients', label: 'الرعاية النشطة (الغسيل الكلوي)', icon: <UserRoundCheck size={19} /> },
         { id: 'clinics', label: 'العيادات الخارجية والكشف', icon: <Stethoscope size={19} /> }
       ]
     },
@@ -144,7 +143,7 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
           icon: <FolderOpen size={19} />
         },
         { id: 'patients', label: 'سجل المرضى الموحد', icon: <Users size={19} /> },
-        { id: 'medicalRecords', label: 'أرشيف الجلسات والسجلات', icon: <LibraryBig size={19} /> }
+        { id: 'medicalRecords', label: 'الأرشيف', icon: <LibraryBig size={19} /> }
       ]
     },
     {
@@ -277,12 +276,12 @@ const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user
               العيادات
             </button>
             <button
-              onClick={() => setActiveTab('activePatients')}
+              onClick={() => setActiveTab('medicalRecords')}
               className={`hover:text-primary-600 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                activeTab === 'activePatients' ? 'text-primary-600 underline underline-offset-8' : ''
+                activeTab === 'medicalRecords' ? 'text-primary-600 underline underline-offset-8' : ''
               }`}
             >
-              الغسيل النشط
+              الأرشيف
             </button>
             <button
               onClick={() => setActiveTab('pharmacy')}

@@ -5,7 +5,6 @@ import DashboardModule from './modules/Dashboard.tsx';
 import NotificationsModule from './modules/Notifications.tsx';
 import ReceptionModule from './modules/Reception.tsx';
 import PatientModule from './modules/Patients.tsx';
-import ActivePatients from './modules/ActivePatients.tsx';
 import LabModule from './modules/Lab.tsx';
 import BillingModule from './modules/Billing.tsx';
 import PayrollModule from './modules/Payroll.tsx';
@@ -144,10 +143,9 @@ const App: React.FC = () => {
     switch (activeTab) {
       case 'dashboard': return <DashboardModule />;
       case 'notifications': return <NotificationsModule />;
-      case 'activePatients': return <ActivePatients />;
-      case 'reception': return <ReceptionModule />;
-      case 'sessionReception': return <ReceptionModule initialMode="dialysis" />;
-      case 'clinicReception': return <ReceptionModule initialMode="clinics" />;
+      case 'reception':
+      case 'sessionReception':
+      case 'clinicReception': return <ReceptionModule />;
       case 'patients': return <PatientModule setTab={setActiveTab} />;
       case 'lab': return <LabModule />;
       case 'billing': return <BillingModule />;
