@@ -422,9 +422,17 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
                               {item.date || '—'}
                             </div>
                             {(item.start_time || item.time) && (
-                              <div className="font-mono text-[10px] text-gray-400 flex items-center gap-1 mt-0.5">
-                                <Clock size={11} />
-                                {item.start_time ? `${item.start_time} - ${item.end_time || '...'}` : item.time}
+                              <div className="font-mono text-[10px] text-gray-400 flex flex-col gap-0.5 mt-0.5">
+                                <div className="flex items-center gap-1">
+                                  <Clock size={11} />
+                                  {item.start_time ? `${item.start_time} - ${item.end_time || '...'}` : item.time}
+                                </div>
+                                {item.type === 'SESSION' && (item.disconnection_time || item.custom_data?.disconnection_time) && (
+                                  <div className="text-blue-600 font-bold flex items-center gap-1">
+                                    <span>فك الوصلة:</span>
+                                    <span>{item.disconnection_time || item.custom_data?.disconnection_time}</span>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </td>
@@ -806,8 +814,15 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
                                     {item.date}
                                   </div>
                                   {item.type === 'SESSION' && (
-                                    <div className="text-xs font-bold text-gray-400 font-mono">
-                                      {item.start_time} - {item.end_time || '--:--'}
+                                    <div className="flex flex-col items-end gap-1">
+                                      <div className="text-xs font-bold text-gray-500 font-mono">
+                                        {item.start_time} - {item.end_time || '--:--'}
+                                      </div>
+                                      {(item.disconnection_time || item.custom_data?.disconnection_time) && (
+                                        <span className="text-[11px] font-mono font-black text-blue-700 bg-blue-50 px-2 py-0.5 rounded-lg border border-blue-200">
+                                          وقت فك الوصلة: {item.disconnection_time || item.custom_data?.disconnection_time}
+                                        </span>
+                                      )}
                                     </div>
                                   )}
                                </div>
@@ -853,6 +868,23 @@ const PatientTimeline: React.FC<PatientTimelineProps> = ({ patient, onClose }) =
                                {/* SESSION Card */}
                                {item.type === 'SESSION' && (
                                  <div className="space-y-4 text-right" dir="rtl">
+                                    <div className="grid grid-cols-3 gap-2 p-3 bg-slate-50 rounded-2xl border border-slate-200 text-center font-mono">
+                                      <div>
+                                        <div className="text-[10px] text-gray-400 font-black">بدء الجلسة</div>
+                                        <div className="text-xs font-black text-gray-800">{item.start_time || '—'}</div>
+                                      </div>
+                                      <div className="border-x border-slate-200">
+                                        <div className="text-[10px] text-blue-600 font-black">فك الوصلة</div>
+                                        <div className="text-xs font-black text-blue-700">
+                                          {item.disconnection_time || item.custom_data?.disconnection_time || '—'}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <div className="text-[10px] text-emerald-600 font-black">انتهاء الجلسة</div>
+                                        <div className="text-xs font-black text-emerald-700">{item.end_time || 'قيد المعالجة'}</div>
+                                      </div>
+                                    </div>
+
                                     <div className="p-4 bg-primary-50 rounded-2xl flex justify-around items-center">
                                        <div className="text-center">
                                           <div className="text-[10px] text-gray-400 font-black mb-1">الوزن</div>

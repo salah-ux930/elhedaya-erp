@@ -18,6 +18,7 @@ import ReportsModule from './modules/Reports.tsx';
 import MedicalRecordsModule from './modules/MedicalRecords.tsx';
 import ClinicsModule from './modules/Clinics.tsx';
 import FamilyFilesModule from './modules/FamilyFiles.tsx';
+import PharmacyModule from './modules/Pharmacy.tsx';
 import { Permission } from './types.ts';
 import { ShieldAlert } from 'lucide-react';
 
@@ -89,7 +90,8 @@ const App: React.FC = () => {
     reports: 'VIEW_REPORTS',
     medicalRecords: 'VIEW_MEDICAL_RECORDS',
     clinics: 'MANAGE_CLINICS',
-    familyFiles: 'MANAGE_FAMILY_HEALTH'
+    familyFiles: 'MANAGE_FAMILY_HEALTH',
+    pharmacy: 'MANAGE_PHARMACY'
   };
 
   const hasPermission = (tab: string) => {
@@ -127,6 +129,7 @@ const App: React.FC = () => {
       case 'medicalRecords': return <MedicalRecordsModule />;
       case 'clinics': return <ClinicsModule />;
       case 'familyFiles': return <FamilyFilesModule />;
+      case 'pharmacy': return <PharmacyModule />;
       default: return <DashboardModule />;
     }
   };

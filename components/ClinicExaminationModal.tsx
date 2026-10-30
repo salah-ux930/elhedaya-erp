@@ -2,9 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, Save, Activity, ChevronDown, ChevronUp, Stethoscope, 
   FileText, Shield, AlertCircle, CheckCircle2, HeartPulse, 
-  FlaskConical, Loader2, Sparkles, Scale, Info, Users, User, Clock
+  FlaskConical, Loader2, Sparkles, Scale, Info, Users, User, Clock, ShieldAlert, FolderOpen
 } from 'lucide-react';
 import { DB } from '../store.ts';
+import { HospitalOperationalEngine, PatientOperationalProfile } from '../services/hospitalOperationalEngine.ts';
+import PatientClinical360Modal from './PatientClinical360Modal.tsx';
 
 interface ClinicExaminationModalProps {
   isOpen: boolean;
@@ -43,6 +45,9 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
   const [loadingExisting, setLoadingExisting] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [operationalProfile, setOperationalProfile] = useState<PatientOperationalProfile | null>(null);
+  const [show360Modal, setShow360Modal] = useState(false);
+  const [addDiagnosisAsChronic, setAddDiagnosisAsChronic] = useState(false);
 
   // Section C: Diagnosis & Prescription
   const [diagnosis, setDiagnosis] = useState(appointment.diagnosis || '');
@@ -171,6 +176,24 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
             setShowComprehensiveDetails(true);
           }
         }
+
+        // Load Family File & Operational Clinical Decision Profile
+        if (appointment.patient_id) {
+          const [familyFiles, problems, physicalExams] = await Promise.all([
+            DB.getFamilyFiles(),
+            DB.getPatientProblems(appointment.patient_id),
+            DB.getPhysicalExams(appointment.patient_id)
+          ]);
+          if (isMounted) {
+            const patientObj = appointment.patients || { id: appointment.patient_id, name: 'مريض' };
+            const prof = HospitalOperationalEngine.buildPatientOperationalProfile(patientObj, {
+              familyFiles,
+              problems,
+              physicalExams
+            });
+            setOperationalProfile(prof);
+          }
+        }
       } catch (err: any) {
         console.warn("Could not load prior physical exam:", err);
       } finally {
@@ -260,6 +283,17 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
         prescription.trim()
       );
 
+      // 3. التحديث التلقائي للملف العائلي وسجل متابعات المريض فور انتهاء الكشف
+      await HospitalOperationalEngine.syncClinicalEventToFamilyFile({
+        patient_id: appointment.patient_id,
+        event_type: 'CLINIC_EXAM',
+        date: todayDate,
+        doctor_or_staff: doctorName ? `د/ ${doctorName} (${appointment.clinics?.name || 'العيادة'})` : (appointment.clinics?.name || 'العيادة'),
+        diagnosis_or_summary: diagnosis.trim(),
+        treatment_or_medications: prescription.trim(),
+        new_chronic_condition: addDiagnosisAsChronic ? diagnosis.trim() : undefined
+      });
+
       onSaved();
       onClose();
     } catch (err: any) {
@@ -276,7 +310,7 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
       <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl flex flex-col max-h-[92vh] overflow-hidden border border-gray-100 animate-in zoom-in-95">
         
         {/* Header */}
-        <div className="p-5 sm:p-6 bg-gradient-to-r from-primary-700 to-indigo-900 text-white flex justify-between items-start shrink-0 rounded-t-3xl">
+        <div className="p-5 sm:p-6 bg-primary-700 text-white flex justify-between items-start shrink-0 rounded-t-3xl">
           <div className="flex items-start gap-3">
             <div className="p-3 bg-white/10 rounded-2xl shrink-0 mt-0.5">
               <Stethoscope size={24} />
@@ -328,6 +362,66 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
             <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl flex items-center gap-2 text-blue-700 text-xs font-bold animate-pulse">
               <Loader2 size={14} className="animate-spin text-blue-600" />
               جاري مراجعة السجلات الطبية السابقة للمريض...
+            </div>
+          )}
+
+          {/* شريط التنبيهات الفورية من الملف العائلي (الحساسية، الأمراض المزمنة، الاستحقاق) */}
+          {operationalProfile && (
+            <div className="p-4 rounded-2xl border border-slate-200 bg-slate-50 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs font-black text-slate-800 flex items-center gap-1.5">
+                    <FolderOpen size={15} className="text-indigo-600" />
+                    الربط مع الملف العائلي:
+                  </span>
+                  {operationalProfile.familyFile ? (
+                    <span className="px-2.5 py-0.5 bg-indigo-100 text-indigo-800 rounded-lg text-[11px] font-bold font-mono">
+                      {operationalProfile.familyFile.file_code} ({operationalProfile.memberRole || 'فرد أسرة'})
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 rounded-lg text-[11px] font-bold">
+                      غير مربوط بملف عائلي بعد
+                    </span>
+                  )}
+                  <span
+                    className={`px-2.5 py-0.5 rounded-lg text-[11px] font-bold border ${
+                      operationalProfile.billingEligibility.status === 'FREE_SOCIAL'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                        : 'bg-white text-slate-700 border-slate-200'
+                    }`}
+                  >
+                    {operationalProfile.billingEligibility.badgeText}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShow360Modal(true)}
+                  className="px-3 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <User size={13} className="text-primary-600" />
+                  بطاقة المريض
+                </button>
+              </div>
+
+              {(operationalProfile.hasAllergyAlert || operationalProfile.chronicProblems.length > 0) && (
+                <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-200/80">
+                  {operationalProfile.hasAllergyAlert && (
+                    <span className="px-2.5 py-1 bg-rose-100 text-rose-900 border border-rose-300 rounded-lg text-xs font-black flex items-center gap-1.5">
+                      <ShieldAlert size={14} className="text-rose-700" />
+                      تنبيه حساسية دوائية/عامة: {[...operationalProfile.drugReactions, ...operationalProfile.allergies].join(' ، ')}
+                    </span>
+                  )}
+                  {operationalProfile.chronicProblems.map((prob, idx) => (
+                    <span
+                      key={idx}
+                      className="px-2.5 py-1 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg text-[11px] font-bold"
+                    >
+                      مرض مزمن: {prob.diagnosis_description}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -845,6 +939,21 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
                 placeholder="الأدوية الموصوفة، الجرعات، التوصيات الطبية والمتابعة..."
               />
             </div>
+
+            <div className="p-3.5 bg-indigo-50/70 border border-indigo-200 rounded-xl flex items-center justify-between gap-3">
+              <label className="flex items-center gap-2.5 text-xs font-bold text-indigo-950 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={addDiagnosisAsChronic}
+                  onChange={e => setAddDiagnosisAsChronic(e.target.checked)}
+                  className="w-4 h-4 rounded text-indigo-600"
+                />
+                <span>إدراج هذا التشخيص أيضاً ضمن قائمة الأمراض المزمنة الدائمة للمريض بالملف العائلي</span>
+              </label>
+              <span className="text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                يُرحّل الكشف تلقائياً لسجل زيارات الملف العائلي والصيدلية
+              </span>
+            </div>
           </div>
 
           {/* Footer Action Buttons */}
@@ -865,12 +974,12 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
               {saving ? (
                 <>
                   <Loader2 size={18} className="animate-spin" />
-                  جاري حفظ الكشف والسجل الطبي الشامل...
+                  جاري حفظ الكشف وتحديث الملف العائلي...
                 </>
               ) : (
                 <>
                   <Save size={18} />
-                  إنهاء الكشف وحفظ البيانات
+                  إنهاء الكشف وحفظ البيانات وتحديث الملف العائلي
                 </>
               )}
             </button>
@@ -878,6 +987,14 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
 
         </form>
       </div>
+
+      {show360Modal && (
+        <PatientClinical360Modal
+          isOpen={show360Modal}
+          onClose={() => setShow360Modal(false)}
+          patient={appointment.patients || { id: appointment.patient_id, name: 'مريض' }}
+        />
+      )}
     </div>
   );
 };

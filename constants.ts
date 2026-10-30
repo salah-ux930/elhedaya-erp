@@ -8,6 +8,7 @@ export const AR = {
   patients: "سجلات المرضى",
   activePatients: "الجلسات الحالية",
   lab: "المعمل",
+  pharmacy: "الصيدلية والباتشات",
   billing: "الفواتير",
   employees: "الموظفين",
   payroll: "الرواتب",
@@ -126,6 +127,7 @@ export const PERMISSIONS_MAP: Record<string, string> = {
   VIEW_REPORTS: "عرض التقارير والرسوم البيانية",
   VIEW_MEDICAL_RECORDS: "الوصول لأرشيف السجلات الطبية",
   MANAGE_CLINICS: "إدارة العيادات والأطباء والمواعيد",
+  MANAGE_PHARMACY: "إدارة الصيدلية والباتشات وصرف الأدوية",
   SYSTEM_SETUP: "إعدادات النظام"
 };
 

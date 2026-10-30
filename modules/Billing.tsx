@@ -1,12 +1,12 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AR, ROOMS, calculateAge, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
-// Fixed: Removed Invoice from imports as it is not defined in types.ts and not used in this file
 import { Patient, Service } from '../types.ts';
-import { FileDown, Filter, Printer, MoreVertical, CheckCircle, Clock, Plus, Search, X, UserPlus } from 'lucide-react';
+import { FileDown, Filter, Printer, MoreVertical, CheckCircle, Clock, Plus, Search, X, UserPlus, ShieldCheck, Activity, FolderOpen, CreditCard } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect.tsx';
 import { printInvoiceDocument } from '../utils/printUtils.ts';
+import { HospitalOperationalEngine } from '../services/hospitalOperationalEngine.ts';
+import PatientClinical360Modal from '../components/PatientClinical360Modal.tsx';
 
 const BillingModule: React.FC = () => {
   const [filterRoom, setFilterRoom] = useState('');
@@ -15,18 +15,69 @@ const BillingModule: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [services, setServices] = useState<Service[]>([]);
+  const [familyFiles, setFamilyFiles] = useState<any[]>([]);
+  const [fundingEntities, setFundingEntities] = useState<any[]>([]);
   const [selectedPatientId, setSelectedPatientId] = useState('');
+  const [selectedServiceId, setSelectedServiceId] = useState('');
+  const [selectedQuantity, setSelectedQuantity] = useState<number>(1);
+  const [invoicePaymentStatus, setInvoicePaymentStatus] = useState<'PAID' | 'DEFERRED' | 'FREE'>('PAID');
   const [showPatientModal, setShowPatientModal] = useState(false);
+  const [patientFor360, setPatientFor360] = useState<Patient | null>(null);
+  const [customInvoices, setCustomInvoices] = useState<any[]>([
+    { id: '1', patientName: 'أحمد محمد علي', date: '2024-05-15', amount: 500, status: 'PAID', room: 'A1', dob: '1985-05-05', eligibilityNote: 'سداد نقدي' },
+    { id: '2', patientName: 'سارة محمود خليل', date: '2024-05-14', amount: 1200, status: 'DEFERRED', room: 'B2', dob: '1992-10-10', eligibilityNote: 'تعاقد / آجل' },
+    { id: '3', patientName: 'إبراهيم حسن', date: '2024-05-14', amount: 0, status: 'FREE', room: 'A1', dob: '1970-01-01', eligibilityNote: 'إعفاء بحث اجتماعي (ملف عائلي)' },
+  ]);
 
   useEffect(() => {
     loadData();
   }, []);
 
   const loadData = async () => {
-    const [p, s] = await Promise.all([DB.getPatients(), DB.getServices()]);
+    const [p, s, ff, fe] = await Promise.all([
+      DB.getPatients(),
+      DB.getServices(),
+      DB.getFamilyFiles(),
+      DB.getFundingEntities()
+    ]);
     setPatients(p || []);
     setServices(s || []);
+    setFamilyFiles(ff || []);
+    setFundingEntities(fe || []);
+    if (s && s.length > 0 && !selectedServiceId) {
+      setSelectedServiceId(s[0].id);
+    }
   };
+
+  // حساب الاستحقاق الاجتماعي والمالي تلقائياً عند اختيار المريض في الفاتورة
+  const selectedPatientProfile = useMemo(() => {
+    if (!selectedPatientId) return null;
+    const pObj = patients.find(p => p.id === selectedPatientId);
+    if (!pObj) return null;
+    return HospitalOperationalEngine.buildPatientOperationalProfile(pObj, {
+      familyFiles,
+      fundingEntities
+    });
+  }, [selectedPatientId, patients, familyFiles, fundingEntities]);
+
+  useEffect(() => {
+    if (selectedPatientProfile) {
+      if (selectedPatientProfile.billingEligibility.status === 'FREE_SOCIAL') {
+        setInvoicePaymentStatus('FREE');
+      } else if (selectedPatientProfile.billingEligibility.status === 'FUNDED') {
+        setInvoicePaymentStatus('DEFERRED');
+      } else {
+        setInvoicePaymentStatus('PAID');
+      }
+    }
+  }, [selectedPatientProfile]);
+
+  const computedInvoiceAmount = useMemo(() => {
+    if (invoicePaymentStatus === 'FREE') return 0;
+    const srv = services.find(s => s.id === selectedServiceId);
+    const basePrice = srv ? Number(srv.price || 500) : 500;
+    return basePrice * Math.max(1, selectedQuantity);
+  }, [invoicePaymentStatus, services, selectedServiceId, selectedQuantity]);
 
   const handleAddPatient = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,15 +101,33 @@ const BillingModule: React.FC = () => {
     }
   };
 
-  const filteredInvoices = [
-    { id: '1', patientName: 'أحمد محمد علي', date: '2024-05-15', amount: 500, status: 'PAID', room: 'A1', dob: '1985-05-05' },
-    { id: '2', patientName: 'سارة محمود خليل', date: '2024-05-14', amount: 1200, status: 'DEFERRED', room: 'B2', dob: '1992-10-10' },
-    { id: '3', patientName: 'إبراهيم حسن', date: '2024-05-14', amount: 0, status: 'FREE', room: 'A1', dob: '1970-01-01' },
-  ].filter(inv => 
+  const filteredInvoices = customInvoices.filter(inv => 
     (filterRoom === '' || inv.room === filterRoom) &&
     (filterStatus === '' || inv.status === filterStatus) &&
     (searchTerm === '' || inv.patientName.includes(searchTerm))
   );
+
+  const handleCreateInvoiceSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const pObj = patients.find(p => p.id === selectedPatientId);
+    if (!pObj) {
+      alert('يرجى اختيار المريض أولاً');
+      return;
+    }
+    const newInv = {
+      id: String(customInvoices.length + 1),
+      patientId: pObj.id,
+      patientName: pObj.name,
+      date: new Date().toISOString().split('T')[0],
+      amount: computedInvoiceAmount,
+      status: invoicePaymentStatus,
+      room: ROOMS[0] || 'A1',
+      dob: pObj.date_of_birth,
+      eligibilityNote: selectedPatientProfile?.billingEligibility.badgeText || 'سداد نقدي'
+    };
+    setCustomInvoices([newInv, ...customInvoices]);
+    setShowCreateModal(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -129,22 +198,37 @@ const BillingModule: React.FC = () => {
                 <td className="px-6 py-4"><span className="text-gray-600 font-bold">{inv.room}</span></td>
                 <td className="px-6 py-4 font-bold">{inv.amount === 0 ? AR.free : `${inv.amount.toLocaleString()} ج.م`}</td>
                 <td className="px-6 py-4">
-                  {inv.status === 'PAID' ? (
-                    <span className="flex items-center gap-1 w-fit px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold border border-green-200">
-                      <CheckCircle size={12} /> {AR.paid}
-                    </span>
-                  ) : inv.status === 'DEFERRED' ? (
-                    <span className="flex items-center gap-1 w-fit px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold border border-yellow-200">
-                      <Clock size={12} /> {AR.deferred}
-                    </span>
-                  ) : (
-                    <span className="flex items-center gap-1 w-fit px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold border border-blue-200">
-                      {AR.free}
-                    </span>
-                  )}
+                  <div className="flex flex-col gap-1">
+                    {inv.status === 'PAID' ? (
+                      <span className="flex items-center gap-1 w-fit px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold border border-green-200">
+                        <CheckCircle size={12} /> {AR.paid}
+                      </span>
+                    ) : inv.status === 'DEFERRED' ? (
+                      <span className="flex items-center gap-1 w-fit px-3 py-1 bg-yellow-100 text-yellow-700 rounded-full text-xs font-bold border border-yellow-200">
+                        <Clock size={12} /> {AR.deferred}
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 w-fit px-3 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold border border-emerald-200">
+                        <ShieldCheck size={12} /> {AR.free} (بحث اجتماعي)
+                      </span>
+                    )}
+                    {inv.eligibilityNote && (
+                      <span className="text-[10px] text-slate-500 font-medium">{inv.eligibilityNote}</span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-6 py-4 no-print">
                   <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        const matched = patients.find(p => p.id === inv.patientId || p.name === inv.patientName);
+                        if (matched) setPatientFor360(matched);
+                      }}
+                      className="px-2.5 py-1.5 bg-primary-50 text-primary-700 border border-primary-200 rounded-lg text-xs font-bold hover:bg-primary-100 transition-colors cursor-pointer"
+                      title="بطاقة المريض والاستحقاق"
+                    >
+                      بطاقة المريض
+                    </button>
                     <button 
                       onClick={() => printInvoiceDocument(inv, patients.find(p => p.name === inv.patientName))}
                       className="p-2 text-gray-400 hover:text-primary-600 hover:bg-primary-50 rounded-lg transition-all cursor-pointer" 
@@ -152,7 +236,6 @@ const BillingModule: React.FC = () => {
                     >
                       <Printer size={18} />
                     </button>
-                    <button className="p-2 text-gray-400 hover:text-gray-800"><MoreVertical size={18} /></button>
                   </div>
                 </td>
               </tr>
@@ -170,12 +253,11 @@ const BillingModule: React.FC = () => {
             </div>
 
             <div className="p-8 overflow-y-auto custom-scrollbar">
-              <form id="createInvoiceForm" className="space-y-6">
+              <form id="createInvoiceForm" onSubmit={handleCreateInvoiceSubmit} className="space-y-6">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <SearchableSelect 
                     label="اختيار المريض"
                     placeholder="ابحث عن مريض..."
-                    // Use date_of_birth and national_id from Patient interface
                     options={patients.map(p => ({ id: p.id, label: `${p.name} (${calculateAge(p.date_of_birth)})`, subLabel: p.national_id }))}
                     value={selectedPatientId}
                     onChange={setSelectedPatientId}
@@ -190,37 +272,110 @@ const BillingModule: React.FC = () => {
                   </div>
                 </div>
 
+                {/* شريط الربط التلقائي بالبحث الاجتماعي للملف العائلي */}
+                {selectedPatientProfile && (
+                  <div className={`p-4 rounded-xl border space-y-2 ${
+                    selectedPatientProfile.billingEligibility.status === 'FREE_SOCIAL'
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                      : selectedPatientProfile.billingEligibility.status === 'FUNDED'
+                        ? 'bg-blue-50 border-blue-200 text-blue-950'
+                        : 'bg-slate-50 border-slate-200 text-slate-800'
+                  }`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 font-black text-xs">
+                        <FolderOpen size={16} />
+                        <span>قرار الاستحقاق التلقائي من الملف العائلي والبحث الاجتماعي:</span>
+                      </div>
+                      <span className="px-2.5 py-0.5 bg-white rounded-lg text-xs font-black border shadow-2xs">
+                        {selectedPatientProfile.billingEligibility.badgeText}
+                      </span>
+                    </div>
+                    <p className="text-xs leading-relaxed opacity-90">
+                      {selectedPatientProfile.billingEligibility.reason}
+                      {selectedPatientProfile.familyFile ? ` (كود الملف العائلي: ${selectedPatientProfile.familyFile.file_code})` : ''}
+                    </p>
+                  </div>
+                )}
+
                 <div className="border rounded-xl overflow-hidden">
-                  <div className="bg-gray-50 p-4 font-bold border-b text-sm">بنود الفاتورة</div>
+                  <div className="bg-gray-50 p-4 font-bold border-b text-sm">بنود الفاتورة ونوع المعاملة المالية</div>
                   <div className="p-4 space-y-4">
                     <div className="flex gap-4 items-end">
                       <div className="flex-1">
                         <label className="block text-xs font-bold text-gray-400 mb-1">الخدمة</label>
-                        <select className="w-full border rounded-lg p-2 bg-white outline-none">
+                        <select
+                          value={selectedServiceId}
+                          onChange={e => setSelectedServiceId(e.target.value)}
+                          className="w-full border rounded-lg p-2 bg-white outline-none"
+                        >
                           {services.map(s => <option key={s.id} value={s.id}>{s.name} ({s.price} ج.م)</option>)}
                         </select>
                       </div>
                       <div className="w-24">
                         <label className="block text-xs font-bold text-gray-400 mb-1">الكمية</label>
-                        <input type="number" defaultValue={1} className="w-full border rounded-lg p-2 bg-white outline-none" />
+                        <input
+                          type="number"
+                          min={1}
+                          value={selectedQuantity}
+                          onChange={e => setSelectedQuantity(Number(e.target.value) || 1)}
+                          className="w-full border rounded-lg p-2 bg-white outline-none"
+                        />
                       </div>
-                      <button type="button" className="p-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-100">
-                        <Plus size={20} />
-                      </button>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-bold text-gray-500 mb-1.5">حالة السداد / الإعفاء (تُضبط تلقائياً من الملف العائلي ويمكن تعديلها)</label>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setInvoicePaymentStatus('PAID')}
+                          className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                            invoicePaymentStatus === 'PAID'
+                              ? 'bg-green-600 text-white border-green-600'
+                              : 'bg-white text-slate-600 border-slate-200'
+                          }`}
+                        >
+                          خالص / نقدي
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInvoicePaymentStatus('DEFERRED')}
+                          className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                            invoicePaymentStatus === 'DEFERRED'
+                              ? 'bg-amber-600 text-white border-amber-600'
+                              : 'bg-white text-slate-600 border-slate-200'
+                          }`}
+                        >
+                          آجل / جهة تعاقد
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setInvoicePaymentStatus('FREE')}
+                          className={`py-2 rounded-lg text-xs font-bold border transition-all ${
+                            invoicePaymentStatus === 'FREE'
+                              ? 'bg-emerald-600 text-white border-emerald-600'
+                              : 'bg-white text-slate-600 border-slate-200'
+                          }`}
+                        >
+                          مجاني (إعفاء اجتماعي)
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
 
                 <div className="flex justify-between items-center p-4 bg-primary-50 rounded-xl">
-                  <div className="text-primary-900 font-bold">الإجمالي المستحق</div>
-                  <div className="text-2xl font-bold text-primary-600">500.00 ج.م</div>
+                  <div className="text-primary-900 font-bold">الإجمالي المستحق بعد تطبيق الاستحقاق</div>
+                  <div className="text-2xl font-bold text-primary-600 font-mono">
+                    {computedInvoiceAmount.toLocaleString()} ج.م
+                  </div>
                 </div>
               </form>
             </div>
 
             <div className="p-6 border-t bg-gray-50 flex gap-3 shrink-0">
               <button type="button" onClick={() => setShowCreateModal(false)} className="flex-1 py-4 bg-white border border-gray-200 rounded-xl font-bold text-gray-600 hover:bg-gray-100 transition-colors">إلغاء</button>
-              <button form="createInvoiceForm" type="submit" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors">حفظ الفاتورة</button>
+              <button form="createInvoiceForm" type="submit" className="flex-1 py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-colors">حفظ الفاتورة واعتماد الاستحقاق</button>
             </div>
           </div>
         </div>
@@ -252,6 +407,13 @@ const BillingModule: React.FC = () => {
           </div>
         </div>
       )}
+      
+      <PatientClinical360Modal
+        isOpen={!!patientFor360}
+        onClose={() => setPatientFor360(null)}
+        patient={patientFor360}
+        onDataUpdated={loadData}
+      />
       
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }

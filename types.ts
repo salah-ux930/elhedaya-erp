@@ -16,6 +16,7 @@ export type Permission =
   | 'MANAGE_ACCOUNTS'
   | 'VIEW_REPORTS'
   | 'VIEW_MEDICAL_RECORDS'
+  | 'MANAGE_PHARMACY'
   | string;
 
 export interface User {
@@ -128,6 +129,7 @@ export interface DialysisSession {
   service_id?: string;
   date: string;
   start_time: string;
+  disconnection_time?: string; // وقت فك الوصلة (Disconnection / Unhooking Time)
   end_time?: string;
   weight_before: number;
   weight_after?: number;
@@ -761,6 +763,10 @@ export interface DialysisNursingAssessment {
     working_efficiently?: boolean;
     pulse_check_result?: string;
     complications?: string;
+    connection_time?: string; // وقت توصيل الوصلة
+    disconnection_time?: string; // وقت فك الوصلة
+    hemostasis_time_minutes?: number; // مدة الضغط لوقف النزيف بالدقائق
+    access_condition_after_removal?: string; // حالة موضع الوصلة بعد الفك (سليم/توقف النزيف/تورم)
   };
   edema?: {
     present: boolean;
@@ -929,3 +935,108 @@ export interface DialysisHealthEducation {
   created_at?: string;
 }
 
+export interface DialysisFallRiskReview {
+  id?: string;
+  session_id: string;
+  patient_id: string;
+  review_stage: '2_HOURS' | '4_HOURS' | 'EXTRA';
+  review_time: string;
+  reviewer_name: string;
+  risk_score?: number;
+  risk_level: 'LOW' | 'MEDIUM' | 'HIGH';
+  card_placed: boolean;
+  bed_low_brakes_locked: boolean;
+  side_rails_raised: boolean;
+  call_bell_within_reach: boolean;
+  safe_environment_clear: boolean;
+  assisted_ambulation_only: boolean;
+  frequent_toilet_check: boolean;
+  patient_relative_educated: boolean;
+  non_slip_footwear: boolean;
+  clinical_notes?: string;
+  acknowledged_alert_id?: string;
+  created_at?: string;
+}
+
+// ==========================================
+// Pharmacy & Batch Management (FEFO / FIFO)
+// ==========================================
+
+export interface PharmacyItem {
+  id: string;
+  code?: string;
+  trade_name: string;
+  generic_name?: string;
+  dosage_form: string;
+  strength?: string;
+  unit: string;
+  min_stock_level: number;
+  storage_conditions?: string;
+  notes?: string;
+  is_active: boolean;
+  created_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type PharmacyBatchStatus = 'ACTIVE' | 'DEPLETED' | 'EXPIRED' | 'QUARANTINED';
+
+export interface PharmacyBatch {
+  id: string;
+  item_id: string;
+  batch_number: string;
+  production_date?: string;
+  expiry_date: string;
+  received_date: string;
+  initial_quantity: number;
+  remaining_quantity: number;
+  supplier_name?: string;
+  status: PharmacyBatchStatus;
+  notes?: string;
+  received_by?: string;
+  created_at?: string;
+  updated_at?: string;
+  pharmacy_items?: PharmacyItem;
+}
+
+export type PharmacyDispenseSource = 'CLINIC_PRESCRIPTION' | 'DIALYSIS_SESSION' | 'DIRECT';
+
+export interface PharmacyDispenseOrder {
+  id: string;
+  order_number?: string;
+  patient_id: string;
+  source_type: PharmacyDispenseSource;
+  appointment_id?: string;
+  session_id?: string;
+  prescribing_doctor?: string;
+  dispensed_by: string;
+  dispensed_at: string;
+  diagnosis_or_notes?: string;
+  created_at?: string;
+  patients?: Patient;
+  pharmacy_dispense_items?: PharmacyDispenseItem[];
+}
+
+export interface PharmacyDispenseItem {
+  id: string;
+  dispense_order_id: string;
+  item_id: string;
+  batch_id: string;
+  batch_number_snapshot: string;
+  expiry_date_snapshot: string;
+  quantity: number;
+  dosage_instructions?: string;
+  created_at?: string;
+  pharmacy_items?: PharmacyItem;
+  pharmacy_batches?: PharmacyBatch;
+}
+
+export interface BatchAllocationSlice {
+  batch_id: string;
+  batch_number: string;
+  expiry_date: string;
+  received_date: string;
+  available_in_batch: number;
+  allocated_quantity: number;
+  priority_rank: number;
+}

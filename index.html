@@ -12,6 +12,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
+        darkMode: 'class',
         theme: {
           extend: {
             fontFamily: {
@@ -19,16 +20,16 @@
             },
             colors: {
               primary: {
-                50: '#f0f9ff',
-                100: '#e0f2fe',
-                200: '#bae6fd',
-                300: '#7dd3fc',
-                400: '#38bdf8',
-                500: '#0ea5e9',
-                600: '#0284c7',
-                700: '#0369a1',
-                800: '#075985',
-                900: '#0c4a6e',
+                50: '#f0fdfa',
+                100: '#ccfbf1',
+                200: '#99f6e4',
+                300: '#5eead4',
+                400: '#2dd4bf',
+                500: '#14b8a6',
+                600: '#0d9488',
+                700: '#0f766e',
+                800: '#115e59',
+                900: '#134e4a',
               },
             },
           },
@@ -36,9 +37,102 @@
       }
     </script>
     <style>
+      :root {
+        --bg-canvas: #f2f6f8;
+        --bg-surface: #ffffff;
+        --text-main: #1e293b;
+      }
       body {
         font-family: 'Cairo', sans-serif;
+        background-color: var(--bg-canvas);
+        color: var(--text-main);
+        transition: background-color 0.2s ease, color 0.2s ease;
       }
+      /* Eye-Friendly Comfort Light Mode Softening */
+      html:not(.dark) body {
+        background-color: #f2f6f8;
+        color: #1e293b;
+      }
+      html:not(.dark) .bg-gray-50,
+      html:not(.dark) .bg-slate-50 {
+        background-color: #f4f7f9 !important;
+      }
+
+      /* Eye-Friendly Clinical Dark Mode (html.dark) */
+      html.dark {
+        color-scheme: dark;
+      }
+      html.dark body,
+      html.dark main,
+      html.dark .min-h-screen {
+        background-color: #0f172a !important;
+        color: #f1f5f9 !important;
+      }
+      html.dark .bg-white {
+        background-color: #1e293b !important;
+        color: #f1f5f9 !important;
+      }
+      html.dark .bg-gray-50,
+      html.dark .bg-slate-50,
+      html.dark .bg-gray-50\/50,
+      html.dark .bg-slate-50\/50,
+      html.dark .bg-slate-50\/80,
+      html.dark .bg-slate-50\/90,
+      html.dark .bg-gray-100,
+      html.dark .bg-slate-100 {
+        background-color: #0f172a !important;
+        color: #e2e8f0 !important;
+      }
+      html.dark .border-gray-100,
+      html.dark .border-slate-100,
+      html.dark .border-gray-200,
+      html.dark .border-slate-200,
+      html.dark .border-slate-300,
+      html.dark .border-b,
+      html.dark .border-t,
+      html.dark .border-l,
+      html.dark .border-r {
+        border-color: #334155 !important;
+      }
+      html.dark .divide-gray-100 > :not([hidden]) ~ :not([hidden]),
+      html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+        border-color: #334155 !important;
+      }
+      html.dark .text-gray-900,
+      html.dark .text-slate-900,
+      html.dark .text-gray-800,
+      html.dark .text-slate-800 {
+        color: #f1f5f9 !important;
+      }
+      html.dark .text-gray-700,
+      html.dark .text-slate-700,
+      html.dark .text-gray-600,
+      html.dark .text-slate-600 {
+        color: #cbd5e1 !important;
+      }
+      html.dark .text-gray-500,
+      html.dark .text-slate-500,
+      html.dark .text-gray-400,
+      html.dark .text-slate-400 {
+        color: #94a3b8 !important;
+      }
+      html.dark input:not([type="checkbox"]):not([type="radio"]),
+      html.dark select,
+      html.dark textarea {
+        background-color: #0f172a !important;
+        color: #f1f5f9 !important;
+        border-color: #334155 !important;
+      }
+      html.dark input::placeholder,
+      html.dark textarea::placeholder {
+        color: #64748b !important;
+      }
+      html.dark tr.hover\:bg-gray-50:hover,
+      html.dark tr.hover\:bg-slate-50\/80:hover,
+      html.dark tr.hover\:bg-primary-50\/20:hover {
+        background-color: #334155 !important;
+      }
+
       @media print {
         .no-print { display: none !important; }
         .print-only { display: block !important; }
@@ -46,11 +140,18 @@
           size: A4 portrait;
           margin: 10mm;
         }
+        html.dark body,
         body {
           background: #ffffff !important;
           color: #000000 !important;
           -webkit-print-color-adjust: exact !important;
           print-color-adjust: exact !important;
+        }
+        html.dark .bg-white,
+        html.dark .bg-gray-50,
+        html.dark .bg-slate-50 {
+          background-color: #ffffff !important;
+          color: #000000 !important;
         }
         /* Ensure modals and containers do not hide or clip content during print */
         .fixed.inset-0 {
@@ -68,7 +169,7 @@
       .print-only { display: none; }
     </style>
 </head>
-  <body class="bg-gray-50 text-gray-900 overflow-x-hidden">
+  <body class="bg-[#f2f6f8] text-slate-800 overflow-x-hidden">
     <div id="root"></div>
     <script type="module" src="/index.tsx"></script>
   </body>

@@ -7,6 +7,8 @@ import FamilyComprehensiveHealthRecordModal from "../components/FamilyComprehens
 import QuickClinicBookingModal from "../components/QuickClinicBookingModal.tsx";
 import FamilyUnifiedNavigationTree, { ClinicalModuleItem } from "../components/FamilyUnifiedNavigationTree.tsx";
 import { calculatePatientSuggestedFollowups } from "../services/followupSuggestions.ts";
+import { HospitalOperationalEngine, OperationalWorkItem } from "../services/hospitalOperationalEngine.ts";
+import PatientClinical360Modal from "../components/PatientClinical360Modal.tsx";
 import {
   FolderOpen,
   Users,
@@ -82,6 +84,17 @@ const FamilyFilesModule: React.FC = () => {
   const [fundingEntities, setFundingEntities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
+
+  // Operational Hub vs Directory View State
+  const [mainWorkspaceMode, setMainWorkspaceMode] = useState<"worklist" | "directory">("worklist");
+  const [worklistCategoryFilter, setWorklistCategoryFilter] = useState<
+    "ALL" | "CRITICAL_CLINICAL" | "MATERNAL_CHILD" | "CHRONIC_GERIATRIC" | "SOCIAL_HOUSING"
+  >("ALL");
+  const [patientFor360Modal, setPatientFor360Modal] = useState<Patient | null>(null);
+
+  // Quick Entry vs Detailed Form Mode for New Family File
+  const [familyEntryFormMode, setFamilyEntryFormMode] = useState<"quick" | "detailed">("quick");
+  const [quickSelectedHeadPatientId, setQuickSelectedHeadPatientId] = useState<string>("");
 
   // Modals / View States
   const [showAddFamilyFile, setShowAddFamilyFile] = useState(false);
@@ -460,15 +473,15 @@ const FamilyFilesModule: React.FC = () => {
     setFormError(null);
     const target = e.target as any;
 
-    const nationalId = target.national_id.value.trim();
+    const nationalId = (target.national_id?.value || "").trim();
     if (nationalId.length !== 14 || isNaN(Number(nationalId))) {
       setFormError("الرقم القومي يجب أن يتكون من 14 رقماً صحيحاً.");
       return;
     }
 
-    const phone = target.phone.value.trim();
-    const workPhone = target.work_phone.value.trim();
-    const nearestPhone = target.nearest_phone.value.trim();
+    const phone = (target.phone?.value || "").trim();
+    const workPhone = (target.work_phone?.value || "").trim();
+    const nearestPhone = (target.nearest_phone?.value || "").trim();
 
     if (phone && !validatePhoneNumber(phone)) {
       setFormError(
@@ -488,21 +501,21 @@ const FamilyFilesModule: React.FC = () => {
     }
 
     try {
-      await DB.addFamilyFile({
-        family_code: target.family_code.value.trim(),
+      const createdFile = await DB.addFamilyFile({
+        family_code: (target.family_code?.value || `FF-${Math.floor(1000 + Math.random() * 9000)}`).trim(),
         national_id: nationalId,
-        head_name: target.head_name.value.trim(),
-        governorate: target.governorate.value.trim(),
-        administration: target.administration.value.trim(),
-        village_city: target.village_city.value.trim(),
-        health_unit: target.health_unit.value.trim(),
-        address: target.address.value.trim(),
+        head_name: (target.head_name?.value || "").trim(),
+        governorate: (target.governorate?.value || "الجيزة").trim(),
+        administration: (target.administration?.value || "إدارة البدرشين").trim(),
+        village_city: (target.village_city?.value || "").trim(),
+        health_unit: (target.health_unit?.value || "مركز الهداية الطبي").trim(),
+        address: (target.address?.value || target.village_city?.value || "").trim(),
         house_number: target.house_number?.value?.trim() || null,
         family_number: target.family_number?.value?.trim() || null,
         phone: phone || null,
-        home_number: workPhone || null, // تليفون العمل
-        nearest_landmark: nearestPhone || null, // أقرب تليفون
-        notes: target.notes.value.trim() || null,
+        home_number: workPhone || null,
+        nearest_landmark: nearestPhone || null,
+        notes: target.notes?.value?.trim() || null,
 
         // Housing conditions (بيان حالة المسكن)
         total_rooms: target.total_rooms?.value
@@ -532,7 +545,25 @@ const FamilyFilesModule: React.FC = () => {
         eligible_for_free_service:
           target.eligible_for_free_service?.checked || false,
       });
+
+      // إذا تم اختيار مريض حالي كرب للأسرة في الوضع السريع، نربطه تلقائياً كعضو رقم 1 (رب العائلة)
+      if (createdFile?.id && quickSelectedHeadPatientId) {
+        try {
+          await DB.addFamilyMember({
+            family_file_id: createdFile.id,
+            patient_id: quickSelectedHeadPatientId,
+            relationship_to_head: "رب العائلة",
+            family_role: "رب الأسرة",
+            is_head: true,
+            family_individual_number: 1,
+          });
+        } catch (linkErr) {
+          console.warn("Auto-linking head member warning:", linkErr);
+        }
+      }
+
       setShowAddFamilyFile(false);
+      setQuickSelectedHeadPatientId("");
       loadData();
     } catch (err: any) {
       setFormError(err.message || "خطأ في إضافة الملف العائلي");
@@ -631,34 +662,106 @@ const FamilyFilesModule: React.FC = () => {
     );
   });
 
+  // Compute live operational worklist from all family files & clinical data
+  const operationalWorklist: OperationalWorkItem[] = HospitalOperationalEngine.buildFamilyOperationalWorklist({
+    familyFiles,
+    patients,
+    fundingEntities,
+    patientProblems,
+    physicalExams,
+    patientVisits,
+    appointments,
+  });
+
+  const filteredWorklist = operationalWorklist.filter((item) => {
+    if (worklistCategoryFilter !== "ALL" && item.category !== worklistCategoryFilter) {
+      return false;
+    }
+    if (!searchTerm.trim()) return true;
+    const q = searchTerm.toLowerCase().trim();
+    return (
+      (item.patient?.name || "").toLowerCase().includes(q) ||
+      (item.familyFile?.family_code || "").toLowerCase().includes(q) ||
+      (item.familyFile?.head_name || "").toLowerCase().includes(q) ||
+      item.title.toLowerCase().includes(q) ||
+      item.reason.toLowerCase().includes(q)
+    );
+  });
+
   return (
     <div className="space-y-6" dir="rtl">
-      {/* Search and Action Bar */}
-      <div className="flex flex-col md:flex-row justify-between items-stretch md:items-center gap-4 bg-white p-4 rounded-2xl border border-gray-100 shadow-sm">
-        <div className="relative flex-1">
-          <Search
-            className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400"
-            size={18}
-          />
-          <input
-            type="text"
-            placeholder="البحث برقم الملف، اسم رب العائلة، الرقم القومي، المحافظة، أو الوحدة..."
-            className="w-full pr-10 pl-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 font-bold placeholder-gray-400 transition-all text-sm"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
+      {/* Top Operational Workspace Switcher & Search Bar */}
+      <div className="bg-white p-5 rounded-2xl border border-slate-200 space-y-4">
+        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
+          {/* Segmented Mode Control */}
+          <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-xl w-full lg:w-auto">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFamilyFile(null);
+                setMainWorkspaceMode("worklist");
+              }}
+              className={`flex-1 lg:flex-initial px-4 py-2.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
+                !selectedFamilyFile && mainWorkspaceMode === "worklist"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <CalendarCheck size={16} className="text-primary-600" />
+              <span>01. لوحة المهام والمتابعات اليومية</span>
+              <span className="font-mono tabular-nums text-[11px] text-primary-700">
+                ({operationalWorklist.length})
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFamilyFile(null);
+                setMainWorkspaceMode("directory");
+              }}
+              className={`flex-1 lg:flex-initial px-4 py-2.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
+                !selectedFamilyFile && mainWorkspaceMode === "directory"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <FolderOpen size={16} className="text-indigo-600" />
+              <span>02. سجل الملفات العائلية والبحث</span>
+              <span className="font-mono tabular-nums text-[11px] text-indigo-700">
+                ({familyFiles.length})
+              </span>
+            </button>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full lg:w-auto">
+            <div className="relative flex-1 sm:w-80">
+              <Search
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"
+                size={16}
+              />
+              <input
+                type="text"
+                placeholder="بحث بالاسم، كود الأسرة، الرقم القومي، أو القرية..."
+                className="w-full pr-9 pl-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-500 font-bold placeholder-slate-400 transition-all text-xs"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFamilyFile(null);
+                setFormError(null);
+                setFamilyEntryFormMode("quick");
+                setShowAddFamilyFile(true);
+              }}
+              className="px-5 py-2.5 bg-primary-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-primary-700 shadow-sm transition-all whitespace-nowrap text-xs cursor-pointer"
+            >
+              <Plus size={16} />
+              إنشاء ملف عائلي (سريع / مفصل)
+            </button>
+          </div>
         </div>
-        <button
-          onClick={() => {
-            setSelectedFamilyFile(null);
-            setFormError(null);
-            setShowAddFamilyFile(true);
-          }}
-          className="px-6 py-3 bg-primary-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-primary-700 shadow-md transition-all whitespace-nowrap text-sm"
-        >
-          <Plus size={18} />
-          إنشاء ملف عائلي جديد
-        </button>
       </div>
 
       {loading ? (
@@ -4098,8 +4201,259 @@ const FamilyFilesModule: React.FC = () => {
             );
           })()}
     </div>
-  ) : (
-        /* Family Files Table (شكل جدول) */
+  ) : mainWorkspaceMode === "worklist" ? (
+        /* 01. Daily Operational Worklist (مركز المهام والمتابعات اليومية) */
+        <div className="space-y-5">
+          {/* Operational KPIs Strip */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-500">إجمالي المهام والتنبيهات اليومية</p>
+                <h4 className="text-2xl font-black text-slate-900 font-mono tabular-nums mt-1">
+                  {operationalWorklist.length}
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">مستخرجة آلياً من ملفات الأسر</p>
+              </div>
+              <div className="w-11 h-11 rounded-xl bg-primary-50 text-primary-600 flex items-center justify-center">
+                <CalendarCheck size={22} />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-500">متابعات حوامل وأطفال مستحقة</p>
+                <h4 className="text-2xl font-black text-rose-700 font-mono tabular-nums mt-1">
+                  {operationalWorklist.filter((w) => w.category === "MATERNAL_CHILD").length}
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">تطعيمات ونمو ومتابعة حمل</p>
+              </div>
+              <div className="w-11 h-11 rounded-xl bg-rose-50 text-rose-600 flex items-center justify-center">
+                <Heart size={22} />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-500">أمراض مزمنة وكبار سن وحساسية</p>
+                <h4 className="text-2xl font-black text-amber-700 font-mono tabular-nums mt-1">
+                  {
+                    operationalWorklist.filter(
+                      (w) => w.category === "CHRONIC_GERIATRIC" || w.category === "CRITICAL_CLINICAL"
+                    ).length
+                  }
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">بحاجة لكشف دوري أو حذر دوائي</p>
+              </div>
+              <div className="w-11 h-11 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <HeartPulse size={22} />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-bold text-slate-500">أسر مستحقة للإعفاء والخدمة المجانية</p>
+                <h4 className="text-2xl font-black text-emerald-700 font-mono tabular-nums mt-1">
+                  {familyFiles.filter((f) => f.eligible_for_free_service).length}
+                </h4>
+                <p className="text-[11px] text-slate-400 mt-0.5">مربوطة تلقائياً بالاستقبال والفواتير</p>
+              </div>
+              <div className="w-11 h-11 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+                <CreditCard size={22} />
+              </div>
+            </div>
+          </div>
+
+          {/* Category Filter Buttons */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-1.5">
+              {[
+                { id: "ALL", label: "كل المهام اليومية", count: operationalWorklist.length },
+                {
+                  id: "CRITICAL_CLINICAL",
+                  label: "حالات حرجة وحساسية دوائية",
+                  count: operationalWorklist.filter((w) => w.category === "CRITICAL_CLINICAL").length,
+                },
+                {
+                  id: "MATERNAL_CHILD",
+                  label: "رعاية الحوامل ونمو الأطفال",
+                  count: operationalWorklist.filter((w) => w.category === "MATERNAL_CHILD").length,
+                },
+                {
+                  id: "CHRONIC_GERIATRIC",
+                  label: "الأمراض المزمنة وكبار السن",
+                  count: operationalWorklist.filter((w) => w.category === "CHRONIC_GERIATRIC").length,
+                },
+                {
+                  id: "SOCIAL_HOUSING",
+                  label: "البحث الاجتماعي والبيئة السكنية",
+                  count: operationalWorklist.filter((w) => w.category === "SOCIAL_HOUSING").length,
+                },
+              ].map((tab) => (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setWorklistCategoryFilter(tab.id as any)}
+                  className={`px-3.5 py-2 rounded-lg text-xs font-bold transition-colors whitespace-nowrap cursor-pointer ${
+                    worklistCategoryFilter === tab.id
+                      ? "bg-primary-600 text-white"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  {tab.label} ({tab.count})
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setMainWorkspaceMode("directory")}
+              className="text-xs font-bold text-primary-600 hover:text-primary-800 cursor-pointer whitespace-nowrap"
+            >
+              عرض جدول جميع الملفات العائلية ({familyFiles.length}) &larr;
+            </button>
+          </div>
+
+          {/* Actionable Worklist Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+            {filteredWorklist.length > 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-right border-collapse min-w-[900px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-black text-xs">
+                      <th className="p-4">الأولوية والتصنيف</th>
+                      <th className="p-4">المريض / الأسرة</th>
+                      <th className="p-4">سبب التنبيه أو المتابعة المستحقة</th>
+                      <th className="p-4">حالة الاستحقاق والملف</th>
+                      <th className="p-4 text-center">إجراءات الموظف المباشرة</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
+                    {filteredWorklist.map((item) => (
+                      <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-4 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1.5 font-black ${
+                              item.urgency === "high"
+                                ? "text-rose-700"
+                                : item.urgency === "medium"
+                                ? "text-amber-700"
+                                : "text-slate-600"
+                            }`}
+                          >
+                            <AlertCircle size={15} />
+                            {item.urgency === "high"
+                              ? "أولوية قصوى"
+                              : item.urgency === "medium"
+                              ? "متابعة مستحقة"
+                              : "تنبيه روتيني"}
+                          </span>
+                        </td>
+                        <td className="p-4">
+                          {item.patient ? (
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => setPatientFor360Modal(item.patient)}
+                                className="text-sm font-black text-slate-900 hover:text-primary-600 transition-colors text-right cursor-pointer"
+                              >
+                                {item.patient.name}
+                              </button>
+                              <div className="text-[11px] text-slate-400 mt-0.5">
+                                {item.relationship || "فرد بالأسرة"} · رب الأسرة:{" "}
+                                {item.familyFile?.head_name || "---"}
+                              </div>
+                            </div>
+                          ) : (
+                            <div>
+                              <span className="text-sm font-black text-slate-900 block">
+                                أسرة: {item.familyFile?.head_name || "---"}
+                              </span>
+                              <span className="text-[11px] text-slate-400">
+                                {item.familyFile?.village_city || "---"} ·{" "}
+                                {item.familyFile?.phone || "بدون هاتف"}
+                              </span>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-4 max-w-md">
+                          <div className="text-xs font-black text-slate-900">{item.title}</div>
+                          <p className="text-[11px] text-slate-500 font-normal mt-0.5 leading-relaxed">
+                            {item.reason}
+                          </p>
+                        </td>
+                        <td className="p-4 whitespace-nowrap">
+                          <div className="text-xs text-slate-600">
+                            {item.badges.join(" · ")}
+                          </div>
+                        </td>
+                        <td className="p-4 text-center whitespace-nowrap">
+                          <div className="flex items-center justify-center gap-2">
+                            {item.patient && (
+                              <button
+                                type="button"
+                                onClick={() => setPatientFor360Modal(item.patient)}
+                                className="px-3 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                                title="فتح بطاقة المريض"
+                              >
+                                <Stethoscope size={13} />
+                                بطاقة المريض
+                              </button>
+                            )}
+                            {item.patient && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setQuickBookingPatient(item.patient);
+                                  setQuickBookingModule(item.suggestedModule);
+                                  setQuickBookingReason(`${item.title} - ${item.reason}`);
+                                }}
+                                className="px-3 py-1.5 bg-primary-600 hover:bg-primary-700 text-white rounded-lg text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                              >
+                                <Calendar size={13} />
+                                حجز عيادة
+                              </button>
+                            )}
+                            {item.familyFile && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if ((item.familyFile?.members?.length || 0) === 0) {
+                                    setSelectedFamilyFileForMember(item.familyFile);
+                                    setFormError(null);
+                                    setShowAddFamilyMember(true);
+                                  } else {
+                                    setSelectedFamilyFile(item.familyFile);
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition-colors cursor-pointer"
+                              >
+                                {(item.familyFile?.members?.length || 0) === 0
+                                  ? "ربط أفراد الأسرة"
+                                  : "فتح ملف الأسرة"}
+                              </button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="p-14 text-center space-y-3">
+                <CheckCircle2 size={42} className="mx-auto text-emerald-500" />
+                <h4 className="text-base font-black text-slate-800">
+                  لا توجد مهام أو متابعات متأخرة مطابقة للفلتر الحالي
+                </h4>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  يقوم المحرك الذكي بفحص أعمار أفراد الأسر، تواريخ الحوامل، الأمراض المزمنة، والبحث الاجتماعي تلقائياً لعرض الحالات التي تحتاج لتدخل.
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* 02. Family Files Directory Table (سجل الملفات العائلية) */
         <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-right border-collapse min-w-[1000px]">
@@ -4108,129 +4462,119 @@ const FamilyFilesModule: React.FC = () => {
                   <th className="p-4 py-5 text-center">رقم الملف العائلي</th>
                   <th className="p-4 py-5">اسم رب العائلة</th>
                   <th className="p-4 py-5">الرقم القومي لرب العائلة</th>
-                  <th className="p-4 py-5">المحافظة / الإدارة</th>
-                  <th className="p-4 py-5">القرية أو المدينة</th>
-                  <th className="p-4 py-5">الوحدة الصحية</th>
+                  <th className="p-4 py-5">القرية / الوحدة</th>
+                  <th className="p-4 py-5">البحث الاجتماعي والاستحقاق</th>
                   <th className="p-4 py-5">رقم الهاتف</th>
                   <th className="p-4 py-5 text-center">أفراد العائلة</th>
-                  <th className="p-4 py-5 text-center">تاريخ الإنشاء</th>
-                  <th className="p-4 py-5 text-center">إجراءات</th>
+                  <th className="p-4 py-5 text-center">إجراءات سريعة</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-sm font-bold text-gray-700">
                 {filteredFamilyFiles.length > 0 ? (
-                  filteredFamilyFiles.map((file: any) => (
-                    <tr
-                      key={file.id}
-                      onClick={() => setSelectedFamilyFile(file)}
-                      className="hover:bg-primary-50/20 transition-colors cursor-pointer"
-                    >
-                      <td className="p-4 text-center font-mono text-primary-600 font-extrabold text-sm">
-                        <span className="bg-primary-50 border border-primary-100 px-3 py-1.5 rounded-xl">
+                  filteredFamilyFiles.map((file: any) => {
+                    const headMember =
+                      (file.members || []).find((m: any) => m.is_head) ||
+                      (file.members || [])[0];
+                    const headPatient =
+                      headMember?.patients ||
+                      patients.find((p) => p.id === headMember?.patient_id) ||
+                      patients.find((p) => p.national_id && p.national_id === file.national_id) ||
+                      null;
+
+                    return (
+                      <tr
+                        key={file.id}
+                        onClick={() => setSelectedFamilyFile(file)}
+                        className="hover:bg-primary-50/20 transition-colors cursor-pointer"
+                      >
+                        <td className="p-4 text-center font-mono tabular-nums text-primary-600 font-extrabold text-sm">
                           {file.family_code}
-                        </span>
-                      </td>
-                      <td className="p-4 text-gray-900 text-base">
-                        {file.head_name || "غير مسجل"}
-                      </td>
-                      <td className="p-4 font-mono text-gray-500 text-sm">
-                        {file.national_id || "---"}
-                      </td>
-                      <td className="p-4 text-xs">
-                        <div className="font-bold text-gray-800">
-                          {file.governorate || "---"}
-                        </div>
-                        <div className="text-gray-400 mt-0.5">
-                          {file.administration || "---"}
-                        </div>
-                      </td>
-                      <td className="p-4 text-gray-600">
-                        {file.village_city || "---"}
-                      </td>
-                      <td className="p-4">
-                        <span className="text-gray-800 font-extrabold bg-blue-50/50 border border-blue-100 px-2 py-1 rounded-lg text-xs">
-                          {file.health_unit || "---"}
-                        </span>
-                      </td>
-                      <td className="p-4 text-xs font-normal">
-                        <div className="flex flex-col gap-1 font-mono">
-                          {file.phone && (
-                            <span className="flex items-center gap-1 text-gray-800 font-bold">
-                              <Phone
-                                size={10}
-                                className="text-primary-500 shrink-0"
-                              />{" "}
-                              {file.phone}
+                        </td>
+                        <td className="p-4 text-gray-900 text-base">
+                          <div>{file.head_name || "غير مسجل"}</div>
+                          {file.has_chronic_diseases && (
+                            <span className="text-[11px] text-amber-700 font-bold block mt-0.5">
+                              مسجل أمراض مزمنة بالأسرة
                             </span>
                           )}
-                          {file.home_number && (
-                            <span className="flex items-center gap-1 text-gray-500">
-                              <span className="text-[10px] bg-gray-100 text-gray-600 px-1 rounded shrink-0 font-sans font-bold">
-                                عمل
-                              </span>{" "}
-                              {file.home_number}
+                        </td>
+                        <td className="p-4 font-mono tabular-nums text-gray-500 text-sm">
+                          {file.national_id || "---"}
+                        </td>
+                        <td className="p-4 text-xs">
+                          <div className="font-bold text-gray-800">
+                            {file.village_city || "---"}
+                          </div>
+                          <div className="text-gray-400 mt-0.5">
+                            {file.health_unit || "---"}
+                          </div>
+                        </td>
+                        <td className="p-4 text-xs">
+                          {file.eligible_for_free_service ? (
+                            <span className="text-emerald-700 font-black">
+                              مستحق خدمة مجانية (إعفاء اجتماعي)
+                            </span>
+                          ) : file.receives_pension ? (
+                            <span className="text-blue-700 font-bold">
+                              مستفيد معاش / دعم اجتماعي
+                            </span>
+                          ) : (
+                            <span className="text-slate-500 font-normal">
+                              نقدي / عادي
                             </span>
                           )}
-                          {file.nearest_landmark && (
-                            <span className="flex items-center gap-1 text-gray-500">
-                              <span className="text-[10px] bg-blue-50 text-blue-600 px-1 rounded shrink-0 font-sans font-bold">
-                                أقرب
-                              </span>{" "}
-                              {file.nearest_landmark}
-                            </span>
-                          )}
-                          {!file.phone &&
-                            !file.home_number &&
-                            !file.nearest_landmark && (
-                              <span className="text-gray-400">---</span>
-                            )}
-                        </div>
-                      </td>
-                      <td className="p-4 text-center">
-                        <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 text-xs font-black rounded-full border border-emerald-100">
+                        </td>
+                        <td className="p-4 text-xs font-normal font-mono tabular-nums">
+                          {file.phone || file.home_number || "---"}
+                        </td>
+                        <td className="p-4 text-center font-mono tabular-nums">
                           {file.members?.length || 0} أفراد
-                        </span>
-                      </td>
-                      <td className="p-4 text-center text-xs text-gray-400 font-normal">
-                        {new Date(
-                          file.created_at || new Date(),
-                        ).toLocaleDateString("ar-EG", {
-                          year: "numeric",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </td>
-                      <td className="p-4 text-center">
-                        <div
-                          className="flex items-center justify-center gap-2"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
-                            onClick={() => setSelectedFamilyFile(file)}
-                            className="p-2 bg-primary-50 hover:bg-primary-600 text-primary-600 hover:text-white rounded-xl transition-all border border-primary-100"
-                            title="عرض تفاصيل الملف وأفراده"
+                        </td>
+                        <td className="p-4 text-center">
+                          <div
+                            className="flex items-center justify-center gap-2"
+                            onClick={(e) => e.stopPropagation()}
                           >
-                            <FileText size={16} />
-                          </button>
-                          <button
-                            onClick={() => {
-                              setSelectedFamilyFileForMember(file);
-                              setFormError(null);
-                              setShowAddFamilyMember(true);
-                            }}
-                            className="p-2 bg-gray-50 hover:bg-emerald-600 text-gray-600 hover:text-white rounded-xl transition-all border border-gray-200 hover:border-emerald-600"
-                            title="إضافة فرد للأسرة"
-                          >
-                            <UserPlus size={16} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                            {headPatient && (
+                              <button
+                                type="button"
+                                onClick={() => setPatientFor360Modal(headPatient)}
+                                className="px-2.5 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer"
+                                title="بطاقة المريض لرب الأسرة"
+                              >
+                                <Stethoscope size={13} />
+                                بطاقة المريض
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setSelectedFamilyFile(file)}
+                              className="p-2 bg-primary-50 hover:bg-primary-600 text-primary-600 hover:text-white rounded-xl transition-all border border-primary-100 cursor-pointer"
+                              title="عرض تفاصيل الملف وأفراده"
+                            >
+                              <FileText size={16} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedFamilyFileForMember(file);
+                                setFormError(null);
+                                setShowAddFamilyMember(true);
+                              }}
+                              className="p-2 bg-gray-50 hover:bg-emerald-600 text-gray-600 hover:text-white rounded-xl transition-all border border-gray-200 hover:border-emerald-600 cursor-pointer"
+                              title="إضافة فرد للأسرة"
+                            >
+                              <UserPlus size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 ) : (
                   <tr>
                     <td
-                      colSpan={10}
+                      colSpan={8}
                       className="p-16 text-center text-gray-400 font-bold"
                     >
                       <FolderOpen
@@ -4249,26 +4593,58 @@ const FamilyFilesModule: React.FC = () => {
         </div>
       )}
 
-      {/* New Family File Modal */}
+      {/* New Family File Modal (Supports Quick 30-Second Operational Mode + Full Detailed GAHAR Mode) */}
       {showAddFamilyFile && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div
             className="bg-white w-full max-w-2xl rounded-3xl shadow-2xl flex flex-col max-h-[90vh] animate-in zoom-in-95"
             dir="rtl"
           >
-            <div className="p-6 border-b flex justify-between items-center bg-gray-50 rounded-t-3xl">
+            <div className="p-6 border-b flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-gray-50 rounded-t-3xl">
               <div className="flex items-center gap-2">
                 <FolderOpen className="text-primary-600" size={24} />
-                <h3 className="font-bold text-xl text-gray-800">
-                  إنشاء ملف عائلي جديد
-                </h3>
+                <div>
+                  <h3 className="font-bold text-lg text-gray-800">
+                    إنشاء ملف عائلي جديد
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    اختر الوضع السريع للتسجيل العملي الفوري أو النموذج الكامل
+                  </p>
+                </div>
               </div>
-              <button
-                onClick={() => setShowAddFamilyFile(false)}
-                className="p-2 hover:bg-gray-200 rounded-xl transition-colors"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2 self-end sm:self-auto">
+                <div className="flex items-center gap-1 p-1 bg-slate-200/80 rounded-xl">
+                  <button
+                    type="button"
+                    onClick={() => setFamilyEntryFormMode("quick")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      familyEntryFormMode === "quick"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    الوضع السريع العملي
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFamilyEntryFormMode("detailed")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors cursor-pointer ${
+                      familyEntryFormMode === "detailed"
+                        ? "bg-white text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    النموذج التفصيلي الكامل
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAddFamilyFile(false)}
+                  className="p-2 hover:bg-gray-200 rounded-xl transition-colors"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             <form
@@ -4282,6 +4658,40 @@ const FamilyFilesModule: React.FC = () => {
                 </div>
               )}
 
+              {/* اختيار سريع لمريض مسجل لملء بيانات رب الأسرة وربطه تلقائياً */}
+              <div className="p-4 bg-primary-50/60 border border-primary-100 rounded-2xl space-y-2">
+                <label className="text-xs font-black text-primary-900 block">
+                  اختيار سريع لرب الأسرة من المرضى المسجلين (اختياري - يملأ البيانات ويربطه تلقائياً كعضو رقم 1)
+                </label>
+                <select
+                  value={quickSelectedHeadPatientId}
+                  onChange={(e) => {
+                    const pid = e.target.value;
+                    setQuickSelectedHeadPatientId(pid);
+                    const found = patients.find((p) => p.id === pid);
+                    if (found && e.target.form) {
+                      const form = e.target.form as any;
+                      if (form.head_name) form.head_name.value = found.name || "";
+                      if (form.national_id && found.national_id)
+                        form.national_id.value = found.national_id;
+                      if (form.phone && found.phone) form.phone.value = found.phone;
+                      if (form.village_city && found.address)
+                        form.village_city.value = found.address;
+                      if (form.address && found.address)
+                        form.address.value = found.address;
+                    }
+                  }}
+                  className="w-full border border-primary-200 rounded-xl p-2.5 bg-white text-xs font-bold outline-none"
+                >
+                  <option value="">-- كتابة بيانات رب أسرة جديد يدوياً --</option>
+                  {patients.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} — قومي: {p.national_id || "غير مسجل"} — هاتف: {p.phone || "---"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-gray-500 block mb-1">
@@ -4290,8 +4700,9 @@ const FamilyFilesModule: React.FC = () => {
                   <input
                     name="family_code"
                     required
+                    defaultValue={`FF-${1001 + familyFiles.length}`}
                     placeholder="مثال: FF-5001"
-                    className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
+                    className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono"
                   />
                 </div>
                 <div>
@@ -4307,35 +4718,6 @@ const FamilyFilesModule: React.FC = () => {
                     className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono"
                   />
                 </div>
-              </div>
-
-              {/* حقول الترقيم للطباعة الرسمية (رقم المنزل / رقم الأسرة) */}
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-bold text-gray-700 block mb-1">
-                      رقم المنزل
-                    </label>
-                    <input
-                      name="house_number"
-                      placeholder="رقم المنزل للنموذج الورقي (اختياري)"
-                      className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-primary-500 outline-none font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-gray-700 block mb-1">
-                      رقم الأسرة
-                    </label>
-                    <input
-                      name="family_number"
-                      placeholder="رقم الأسرة للنموذج الورقي (اختياري)"
-                      className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-primary-500 outline-none font-bold"
-                    />
-                  </div>
-                </div>
-                <p className="text-[11px] text-gray-400 font-bold leading-relaxed">
-                  تُستخدم هذه الحقول فقط عند طباعة النموذج الرسمي المطابق لبطاقة الملف العائلي الورقية، وليست إلزامية للعمل اليومي على النظام.
-                </p>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -4366,320 +4748,333 @@ const FamilyFilesModule: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-xs font-bold text-gray-500 block mb-1">
-                    تليفون العمل
-                  </label>
-                  <input
-                    name="work_phone"
-                    placeholder="تليفون مكان العمل"
-                    className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-500 block mb-1">
-                    أقرب تليفون (طوارئ أو قريب)
-                  </label>
-                  <input
-                    name="nearest_phone"
-                    placeholder="تليفون قريب لحالات الطوارئ"
-                    className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-gray-100 pt-4">
-                <div>
-                  <label className="text-xs font-bold text-gray-500 block mb-1">
-                    المحافظة *
-                  </label>
-                  <input
-                    name="governorate"
-                    required
-                    placeholder="مثال: الجيزة"
-                    className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-500 block mb-1">
-                    الإدارة الصحية *
-                  </label>
-                  <input
-                    name="administration"
-                    required
-                    placeholder="مثال: إدارة البدرشين"
-                    className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-gray-500 block mb-1">
-                    القرية أو المدينة *
+                    القرية / المدينة / العنوان المختصر *
                   </label>
                   <input
                     name="village_city"
                     required
-                    placeholder="مثال: الشوبك"
-                    className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="text-xs font-bold text-gray-500 block mb-1">
-                    وحدة طب الأسرة / المركز الطبي *
-                  </label>
-                  <input
-                    name="health_unit"
-                    required
-                    placeholder="مثال: وحدة الشوبك الصحية"
+                    placeholder="مثال: الشوبك - البدرشين"
                     className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
                   />
                 </div>
                 <div>
                   <label className="text-xs font-bold text-gray-500 block mb-1">
-                    العنوان بالتفصيل *
+                    العنوان بالتفصيل
                   </label>
                   <input
                     name="address"
-                    required
                     placeholder="الشارع، رقم المنزل، علامة مميزة"
                     className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
                   />
                 </div>
               </div>
 
-              <div className="border-t border-gray-100 pt-4 space-y-4">
-                <h4 className="font-extrabold text-sm text-primary-600 flex items-center gap-1.5 pb-2 border-b">
-                  <Home size={16} /> بيان حالة المسكن والبيئة السكنية (اختياري)
+              {/* الخلاصة التشغيلية للبحث الاجتماعي (تظهر دائماً لأنها تغذي الاستقبال والفواتير) */}
+              <div className="p-4 bg-emerald-50/60 border border-emerald-200 rounded-2xl space-y-3">
+                <h4 className="font-black text-xs text-emerald-950 flex items-center gap-1.5">
+                  <CreditCard size={15} className="text-emerald-700" />
+                  قرار البحث الاجتماعي والاستحقاق (يُطبَّق تلقائياً في الاستقبال والفواتير)
                 </h4>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 block mb-1">
-                      عدد الحجرات الكلي بالمنزل
-                    </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label className="flex items-center gap-2.5 p-2.5 bg-white rounded-xl border border-emerald-200 cursor-pointer">
                     <input
-                      type="number"
-                      name="total_rooms"
-                      min={0}
-                      placeholder="عدد الحجرات الكلي"
-                      className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
+                      type="checkbox"
+                      id="eligible_for_free_service"
+                      name="eligible_for_free_service"
+                      className="w-4 h-4 text-emerald-600 rounded"
                     />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-gray-500 block mb-1">
-                      الحجرات المخصصة للنوم
-                    </label>
+                    <span className="text-xs font-black text-emerald-950">
+                      الأسرة تستحق الخدمة المجانية (إعفاء كامل)
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2.5 p-2.5 bg-white rounded-xl border border-slate-200 cursor-pointer">
                     <input
-                      type="number"
-                      name="sleeping_rooms"
-                      min={0}
-                      placeholder="عدد حجرات النوم"
-                      className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
+                      type="checkbox"
+                      id="receives_pension"
+                      name="receives_pension"
+                      className="w-4 h-4 text-primary-600 rounded"
                     />
-                  </div>
+                    <span className="text-xs font-bold text-slate-700">
+                      الأسرة تحصل على معاش / دعم اجتماعي
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2.5 p-2.5 bg-white rounded-xl border border-slate-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      id="has_chronic_diseases"
+                      name="has_chronic_diseases"
+                      className="w-4 h-4 text-amber-600 rounded"
+                    />
+                    <span className="text-xs font-bold text-slate-700">
+                      وجود أمراض مزمنة بالأسرة (تفعيل متابعة دورية)
+                    </span>
+                  </label>
+                  <label className="flex items-center gap-2.5 p-2.5 bg-white rounded-xl border border-slate-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      id="has_disabilities"
+                      name="has_disabilities"
+                      className="w-4 h-4 text-primary-600 rounded"
+                    />
+                    <span className="text-xs font-bold text-slate-700">
+                      وجود حالات إعاقة بالأسرة
+                    </span>
+                  </label>
                 </div>
+              </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">
-                        التهوية
-                      </label>
-                      <select
-                        name="ventilation"
-                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
-                      >
-                        <option value="good">جيدة</option>
-                        <option value="poor">غير جيدة</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">
-                        مصدر المياه
-                      </label>
-                      <select
-                        name="water_source"
-                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
-                      >
-                        <option value="public">عام (شبكة عمومية)</option>
-                        <option value="other">أخرى</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">
-                        الصرف الصحي
-                      </label>
-                      <select
-                        name="sewage_system"
-                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
-                      >
-                        <option value="sanitary">صحي</option>
-                        <option value="trench">طرنش (غير صحي)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">
-                        نوع الإضاءة
-                      </label>
-                      <select
-                        name="lighting_type"
-                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
-                      >
-                        <option value="electricity">كهرباء</option>
-                        <option value="other">أخرى</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">
-                        حظيرة طيور/حيوانات
-                      </label>
-                      <select
-                        name="barn_location"
-                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
-                      >
-                        <option value="none">لا يوجد حظيرة</option>
-                        <option value="inside">بالمنزل</option>
-                        <option value="outside">بالخارج</option>
-                      </select>
-                    </div>
-                    <div className="flex items-center gap-2.5 pt-6">
-                      <input
-                        type="checkbox"
-                        id="has_animals_birds"
-                        name="has_animals_birds"
-                        className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer"
-                      />
-                      <label
-                        htmlFor="has_animals_birds"
-                        className="text-xs font-bold text-gray-700 cursor-pointer select-none"
-                      >
-                        تربية حيوانات أو طيور بالمنزل
-                      </label>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="border-t border-gray-100 pt-4 space-y-4">
-                  <h4 className="font-extrabold text-sm text-primary-600 flex items-center gap-1.5 pb-2 border-b">
-                    <Users size={16} /> بيان البحث الاجتماعي والتمكين الأسري
-                    (اختياري)
-                  </h4>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">
-                        طبيعة دخل الأسرة
-                      </label>
-                      <select
-                        name="income_type"
-                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
-                      >
-                        <option value="fixed">دخل ثابت</option>
-                        <option value="variable">دخل متغير</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-xs font-bold text-gray-500 block mb-1">
-                        متوسط الدخل الشهري (بالجنيه)
-                      </label>
-                      <input
-                        type="number"
-                        name="monthly_income"
-                        min={0}
-                        placeholder="متوسط الدخل الشهري بالجنيه"
-                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
-                      />
+              {/* الحقول التفصيلية الإضافية (تظهر فقط في وضع النموذج التفصيلي الكامل) */}
+              {familyEntryFormMode === "detailed" && (
+                <div className="space-y-5 pt-3 border-t border-slate-200 animate-in fade-in duration-200">
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-gray-700 block mb-1">
+                          رقم المنزل
+                        </label>
+                        <input
+                          name="house_number"
+                          placeholder="رقم المنزل للنموذج الورقي (اختياري)"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-primary-500 outline-none font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-gray-700 block mb-1">
+                          رقم الأسرة
+                        </label>
+                        <input
+                          name="family_number"
+                          placeholder="رقم الأسرة للنموذج الورقي (اختياري)"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-white focus:ring-2 focus:ring-primary-500 outline-none font-bold"
+                        />
+                      </div>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
                       <label className="text-xs font-bold text-gray-500 block mb-1">
-                        العائل البديل (في حالة وفاة الأب)
+                        تليفون العمل
                       </label>
                       <input
-                        type="text"
-                        name="breadwinner_name"
-                        placeholder="اسم العائل البديل"
-                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
+                        name="work_phone"
+                        placeholder="تليفون مكان العمل"
+                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono"
                       />
                     </div>
-                    <div className="flex flex-col gap-3 pt-2">
-                      <div className="flex items-center gap-2.5">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 block mb-1">
+                        أقرب تليفون (طوارئ أو قريب)
+                      </label>
+                      <input
+                        name="nearest_phone"
+                        placeholder="تليفون قريب لحالات الطوارئ"
+                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-gray-100 pt-4">
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 block mb-1">
+                        المحافظة
+                      </label>
+                      <input
+                        name="governorate"
+                        defaultValue="الجيزة"
+                        placeholder="مثال: الجيزة"
+                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 block mb-1">
+                        الإدارة الصحية
+                      </label>
+                      <input
+                        name="administration"
+                        defaultValue="إدارة البدرشين"
+                        placeholder="مثال: إدارة البدرشين"
+                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-bold text-gray-500 block mb-1">
+                        وحدة طب الأسرة / المركز الطبي
+                      </label>
+                      <input
+                        name="health_unit"
+                        defaultValue="مركز الهداية الطبي"
+                        placeholder="مثال: مركز الهداية الطبي"
+                        className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="border-t border-gray-100 pt-4 space-y-4">
+                    <h4 className="font-extrabold text-sm text-primary-600 flex items-center gap-1.5 pb-2 border-b">
+                      <Home size={16} /> بيان حالة المسكن والبيئة السكنية (اختياري)
+                    </h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">
+                          عدد الحجرات الكلي بالمنزل
+                        </label>
+                        <input
+                          type="number"
+                          name="total_rooms"
+                          min={0}
+                          placeholder="عدد الحجرات الكلي"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">
+                          الحجرات المخصصة للنوم
+                        </label>
+                        <input
+                          type="number"
+                          name="sleeping_rooms"
+                          min={0}
+                          placeholder="عدد حجرات النوم"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">
+                          التهوية
+                        </label>
+                        <select
+                          name="ventilation"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
+                        >
+                          <option value="good">جيدة</option>
+                          <option value="poor">غير جيدة</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">
+                          مصدر المياه
+                        </label>
+                        <select
+                          name="water_source"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
+                        >
+                          <option value="public">عام (شبكة عمومية)</option>
+                          <option value="other">أخرى</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">
+                          الصرف الصحي
+                        </label>
+                        <select
+                          name="sewage_system"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
+                        >
+                          <option value="sanitary">صحي</option>
+                          <option value="trench">طرنش (غير صحي)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">
+                          نوع الإضاءة
+                        </label>
+                        <select
+                          name="lighting_type"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
+                        >
+                          <option value="electricity">كهرباء</option>
+                          <option value="other">أخرى</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">
+                          حظيرة طيور/حيوانات
+                        </label>
+                        <select
+                          name="barn_location"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
+                        >
+                          <option value="none">لا يوجد حظيرة</option>
+                          <option value="inside">بالمنزل</option>
+                          <option value="outside">بالخارج</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center gap-2.5 pt-6">
                         <input
                           type="checkbox"
-                          id="has_chronic_diseases"
-                          name="has_chronic_diseases"
+                          id="has_animals_birds"
+                          name="has_animals_birds"
                           className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer"
                         />
                         <label
-                          htmlFor="has_chronic_diseases"
+                          htmlFor="has_animals_birds"
                           className="text-xs font-bold text-gray-700 cursor-pointer select-none"
                         >
-                          وجود أمراض مزمنة بالأسرة
+                          تربية حيوانات أو طيور بالمنزل
                         </label>
                       </div>
-                      <div className="flex items-center gap-2.5">
-                        <input
-                          type="checkbox"
-                          id="has_disabilities"
-                          name="has_disabilities"
-                          className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer"
-                        />
-                        <label
-                          htmlFor="has_disabilities"
-                          className="text-xs font-bold text-gray-700 cursor-pointer select-none"
-                        >
-                          وجود حالات إعاقة بالأسرة
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3 border-t border-slate-100">
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">
+                          طبيعة دخل الأسرة
                         </label>
+                        <select
+                          name="income_type"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
+                        >
+                          <option value="fixed">دخل ثابت</option>
+                          <option value="variable">دخل متغير</option>
+                        </select>
                       </div>
-                      <div className="flex items-center gap-2.5">
-                        <input
-                          type="checkbox"
-                          id="receives_pension"
-                          name="receives_pension"
-                          className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer"
-                        />
-                        <label
-                          htmlFor="receives_pension"
-                          className="text-xs font-bold text-gray-700 cursor-pointer select-none"
-                        >
-                          الأسرة تحصل على معاش
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">
+                          متوسط الدخل الشهري (بالجنيه)
                         </label>
+                        <input
+                          type="number"
+                          name="monthly_income"
+                          min={0}
+                          placeholder="متوسط الدخل الشهري"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
+                        />
                       </div>
-                      <div className="flex items-center gap-2.5">
-                        <input
-                          type="checkbox"
-                          id="eligible_for_free_service"
-                          name="eligible_for_free_service"
-                          className="w-5 h-5 text-primary-600 focus:ring-primary-500 border-gray-300 rounded cursor-pointer"
-                        />
-                        <label
-                          htmlFor="eligible_for_free_service"
-                          className="text-xs font-bold text-gray-700 cursor-pointer select-none"
-                        >
-                          الأسرة تستحق الخدمة المجانية
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 block mb-1">
+                          العائل البديل (في حالة وفاة الأب)
                         </label>
+                        <input
+                          type="text"
+                          name="breadwinner_name"
+                          placeholder="اسم العائل البديل"
+                          className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold text-sm"
+                        />
                       </div>
                     </div>
                   </div>
-                </div>
-              </div>
 
-              <div>
-                <label className="text-xs font-bold text-gray-500 block mb-1">
-                  ملاحظات ديموغرافية واجتماعية
-                </label>
-                <textarea
-                  name="notes"
-                  rows={3}
-                  placeholder="تفاصيل ديموغرافية، الحالة الاجتماعية أو أي ملاحظات هامة للأسرة..."
-                  className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
-                />
-              </div>
+                  <div>
+                    <label className="text-xs font-bold text-gray-500 block mb-1">
+                      ملاحظات ديموغرافية واجتماعية
+                    </label>
+                    <textarea
+                      name="notes"
+                      rows={2}
+                      placeholder="تفاصيل ديموغرافية، الحالة الاجتماعية أو أي ملاحظات هامة للأسرة..."
+                      className="w-full border border-gray-200 rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500 focus:bg-white outline-none font-bold"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div className="flex gap-4 pt-4 border-t border-gray-100">
                 <button
@@ -5682,6 +6077,14 @@ const FamilyFilesModule: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* بطاقة القرار السريري الموحدة 360 (Clinical 360 Card) */}
+      <PatientClinical360Modal
+        isOpen={!!patientFor360Modal}
+        onClose={() => setPatientFor360Modal(null)}
+        patient={patientFor360Modal}
+        onDataUpdated={loadData}
+      />
     </div>
   );
 };

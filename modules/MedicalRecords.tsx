@@ -4,6 +4,7 @@ import { DB } from '../store.ts';
 import { calculateAge, AR } from '../constants.ts';
 import PatientTimeline from '../components/PatientTimeline.tsx';
 import FamilyComprehensiveHealthRecordModal from '../components/FamilyComprehensiveHealthRecordModal.tsx';
+import MedicalRecordsAlertsBanner from '../components/MedicalRecordsAlertsBanner.tsx';
 import { 
   Search, FileText, History, User, Calendar, 
   ArrowRight, Loader2, MapPin, Download,
@@ -13,6 +14,7 @@ import {
 const MedicalRecordsModule: React.FC = () => {
   const [sessions, setSessions] = useState<any[]>([]);
   const [familyFiles, setFamilyFiles] = useState<any[]>([]);
+  const [patientsList, setPatientsList] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDate, setFilterDate] = useState('');
@@ -30,12 +32,14 @@ const MedicalRecordsModule: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [sessionsData, filesData] = await Promise.all([
+      const [sessionsData, filesData, patientsData] = await Promise.all([
         DB.getSessions(),
-        DB.getFamilyFiles()
+        DB.getFamilyFiles(),
+        DB.getPatients()
       ]);
       setSessions(sessionsData || []);
       setFamilyFiles(filesData || []);
+      setPatientsList(patientsData || []);
     } catch (e) {
       console.error(e);
     } finally {
@@ -94,6 +98,13 @@ const MedicalRecordsModule: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Real-time Clinical Alerts Banner & Live Monitor */}
+      <MedicalRecordsAlertsBanner 
+        onOpenComprehensivePatient={handleOpenComprehensive}
+        onOpenTimelinePatient={setSelectedTimelinePatient}
+        allPatients={patientsList}
+      />
 
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 no-print">
         <div className="flex gap-4 w-full md:w-auto">
@@ -174,6 +185,11 @@ const MedicalRecordsModule: React.FC = () => {
                       <td className="px-6 py-5">
                         <div className="text-sm font-bold text-gray-700">{s.date}</div>
                         <div className="text-[11px] text-gray-400 font-mono mt-0.5">البدء: {s.start_time || '—'}</div>
+                        {(s.disconnection_time || s.custom_data?.disconnection_time) && (
+                          <div className="text-[11px] text-blue-600 font-mono font-bold">
+                            فك الوصلة: {s.disconnection_time || s.custom_data?.disconnection_time}
+                          </div>
+                        )}
                         {s.end_time && <div className="text-[11px] text-emerald-600 font-mono">الانتهاء: {s.end_time}</div>}
                       </td>
                       <td className="px-6 py-5">

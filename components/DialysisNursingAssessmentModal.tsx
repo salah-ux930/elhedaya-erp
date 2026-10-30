@@ -11,18 +11,22 @@ import {
   DialysisPainGlucoseLog,
   DialysisMedicalCareLog,
   DialysisMedicationAdmin,
-  DialysisHealthEducation
+  DialysisHealthEducation,
+  DialysisFallRiskReview
 } from '../types.ts';
 import { 
   X, Activity, AlertTriangle, CheckCircle2, Clock, Plus, Trash2, 
   ShieldAlert, Stethoscope, HeartPulse, FileText, Pill, GraduationCap, 
-  Sparkles, Save, UserCheck, Eye, RefreshCw, AlertCircle
+  Sparkles, Save, UserCheck, Eye, RefreshCw, AlertCircle,
+  Scissors, Check, BedDouble, BellRing, Footprints, AlertOctagon, History
 } from 'lucide-react';
 
 interface Props {
   session: DialysisSession & { patients?: Patient };
   onClose: () => void;
   onUpdate?: () => void;
+  initialTab?: 'assessment' | 'fall_risk' | 'lines' | 'notes_plan' | 'ews' | 'pain_glucose_med' | 'medication' | 'education';
+  initialFallStage?: '2_HOURS' | '4_HOURS' | 'EXTRA';
 }
 
 export const calculateEwsScores = (values: {
@@ -127,12 +131,49 @@ export const calculateEwsScores = (values: {
   };
 };
 
-const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onUpdate }) => {
-  const [activeTab, setActiveTab] = useState<'assessment' | 'lines' | 'notes_plan' | 'ews' | 'pain_glucose_med' | 'medication' | 'education'>('assessment');
+const DialysisNursingAssessmentModal: React.FC<Props> = ({ 
+  session, 
+  onClose, 
+  onUpdate,
+  initialTab = 'assessment',
+  initialFallStage = '2_HOURS'
+}) => {
+  const [activeTab, setActiveTab] = useState<'assessment' | 'fall_risk' | 'lines' | 'notes_plan' | 'ews' | 'pain_glucose_med' | 'medication' | 'education'>(initialTab);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // Fall Risk Reviews State (Integrated)
+  const [fallReviews, setFallReviews] = useState<DialysisFallRiskReview[]>([]);
+  const [currentFallStage, setCurrentFallStage] = useState<'2_HOURS' | '4_HOURS' | 'EXTRA'>(initialFallStage);
+  const [fallRiskLevel, setFallRiskLevel] = useState<'HIGH' | 'MEDIUM' | 'LOW'>('HIGH');
+  const [fallReviewerName, setFallReviewerName] = useState(() => {
+    try {
+      const savedUser = localStorage.getItem('dialysis_user');
+      if (savedUser) {
+        const u = JSON.parse(savedUser);
+        if (u.name) return u.name;
+      }
+    } catch (e) {}
+    return 'تمريض الصالة';
+  });
+  const [fallClinicalNotes, setFallClinicalNotes] = useState('');
+  const [savingFallReview, setSavingFallReview] = useState(false);
+  const [savingDisconnection, setSavingDisconnection] = useState(false);
+
+  // 9 Accredited Fall Prevention Precautions
+  const [fallPrecautions, setFallPrecautions] = useState({
+    card_placed: true,
+    bed_low_brakes_locked: true,
+    side_rails_raised: true,
+    call_bell_within_reach: true,
+    safe_environment_clear: true,
+    assisted_ambulation_only: true,
+    frequent_toilet_check: true,
+    patient_relative_educated: true,
+    non_slip_footwear: true
+  });
 
   // 1. Assessment State
   const [assessment, setAssessment] = useState<Partial<DialysisNursingAssessment>>({
@@ -205,6 +246,7 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
   });
   const [removingLineId, setRemovingLineId] = useState<string | null>(null);
   const [removalReason, setRemovalReason] = useState('');
+  const [removalDateTime, setRemovalDateTime] = useState<string>('');
 
   // 3. Notes & Care Plans State
   const [nursingNotes, setNursingNotes] = useState<DialysisNursingNote[]>([]);
@@ -284,6 +326,52 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
     return calculateEwsScores(newEws);
   }, [newEws]);
 
+  // Calculate elapsed session duration in minutes
+  const elapsedMinutes = useMemo(() => {
+    if (!session) return 0;
+    const now = new Date();
+    let startDateTime: Date | null = null;
+    if (session.start_time) {
+      const parts = session.start_time.split(':');
+      if (parts.length >= 2) {
+        const dateStr = session.date || now.toISOString().split('T')[0];
+        const parsed = new Date(`${dateStr}T${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}:00`);
+        if (!isNaN(parsed.getTime())) startDateTime = parsed;
+      }
+    }
+    if (!startDateTime && session.created_at) {
+      const parsed = new Date(session.created_at);
+      if (!isNaN(parsed.getTime())) startDateTime = parsed;
+    }
+    if (startDateTime) {
+      const mins = Math.floor((now.getTime() - startDateTime.getTime()) / 60000);
+      return mins > 0 ? mins : 0;
+    }
+    return 0;
+  }, [session]);
+
+  // Calculate formatted total connection duration (between connection_time and disconnection_time)
+  const connectionDurationFormatted = useMemo(() => {
+    const conn = assessment.access_review?.connection_time || session.start_time;
+    const disconn = assessment.access_review?.disconnection_time || session.disconnection_time;
+    if (!conn || !disconn) return null;
+    const [h1, m1] = conn.split(':').map(Number);
+    const [h2, m2] = disconn.split(':').map(Number);
+    if (isNaN(h1) || isNaN(m1) || isNaN(h2) || isNaN(m2)) return null;
+    let diffMins = (h2 * 60 + m2) - (h1 * 60 + m1);
+    if (diffMins < 0) diffMins += 24 * 60;
+    const hours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    return `${hours} ساعة و ${mins} دقيقة (${diffMins} دقيقة)`;
+  }, [assessment.access_review?.connection_time, assessment.access_review?.disconnection_time, session.start_time, session.disconnection_time]);
+
+  // Fall review indicators
+  const has2HReview = useMemo(() => fallReviews.some(r => r.review_stage === '2_HOURS'), [fallReviews]);
+  const has4HReview = useMemo(() => fallReviews.some(r => r.review_stage === '4_HOURS'), [fallReviews]);
+  const is2HDue = elapsedMinutes >= 120 && !has2HReview;
+  const is4HDue = elapsedMinutes >= 240 && !has4HReview;
+  const isFallReviewOverdue = is2HDue || is4HDue;
+
   useEffect(() => {
     loadAllData();
   }, [session.id]);
@@ -301,7 +389,8 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
         loadedPainGlucose,
         loadedMedical,
         loadedMeds,
-        loadedEdus
+        loadedEdus,
+        loadedFallReviews
       ] = await Promise.all([
         DB.getDialysisNursingAssessment(session.id).catch(() => null),
         DB.getDialysisAccessLines(session.patient_id).catch(() => []),
@@ -311,7 +400,8 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
         DB.getDialysisPainGlucoseLogs(session.id).catch(() => []),
         DB.getDialysisMedicalCareLogs(session.id).catch(() => []),
         DB.getDialysisMedicationAdmins(session.id).catch(() => []),
-        DB.getDialysisHealthEducations(session.patient_id, session.id).catch(() => [])
+        DB.getDialysisHealthEducations(session.patient_id, session.id).catch(() => []),
+        DB.getDialysisFallRiskReviews(session.id).catch(() => [])
       ]);
 
       if (loadedAssessment) {
@@ -327,6 +417,7 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
       if (loadedEdus && loadedEdus.length > 0) {
         setHealthEdu(loadedEdus[0]);
       }
+      setFallReviews(loadedFallReviews || []);
     } catch (err: any) {
       setErrorMsg(err.message || 'حدث خطأ أثناء تحميل بيانات التقييم التمريضي');
     } finally {
@@ -337,6 +428,112 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
   const showNotification = (msg: string) => {
     setSuccessMsg(msg);
     setTimeout(() => setSuccessMsg(null), 4000);
+  };
+
+  // Quick sync disconnection time directly to session
+  const handleQuickSyncDisconnectionTime = async () => {
+    const timeToSave = assessment.access_review?.disconnection_time || new Date().toTimeString().slice(0, 5);
+    setSavingDisconnection(true);
+    try {
+      await DB.recordDisconnectionTime(session.id, timeToSave);
+      setAssessment(prev => ({
+        ...prev,
+        access_review: {
+          ...prev.access_review,
+          disconnection_time: timeToSave
+        }
+      }));
+      showNotification(`تم تثبيت وقت فك الوصلة (${timeToSave}) ومزامنته مع الجلسة بنجاح`);
+      if (onUpdate) onUpdate();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'فشل حفظ وقت فك الوصلة بالجلسة');
+    } finally {
+      setSavingDisconnection(false);
+    }
+  };
+
+  // Toggle all 9 fall prevention precautions
+  const handleToggleAllFallPrecautions = (val: boolean) => {
+    setFallPrecautions({
+      card_placed: val,
+      bed_low_brakes_locked: val,
+      side_rails_raised: val,
+      call_bell_within_reach: val,
+      safe_environment_clear: val,
+      assisted_ambulation_only: val,
+      frequent_toilet_check: val,
+      patient_relative_educated: val,
+      non_slip_footwear: val
+    });
+  };
+
+  // Save Fall Risk Review
+  const handleSaveFallReview = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!fallReviewerName.trim()) {
+      alert('يرجى كتابة اسم الممرض القائم بالمراجعة');
+      return;
+    }
+    setSavingFallReview(true);
+    setErrorMsg(null);
+    try {
+      const newReview: DialysisFallRiskReview = {
+        session_id: session.id,
+        patient_id: session.patient_id,
+        review_stage: currentFallStage,
+        review_time: new Date().toISOString(),
+        reviewer_name: fallReviewerName.trim(),
+        risk_level: fallRiskLevel,
+        risk_score: fallRiskLevel === 'HIGH' ? 3 : fallRiskLevel === 'MEDIUM' ? 2 : 1,
+        card_placed: fallPrecautions.card_placed,
+        bed_low_brakes_locked: fallPrecautions.bed_low_brakes_locked,
+        side_rails_raised: fallPrecautions.side_rails_raised,
+        call_bell_within_reach: fallPrecautions.call_bell_within_reach,
+        safe_environment_clear: fallPrecautions.safe_environment_clear,
+        assisted_ambulation_only: fallPrecautions.assisted_ambulation_only,
+        frequent_toilet_check: fallPrecautions.frequent_toilet_check,
+        patient_relative_educated: fallPrecautions.patient_relative_educated,
+        non_slip_footwear: fallPrecautions.non_slip_footwear,
+        clinical_notes: fallClinicalNotes.trim() || undefined
+      };
+
+      await DB.saveDialysisFallRiskReview(newReview);
+      const updated = await DB.getDialysisFallRiskReviews(session.id);
+      setFallReviews(updated);
+
+      // Also sync precautions into main assessment state
+      setAssessment(prev => ({
+        ...prev,
+        fall_risk_measures: {
+          card_placed: fallPrecautions.card_placed,
+          bed_low_brakes_locked: fallPrecautions.bed_low_brakes_locked,
+          safe_environment: fallPrecautions.safe_environment_clear,
+          frequent_toilet_check: fallPrecautions.frequent_toilet_check,
+          staff_assist_walking: fallPrecautions.assisted_ambulation_only,
+          patient_education: fallPrecautions.patient_relative_educated
+        }
+      }));
+
+      setFallClinicalNotes('');
+      showNotification('تم توثيق مراجعة وقاية السقوط بنجاح في السجل الطبي');
+      if (onUpdate) onUpdate();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'فشل حفظ مراجعة وقاية السقوط');
+    } finally {
+      setSavingFallReview(false);
+    }
+  };
+
+  const handleDeleteFallReview = async (id: string) => {
+    if (!confirm('هل أنت متأكد من حذف هذا التوثيق للمراجعة؟')) return;
+    try {
+      await DB.deleteDialysisFallRiskReview(id);
+      setFallReviews(prev => prev.filter(r => r.id !== id));
+      showNotification('تم حذف توثيق المراجعة');
+      if (onUpdate) onUpdate();
+    } catch (err: any) {
+      setErrorMsg(err.message || 'فشل الحذف');
+    }
   };
 
   // 1. Save Main Assessment
@@ -351,6 +548,16 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
         patient_id: session.patient_id
       });
       setAssessment(saved);
+
+      // Also sync disconnection_time to session if set in access_review
+      if (assessment.access_review?.disconnection_time) {
+        try {
+          await DB.recordDisconnectionTime(session.id, assessment.access_review.disconnection_time);
+        } catch (syncErr) {
+          console.warn("Could not sync session disconnection_time:", syncErr);
+        }
+      }
+
       showNotification('تم حفظ التقييم التمريضي الرئيسي للجلسة بنجاح');
       if (onUpdate) onUpdate();
     } catch (err: any) {
@@ -388,16 +595,18 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
     }
     setSaving(true);
     try {
+      const parsedRemovalIso = removalDateTime ? new Date(removalDateTime).toISOString() : new Date().toISOString();
       await DB.updateDialysisAccessLine(lineId, {
         status: 'removed',
-        removal_datetime: new Date().toISOString(),
+        removal_datetime: parsedRemovalIso,
         removal_or_change_reason: removalReason
       });
       const updated = await DB.getDialysisAccessLines(session.patient_id);
       setAccessLines(updated);
       setRemovingLineId(null);
       setRemovalReason('');
-      showNotification('تم تحديث حالة الوصلة إلى (مفكوكة / مستبدلة)');
+      setRemovalDateTime('');
+      showNotification('تم تحديث حالة الوصلة إلى (مفكوكة / مستبدلة) مع توثيق وقت الفك');
     } catch (err: any) {
       setErrorMsg(err.message || 'فشل تحديث حالة الوصلة');
     } finally {
@@ -716,7 +925,27 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
-            <FileText size={16} /> 1. التقييم التمريضي الأساسي
+            <FileText size={16} /> 1. التقييم الأساسي وفك الوصلة
+          </button>
+          <button
+            onClick={() => setActiveTab('fall_risk')}
+            className={`px-5 py-3.5 rounded-t-2xl font-black text-xs sm:text-sm flex items-center gap-2 transition-all border-t-2 border-x-2 ${
+              activeTab === 'fall_risk'
+                ? 'bg-slate-50 border-amber-500 text-amber-900 shadow-sm border-b-2 border-b-slate-50 -mb-[2px] z-10'
+                : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+            }`}
+          >
+            <AlertTriangle size={16} className={isFallReviewOverdue ? "text-rose-600 animate-bounce" : "text-amber-500"} />
+            <span>2. مراجعة وقاية السقوط ({fallReviews.length})</span>
+            {isFallReviewOverdue ? (
+              <span className="bg-rose-600 text-white text-[10px] px-2 py-0.5 rounded-full font-black animate-pulse shadow-sm">
+                مطلوب مراجعة!
+              </span>
+            ) : fallReviews.length > 0 ? (
+              <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-black">
+                موثقة
+              </span>
+            ) : null}
           </button>
           <button
             onClick={() => setActiveTab('lines')}
@@ -726,7 +955,7 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
-            <Activity size={16} /> 2. الوصلات والقساطر ({accessLines.length})
+            <Activity size={16} /> 3. الوصلات والقساطر ({accessLines.length})
           </button>
           <button
             onClick={() => setActiveTab('notes_plan')}
@@ -736,7 +965,7 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
-            <Sparkles size={16} /> 3. الملاحظات وخطة الرعاية
+            <Sparkles size={16} /> 4. الملاحظات وخطة الرعاية
           </button>
           <button
             onClick={() => setActiveTab('ews')}
@@ -746,7 +975,7 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
-            <HeartPulse size={16} /> 4. العلامات الحيوية والإنذار المبكر (EWS)
+            <HeartPulse size={16} /> 5. العلامات الحيوية والإنذار المبكر (EWS)
           </button>
           <button
             onClick={() => setActiveTab('pain_glucose_med')}
@@ -756,7 +985,7 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
-            <ShieldAlert size={16} /> 5. الألم والسكر والمرور الطبي
+            <ShieldAlert size={16} /> 6. الألم والسكر والمرور الطبي
           </button>
           <button
             onClick={() => setActiveTab('medication')}
@@ -766,7 +995,7 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
-            <Pill size={16} /> 6. سجل الأدوية (MAR)
+            <Pill size={16} /> 7. سجل الأدوية (MAR)
           </button>
           <button
             onClick={() => setActiveTab('education')}
@@ -776,7 +1005,7 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                 : 'border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50'
             }`}
           >
-            <GraduationCap size={16} /> 7. التثقيف الصحي
+            <GraduationCap size={16} /> 8. التثقيف الصحي
           </button>
         </div>
 
@@ -945,19 +1174,87 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
 
                     {/* Fall Risk Prevention Measures */}
                     <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-                      <h3 className="text-base font-black text-teal-900 flex items-center gap-2 border-b pb-3">
-                        <AlertTriangle className="text-amber-600" size={20} /> إجراءات الوقاية من خطر السقوط
-                      </h3>
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div className="flex items-center gap-2">
+                          <AlertTriangle className="text-amber-600" size={20} />
+                          <div>
+                            <h3 className="text-base font-black text-teal-900">إجراءات الوقاية من خطر السقوط</h3>
+                            <p className="text-[11px] text-slate-500 font-bold">معايير السلامة الإلزامية للمريض قبل وأثناء وبعد الجلسة</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('fall_risk')}
+                          className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all shadow-sm"
+                        >
+                          <ShieldAlert size={14} className="text-amber-600" />
+                          <span>المراجعة الدورية للسقوط ({fallReviews.length})</span>
+                          {isFallReviewOverdue && (
+                            <span className="w-2 h-2 rounded-full bg-rose-600 animate-ping"></span>
+                          )}
+                        </button>
+                      </div>
+
+                      {/* Status summary banner */}
+                      {isFallReviewOverdue ? (
+                        <div className="p-3 bg-rose-50 border border-rose-200 rounded-2xl flex items-center justify-between text-xs text-rose-900 font-bold">
+                          <span className="flex items-center gap-2">
+                            <AlertCircle size={16} className="text-rose-600 animate-pulse shrink-0" />
+                            تنبيه: مراجعة الساعتين أو الـ 4 ساعات مستحقة الآن لحماية المريض!
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setActiveTab('fall_risk')}
+                            className="text-rose-700 underline hover:text-rose-900 font-black text-xs"
+                          >
+                            توثيق الآن ←
+                          </button>
+                        </div>
+                      ) : fallReviews.length > 0 ? (
+                        <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center justify-between text-xs text-emerald-900 font-bold">
+                          <span className="flex items-center gap-2">
+                            <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                            تم توثيق {fallReviews.length} مراجعة وقاية سقوط لهذه الجلسة بنجاح
+                          </span>
+                          <span className="text-[11px] text-emerald-700 font-bold">
+                            آخر مراجعة: {fallReviews[fallReviews.length - 1].reviewer_name}
+                          </span>
+                        </div>
+                      ) : null}
+
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-500 pt-1">
+                        <span>قائمة التحقق من التدابير الوقائية الأساسية:</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAssessment(prev => ({
+                              ...prev,
+                              fall_risk_measures: {
+                                card_placed: true,
+                                bed_low_brakes_locked: true,
+                                safe_environment: true,
+                                frequent_toilet_check: true,
+                                staff_assist_walking: true,
+                                patient_education: true
+                              }
+                            }));
+                          }}
+                          className="text-teal-700 hover:text-teal-900 font-black underline text-[11px]"
+                        >
+                          تحديد كافة التدابير الـ 6
+                        </button>
+                      </div>
+
                       <div className="space-y-2">
                         {[
-                          { key: 'card_placed', label: 'وضع بطاقة تعريف خطر السقوط' },
-                          { key: 'bed_low_brakes_locked', label: 'خفض السرير وتأمين الفرامل' },
-                          { key: 'safe_environment', label: 'توفير بيئة آمنة وخالية من العوائق' },
+                          { key: 'card_placed', label: 'وضع بطاقة تعريف خطر السقوط بجانب المريض' },
+                          { key: 'bed_low_brakes_locked', label: 'خفض السرير لأدنى مستوى وتأمين الفرامل' },
+                          { key: 'safe_environment', label: 'توفير بيئة آمنة وخالية من العوائق والأسلاك' },
                           { key: 'frequent_toilet_check', label: 'المتابعة الدورية للذهاب لدورة المياه' },
-                          { key: 'staff_assist_walking', label: 'مساعدة طاقم التمريض عند الحركة' },
-                          { key: 'patient_education', label: 'تثقيف وتوعية المريض والمرافق' },
+                          { key: 'staff_assist_walking', label: 'مساعدة طاقم التمريض عند الوقوف والحركة' },
+                          { key: 'patient_education', label: 'تثقيف وتوعية المريض والمرافق بمخاطر السقوط' },
                         ].map(measure => (
-                          <label key={measure.key} className="flex items-center gap-2 p-2 bg-slate-50 rounded-xl hover:bg-teal-50/50 cursor-pointer transition-colors text-xs font-bold text-slate-700">
+                          <label key={measure.key} className="flex items-center gap-2 p-2.5 bg-slate-50 rounded-xl hover:bg-teal-50/50 cursor-pointer transition-colors text-xs font-bold text-slate-700 border border-slate-100">
                             <input 
                               type="checkbox" 
                               className="w-4 h-4 rounded accent-teal-600"
@@ -981,9 +1278,16 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* Access Site Review */}
                     <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-                      <h3 className="text-base font-black text-teal-900 flex items-center gap-2 border-b pb-3">
-                        <Activity className="text-teal-600" size={20} /> فحص وصلة الغسيل (Vascular Access)
-                      </h3>
+                      <div className="flex items-center justify-between border-b pb-3">
+                        <div className="flex items-center gap-2">
+                          <Activity className="text-teal-600" size={20} />
+                          <div>
+                            <h3 className="text-base font-black text-teal-900">فحص وصلة الغسيل وفكها (Vascular Access)</h3>
+                            <p className="text-[11px] text-slate-500 font-bold">متابعة كفاءة الوصلة وتوثيق مواعيد التوصيل وفك الوصلة</p>
+                          </div>
+                        </div>
+                      </div>
+
                       <div className="space-y-3 text-xs">
                         <div className="grid grid-cols-2 gap-2">
                           <div>
@@ -1027,6 +1331,120 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                               access_review: { ...assessment.access_review, pulse_check_result: e.target.value }
                             })}
                           />
+                        </div>
+
+                        {/* Dedicated Connection & Disconnection Times Card */}
+                        <div className="bg-gradient-to-br from-blue-50/80 via-slate-50 to-indigo-50/60 p-4 rounded-2xl border-2 border-blue-200/80 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="font-black text-blue-950 text-xs flex items-center gap-1.5">
+                              <Scissors size={14} className="text-blue-600" />
+                              توثيق أوقات الوصلة وفكها (Connection & Disconnection)
+                            </span>
+                            {connectionDurationFormatted && (
+                              <span className="bg-blue-100 text-blue-900 border border-blue-200 px-2.5 py-0.5 rounded-full text-[11px] font-black">
+                                مدة التوصيل: {connectionDurationFormatted}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="font-bold text-slate-600 flex items-center gap-1 mb-1">
+                                <Clock size={12} className="text-teal-600" />
+                                وقت توصيل الوصلة
+                              </label>
+                              <input 
+                                type="time"
+                                className="w-full border p-2.5 rounded-xl bg-white font-bold font-mono text-slate-800"
+                                value={assessment.access_review?.connection_time || session.start_time || ''}
+                                onChange={(e) => setAssessment({
+                                  ...assessment,
+                                  access_review: { ...assessment.access_review, connection_time: e.target.value }
+                                })}
+                              />
+                            </div>
+                            <div>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="font-bold text-blue-900 flex items-center gap-1">
+                                  <Clock size={12} className="text-blue-600" />
+                                  وقت فك الوصلة
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const now = new Date().toTimeString().slice(0, 5);
+                                    setAssessment({
+                                      ...assessment,
+                                      access_review: { ...assessment.access_review, disconnection_time: now }
+                                    });
+                                  }}
+                                  className="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-[10px] font-black transition-all shadow-sm"
+                                >
+                                  الآن
+                                </button>
+                              </div>
+                              <input 
+                                type="time"
+                                className="w-full border-2 p-2.5 rounded-xl bg-white font-bold font-mono text-blue-950 border-blue-300 focus:border-blue-600 outline-none"
+                                value={assessment.access_review?.disconnection_time || session.disconnection_time || ''}
+                                onChange={(e) => setAssessment({
+                                  ...assessment,
+                                  access_review: { ...assessment.access_review, disconnection_time: e.target.value }
+                                })}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-[11px] text-slate-500 font-medium">
+                              {session.disconnection_time ? (
+                                <span className="text-emerald-700 font-bold flex items-center gap-1">
+                                  <Check size={13} /> موثق مسبقاً بالجلسة ({session.disconnection_time})
+                                </span>
+                              ) : (
+                                'يمكنك حفظ وقت فك الوصلة مباشرة بالجلسة دون انتظار حفظ النموذج كاملاً'
+                              )}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={handleQuickSyncDisconnectionTime}
+                              disabled={savingDisconnection}
+                              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-50"
+                            >
+                              {savingDisconnection ? <RefreshCw className="animate-spin" size={12} /> : <CheckCircle2 size={12} />}
+                              تثبيت ومزامنة وقت الفك بالجلسة
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="font-bold text-slate-500">مدة الضغط لوقف النزيف (دقائق)</label>
+                            <input 
+                              type="number"
+                              min="0"
+                              max="120"
+                              className="w-full border p-2.5 rounded-xl bg-slate-50 font-bold"
+                              placeholder="مثلاً: 15"
+                              value={assessment.access_review?.hemostasis_time_minutes ?? ''}
+                              onChange={(e) => setAssessment({
+                                ...assessment,
+                                access_review: { ...assessment.access_review, hemostasis_time_minutes: e.target.value ? parseInt(e.target.value) : undefined }
+                              })}
+                            />
+                          </div>
+                          <div>
+                            <label className="font-bold text-slate-500">حالة موضع الوصلة بعد الفك</label>
+                            <input 
+                              className="w-full border p-2.5 rounded-xl bg-slate-50 font-bold"
+                              placeholder="توقف النزيف، ضمادة معقمة، سليم.."
+                              value={assessment.access_review?.access_condition_after_removal || ''}
+                              onChange={(e) => setAssessment({
+                                ...assessment,
+                                access_review: { ...assessment.access_review, access_condition_after_removal: e.target.value }
+                              })}
+                            />
+                          </div>
                         </div>
 
                         <label className="flex items-center gap-2 font-bold cursor-pointer pt-1">
@@ -1262,6 +1680,423 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
               )}
 
               {/* ========================================================================= */}
+              {/* TAB 2: Periodic Fall Risk Review (Accredited Protocol)                   */}
+              {/* ========================================================================= */}
+              {activeTab === 'fall_risk' && (
+                <div className="space-y-6 animate-in fade-in">
+                  
+                  {/* Top Status & Timing Banner */}
+                  <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-teal-500/10 p-6 rounded-3xl border border-amber-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <AlertTriangle className="text-amber-600" size={24} />
+                        <h3 className="text-xl font-black text-amber-950">بروتوكول المراجعة الدورية لوقاية السقوط</h3>
+                        <span className="bg-amber-100 text-amber-900 border border-amber-300 px-3 py-0.5 rounded-full text-xs font-bold">
+                          المعيار الدولي لجودة وأمان المرضى
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-600 font-bold mt-1">
+                        مراجعة إلزامية وتوثيق دوري بعد ساعتين (منتصف الجلسة) وبعد 4 ساعات (نهاية الجلسة وقبل مغادرة السرير)
+                      </p>
+                    </div>
+
+                    <div className="bg-white px-4 py-2.5 rounded-2xl border border-amber-200 shadow-sm flex items-center gap-3">
+                      <Clock className="text-amber-600 shrink-0" size={20} />
+                      <div className="text-xs">
+                        <span className="text-slate-500 font-bold block">الوقت المنقضي من الجلسة:</span>
+                        <span className="font-mono font-black text-slate-900 text-sm">
+                          {Math.floor(elapsedMinutes / 60)} ساعة و {elapsedMinutes % 60} دقيقة ({elapsedMinutes} دقيقة)
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Milestones Status Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* 2-Hour Milestone Card */}
+                    <div className={`p-5 rounded-3xl border-2 transition-all ${
+                      has2HReview 
+                        ? 'bg-emerald-50/70 border-emerald-300' 
+                        : is2HDue 
+                        ? 'bg-rose-50/80 border-rose-400 shadow-md shadow-rose-200/50' 
+                        : 'bg-white border-slate-200'
+                    }`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                          <Footprints size={16} className={has2HReview ? "text-emerald-600" : is2HDue ? "text-rose-600" : "text-slate-400"} />
+                          مراجعة الساعتين (2 Hours)
+                        </span>
+                        {has2HReview ? (
+                          <span className="bg-emerald-600 text-white text-[10px] px-2.5 py-0.5 rounded-full font-black flex items-center gap-1">
+                            <CheckCircle2 size={11} /> مكتملة
+                          </span>
+                        ) : is2HDue ? (
+                          <span className="bg-rose-600 text-white text-[10px] px-2.5 py-0.5 rounded-full font-black animate-pulse flex items-center gap-1">
+                            <AlertCircle size={11} /> مستحقة الآن!
+                          </span>
+                        ) : (
+                          <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            متبقي {Math.max(0, 120 - elapsedMinutes)} دقيقة
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                        تقييم منتصف الجلسة لتأكيد ثبات المريض، سلامة الحواجز، وتأمين فرامل السرير والجرس.
+                      </p>
+                      {is2HDue && !has2HReview && (
+                        <button
+                          type="button"
+                          onClick={() => setCurrentFallStage('2_HOURS')}
+                          className="mt-3 w-full py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                        >
+                          اختيار هذه المرحلة للتوثيق ←
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 4-Hour Milestone Card */}
+                    <div className={`p-5 rounded-3xl border-2 transition-all ${
+                      has4HReview 
+                        ? 'bg-emerald-50/70 border-emerald-300' 
+                        : is4HDue 
+                        ? 'bg-rose-50/80 border-rose-400 shadow-md shadow-rose-200/50' 
+                        : 'bg-white border-slate-200'
+                    }`}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                          <BedDouble size={16} className={has4HReview ? "text-emerald-600" : is4HDue ? "text-rose-600" : "text-slate-400"} />
+                          مراجعة 4 ساعات (قبل الوقوف)
+                        </span>
+                        {has4HReview ? (
+                          <span className="bg-emerald-600 text-white text-[10px] px-2.5 py-0.5 rounded-full font-black flex items-center gap-1">
+                            <CheckCircle2 size={11} /> مكتملة
+                          </span>
+                        ) : is4HDue ? (
+                          <span className="bg-rose-600 text-white text-[10px] px-2.5 py-0.5 rounded-full font-black animate-pulse flex items-center gap-1">
+                            <AlertCircle size={11} /> مستحقة الآن!
+                          </span>
+                        ) : (
+                          <span className="bg-slate-100 text-slate-600 text-[10px] px-2 py-0.5 rounded-full font-bold">
+                            متبقي {Math.max(0, 240 - elapsedMinutes)} دقيقة
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                        تقييم نهاية الجلسة قبل فك الوصلة أو السماح للمريض بالوقوف لتجنب هبوط الضغط والدوخة.
+                      </p>
+                      {is4HDue && !has4HReview && (
+                        <button
+                          type="button"
+                          onClick={() => setCurrentFallStage('4_HOURS')}
+                          className="mt-3 w-full py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-black text-xs transition-all shadow-sm flex items-center justify-center gap-1"
+                        >
+                          اختيار هذه المرحلة للتوثيق ←
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Extra / Summary Card */}
+                    <div className="p-5 rounded-3xl border-2 border-slate-200 bg-white">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-black text-slate-700 flex items-center gap-1.5">
+                          <History size={16} className="text-teal-600" />
+                          إجمالي المراجعات الموثقة
+                        </span>
+                        <span className="bg-teal-100 text-teal-900 text-xs px-2.5 py-0.5 rounded-full font-black">
+                          {fallReviews.length} مراجعة
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                        يمكن تسجيل مراجعات إضافية في أي وقت عند حدوث تغير بحالة المريض أو عند الانتقال.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setCurrentFallStage('EXTRA')}
+                        className="mt-3 w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1"
+                      >
+                        توثيق مراجعة إضافية / طارئة
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Fall Risk Form */}
+                  <div className="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b pb-4">
+                      <div>
+                        <h4 className="text-base font-black text-slate-900 flex items-center gap-2">
+                          <ShieldAlert className="text-amber-600" size={20} />
+                          تسجيل مراجعة جديدة لوقاية السقوط
+                        </h4>
+                        <p className="text-xs text-slate-500 font-bold mt-0.5">
+                          تحقق من تطبيق التدابير الوقائية الـ 9 واعتمد المراجعة بالسجل الطبي
+                        </p>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAllFallPrecautions(true)}
+                          className="px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-800 border border-teal-200 rounded-xl text-xs font-black transition-all"
+                        >
+                          تحديد كافة التدابير الـ 9
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAllFallPrecautions(false)}
+                          className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+                        >
+                          إلغاء التحديد
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Stage & Risk Level Selection */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Review Stage */}
+                      <div>
+                        <label className="block text-xs font-black text-slate-700 mb-2">مرحلة المراجعة</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { value: '2_HOURS', label: 'بعد ساعتين', sub: 'منتصف الجلسة' },
+                            { value: '4_HOURS', label: 'بعد 4 ساعات', sub: 'نهاية الجلسة' },
+                            { value: 'EXTRA', label: 'إضافية', sub: 'عند اللزوم' }
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setCurrentFallStage(opt.value as any)}
+                              className={`p-3 rounded-2xl border-2 text-center transition-all ${
+                                currentFallStage === opt.value
+                                  ? 'border-amber-500 bg-amber-50/80 text-amber-950 font-black shadow-sm'
+                                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold'
+                              }`}
+                            >
+                              <div className="text-xs">{opt.label}</div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{opt.sub}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Risk Level */}
+                      <div>
+                        <label className="block text-xs font-black text-slate-700 mb-2">مستوى خطورة السقوط المقدر</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {[
+                            { value: 'HIGH', label: 'عالي الخطورة', score: 3, bg: 'bg-rose-50 border-rose-400 text-rose-900', active: 'border-rose-600 bg-rose-600 text-white' },
+                            { value: 'MEDIUM', label: 'متوسط الخطورة', score: 2, bg: 'bg-amber-50 border-amber-400 text-amber-900', active: 'border-amber-500 bg-amber-500 text-white' },
+                            { value: 'LOW', label: 'منخفض الخطورة', score: 1, bg: 'bg-emerald-50 border-emerald-400 text-emerald-900', active: 'border-emerald-600 bg-emerald-600 text-white' }
+                          ].map(opt => (
+                            <button
+                              key={opt.value}
+                              type="button"
+                              onClick={() => setFallRiskLevel(opt.value as any)}
+                              className={`p-3 rounded-2xl border-2 text-center transition-all ${
+                                fallRiskLevel === opt.value
+                                  ? opt.active + ' font-black shadow-md'
+                                  : 'border-slate-200 bg-slate-50 text-slate-600 hover:bg-slate-100 font-bold'
+                              }`}
+                            >
+                              <div className="text-xs">{opt.label}</div>
+                              <div className="text-[10px] opacity-80 mt-0.5">درجة: {opt.score}</div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 9 Precautions Checklist */}
+                    <div>
+                      <label className="block text-xs font-black text-slate-700 mb-3">
+                        قائمة تدابير وإجراءات الوقاية الـ 9 المعتمدة:
+                      </label>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {[
+                          { key: 'card_placed', label: 'وضع بطاقة تعريف خطر السقوط بجانب السرير / الكرسي', icon: AlertOctagon },
+                          { key: 'bed_low_brakes_locked', label: 'خفض السرير لأدنى مستوى وتأمين قفل الفرامل', icon: BedDouble },
+                          { key: 'side_rails_raised', label: 'رفع الحواجز الجانبية للسرير / الكرسي طوال الجلسة', icon: ShieldAlert },
+                          { key: 'call_bell_within_reach', label: 'وضع جرس الاستدعاء في متناول يد المريض مباشرة', icon: BellRing },
+                          { key: 'safe_environment_clear', label: 'توفير بيئة آمنة وخالية من العوائق والأسلاك والأرضيات المبتلة', icon: Sparkles },
+                          { key: 'assisted_ambulation_only', label: 'المساعدة التمريضية الإلزامية عند النهوض أو المشي', icon: Footprints },
+                          { key: 'frequent_toilet_check', label: 'المتابعة الدورية للذهاب لدورة المياه وتفريغ المثانة', icon: Clock },
+                          { key: 'patient_relative_educated', label: 'توعية وتثقيف المريض والمرافق بمخاطر السقوط والدوخة', icon: GraduationCap },
+                          { key: 'non_slip_footwear', label: 'التأكد من ارتداء أحذية مانعة للانزلاق قبل النزول من السرير', icon: UserCheck }
+                        ].map(item => {
+                          const IconComp = item.icon;
+                          const isChecked = !!(fallPrecautions as any)[item.key];
+                          return (
+                            <label
+                              key={item.key}
+                              className={`p-3.5 rounded-2xl border-2 flex items-start gap-3 cursor-pointer transition-all ${
+                                isChecked
+                                  ? 'bg-amber-50/60 border-amber-300 text-amber-950 font-bold shadow-xs'
+                                  : 'bg-slate-50 border-slate-200 text-slate-500 hover:bg-slate-100 font-medium'
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded accent-amber-600 mt-0.5 shrink-0"
+                                checked={isChecked}
+                                onChange={(e) => setFallPrecautions({
+                                  ...fallPrecautions,
+                                  [item.key]: e.target.checked
+                                })}
+                              />
+                              <div className="flex-1 text-xs leading-snug">
+                                <span className="flex items-center gap-1.5 mb-1 font-black text-slate-800">
+                                  <IconComp size={14} className={isChecked ? "text-amber-600" : "text-slate-400"} />
+                                </span>
+                                {item.label}
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Reviewer Name and Notes */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2 border-t">
+                      <div>
+                        <label className="block text-xs font-black text-slate-700 mb-1">اسم الممرض القائم بالمراجعة *</label>
+                        <input
+                          type="text"
+                          required
+                          value={fallReviewerName}
+                          onChange={(e) => setFallReviewerName(e.target.value)}
+                          placeholder="اسم الممرض / الممرضة.."
+                          className="w-full border p-2.5 rounded-2xl bg-slate-50 font-bold text-xs text-slate-800 outline-none focus:border-amber-500"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-black text-slate-700 mb-1">ملاحظات سريرية إضافية (اختياري)</label>
+                        <input
+                          type="text"
+                          value={fallClinicalNotes}
+                          onChange={(e) => setFallClinicalNotes(e.target.value)}
+                          placeholder="استقرار العلامات، عدم وجود دوخة، تنبيه المرافق.."
+                          className="w-full border p-2.5 rounded-2xl bg-slate-50 font-bold text-xs text-slate-800 outline-none focus:border-amber-500"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Save Button */}
+                    <div className="flex justify-end pt-2">
+                      <button
+                        type="button"
+                        onClick={handleSaveFallReview}
+                        disabled={savingFallReview}
+                        className="px-8 py-3.5 bg-amber-600 hover:bg-amber-700 text-white rounded-2xl font-black text-sm shadow-lg shadow-amber-900/20 transition-all flex items-center gap-2 disabled:opacity-50"
+                      >
+                        {savingFallReview ? <RefreshCw className="animate-spin" size={18} /> : <CheckCircle2 size={18} />}
+                        حفظ واعتماد مراجعة وقاية السقوط بالسجل الطبي
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Previous Reviews Log Table */}
+                  <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+                    <h4 className="text-sm font-black text-slate-800 flex items-center gap-2 border-b pb-3">
+                      <History size={16} className="text-teal-600" />
+                      سجل مراجعات وقاية السقوط الموثقة لهذه الجلسة ({fallReviews.length})
+                    </h4>
+
+                    {fallReviews.length === 0 ? (
+                      <div className="text-center py-8 text-slate-400 font-bold text-xs space-y-1">
+                        <AlertTriangle className="mx-auto text-slate-300" size={32} />
+                        <p>لم يتم تسجيل أي مراجعة دورية لوقاية السقوط لهذه الجلسة حتى الآن.</p>
+                        <p className="text-[11px] text-slate-400">يرجى تسجيل مراجعة الساعتين بعد ساعتين من بدء الجلسة لضمان أمان المريض.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-right border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50 text-slate-500 font-black border-b">
+                              <th className="p-3">مرحلة المراجعة</th>
+                              <th className="p-3">الوقت والتاريخ</th>
+                              <th className="p-3">الممرض القائم بالمراجعة</th>
+                              <th className="p-3">مستوى الخطورة</th>
+                              <th className="p-3">التدابير المطبقة</th>
+                              <th className="p-3">ملاحظات</th>
+                              <th className="p-3 text-center">إجراءات</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                            {fallReviews.map(review => {
+                              const appliedCount = [
+                                review.card_placed,
+                                review.bed_low_brakes_locked,
+                                review.side_rails_raised,
+                                review.call_bell_within_reach,
+                                review.safe_environment_clear,
+                                review.assisted_ambulation_only,
+                                review.frequent_toilet_check,
+                                review.patient_relative_educated,
+                                review.non_slip_footwear
+                              ].filter(Boolean).length;
+
+                              const stageLabel = review.review_stage === '2_HOURS' 
+                                ? 'مراجعة الساعتين (منتصف الجلسة)' 
+                                : review.review_stage === '4_HOURS' 
+                                ? 'مراجعة 4 ساعات (نهاية الجلسة)' 
+                                : 'مراجعة إضافية';
+
+                              return (
+                                <tr key={review.id} className="hover:bg-amber-50/30 transition-colors">
+                                  <td className="p-3 font-black text-slate-900">
+                                    <span className="bg-slate-100 px-2.5 py-1 rounded-xl">
+                                      {stageLabel}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 font-mono text-slate-600">
+                                    {review.review_time ? new Date(review.review_time).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' }) : '-'}
+                                  </td>
+                                  <td className="p-3 text-teal-800 font-black">
+                                    {review.reviewer_name}
+                                  </td>
+                                  <td className="p-3">
+                                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                      review.risk_level === 'HIGH' 
+                                        ? 'bg-rose-100 text-rose-800' 
+                                        : review.risk_level === 'MEDIUM' 
+                                        ? 'bg-amber-100 text-amber-800' 
+                                        : 'bg-emerald-100 text-emerald-800'
+                                    }`}>
+                                      {review.risk_level === 'HIGH' ? 'عالي الخطورة (3)' : review.risk_level === 'MEDIUM' ? 'متوسط الخطورة (2)' : 'منخفض الخطورة (1)'}
+                                    </span>
+                                  </td>
+                                  <td className="p-3">
+                                    <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-lg text-[11px] font-black">
+                                      {appliedCount} من 9 تدابير
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-slate-500 font-medium">
+                                    {review.clinical_notes || '-'}
+                                  </td>
+                                  <td className="p-3 text-center">
+                                    {review.id && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteFallReview(review.id!)}
+                                        className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-all"
+                                        title="حذف المراجعة"
+                                      >
+                                        <Trash2 size={14} />
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              )}
+
+              {/* ========================================================================= */}
               {/* TAB 2: Vascular & Access Lines (Cumulative) */}
               {/* ========================================================================= */}
               {activeTab === 'lines' && (
@@ -1397,15 +2232,25 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                               {line.status === 'active' ? (
                                 <button
                                   type="button"
-                                  onClick={() => setRemovingLineId(line.id || null)}
+                                  onClick={() => {
+                                    setRemovingLineId(line.id || null);
+                                    setRemovalDateTime(new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16));
+                                  }}
                                   className="px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl font-black text-[11px] border border-rose-200"
                                 >
                                   فك / تغيير الوصلة
                                 </button>
                               ) : (
-                                <span className="text-[10px] text-slate-400 font-bold block max-w-xs truncate">
-                                  السبب: {line.removal_or_change_reason || 'غير محدد'}
-                                </span>
+                                <div className="space-y-0.5 text-right">
+                                  {line.removal_datetime && (
+                                    <div className="text-[10px] text-rose-700 font-mono font-bold">
+                                      وقت الفك: {new Date(line.removal_datetime).toLocaleDateString('ar-EG')} {new Date(line.removal_datetime).toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })}
+                                    </div>
+                                  )}
+                                  <span className="text-[10px] text-slate-400 font-bold block max-w-xs truncate">
+                                    السبب: {line.removal_or_change_reason || 'غير محدد'}
+                                  </span>
+                                </div>
                               )}
                             </td>
                           </tr>
@@ -1425,19 +2270,38 @@ const DialysisNursingAssessmentModal: React.FC<Props> = ({ session, onClose, onU
                   {removingLineId && (
                     <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
                       <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border space-y-4">
-                        <h4 className="font-black text-slate-800 text-base">تأكيد فك أو استبدال الوصلة</h4>
-                        <p className="text-xs text-slate-500 font-bold">يرجى تسجيل سبب إزالة الوصلة أو استبدالها لحفظ التاريخ الطبي بدقة:</p>
-                        <textarea
-                          required
-                          placeholder="مثلاً: انسداد، التهاب، انتهاء مدة الاستخدام، تركيب فيسولا جديدة.."
-                          className="w-full border rounded-2xl p-3 bg-slate-50 font-bold text-xs h-24 outline-none focus:border-rose-500"
-                          value={removalReason}
-                          onChange={(e) => setRemovalReason(e.target.value)}
-                        />
-                        <div className="flex justify-end gap-2">
+                        <h4 className="font-black text-slate-800 text-base flex items-center gap-2">
+                          <Clock size={18} className="text-rose-600" />
+                          تأكيد فك أو استبدال الوصلة
+                        </h4>
+                        <p className="text-xs text-slate-500 font-bold">يرجى تسجيل وقت وتاريخ فك الوصلة وسبب الإزالة أو الاستبدال لحفظ التاريخ الطبي بدقة:</p>
+                        
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">وقت وتاريخ فك الوصلة</label>
+                          <input
+                            type="datetime-local"
+                            required
+                            className="w-full border rounded-2xl p-3 bg-slate-50 font-bold text-xs outline-none focus:border-rose-500 font-mono"
+                            value={removalDateTime}
+                            onChange={(e) => setRemovalDateTime(e.target.value)}
+                          />
+                        </div>
+
+                        <div>
+                          <label className="text-xs font-bold text-slate-700 block mb-1">سبب الفك أو الاستبدال</label>
+                          <textarea
+                            required
+                            placeholder="مثلاً: انتهاء الجلسة، انسداد، التهاب، انتهاء مدة الاستخدام، تركيب وصلة جديدة.."
+                            className="w-full border rounded-2xl p-3 bg-slate-50 font-bold text-xs h-24 outline-none focus:border-rose-500"
+                            value={removalReason}
+                            onChange={(e) => setRemovalReason(e.target.value)}
+                          />
+                        </div>
+
+                        <div className="flex justify-end gap-2 pt-2">
                           <button 
                             type="button" 
-                            onClick={() => { setRemovingLineId(null); setRemovalReason(''); }}
+                            onClick={() => { setRemovingLineId(null); setRemovalReason(''); setRemovalDateTime(''); }}
                             className="px-4 py-2 text-xs font-bold text-slate-600 bg-slate-100 rounded-xl"
                           >
                             إلغاء

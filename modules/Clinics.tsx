@@ -7,9 +7,12 @@ import {
   Building2, Users, Calendar, Plus, Search, 
   Clock, CheckCircle2, XCircle, MoreVertical, 
   ClipboardList, Stethoscope, Save, UserPlus, Loader2, X, History,
-  FolderOpen, MapPin, Phone, FileText, Info
+  FolderOpen, MapPin, Phone, FileText, Info, Activity, ShieldAlert
 } from 'lucide-react';
 import { ClinicExaminationModal } from '../components/ClinicExaminationModal.tsx';
+import QuickClinicBookingModal from '../components/QuickClinicBookingModal.tsx';
+import PatientClinical360Modal from '../components/PatientClinical360Modal.tsx';
+import { HospitalOperationalEngine, PatientOperationalProfile } from '../services/hospitalOperationalEngine.ts';
 
 const ClinicsModule: React.FC = () => {
   const [activeTab, setActiveTab] = useState<'appointments' | 'doctors' | 'clinics' | 'clinic_history'>('appointments');
@@ -17,6 +20,10 @@ const ClinicsModule: React.FC = () => {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
+  const [familyFiles, setFamilyFiles] = useState<FamilyFile[]>([]);
+  const [problems, setProblems] = useState<any[]>([]);
+  const [physicalExams, setPhysicalExams] = useState<any[]>([]);
+  const [patientFor360, setPatientFor360] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
@@ -32,22 +39,43 @@ const ClinicsModule: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [c, d, a, p] = await Promise.all([
+      const [c, d, a, p, ff, probs, pExams] = await Promise.all([
         DB.getClinics(),
         DB.getDoctors(),
         DB.getClinicAppointments(),
-        DB.getPatients()
+        DB.getPatients(),
+        DB.getFamilyFiles(),
+        DB.getPatientProblems(),
+        DB.getPhysicalExams()
       ]);
       setClinics(c);
       setDoctors(d);
       setAppointments(a);
       setPatients(p);
+      setFamilyFiles(ff || []);
+      setProblems(probs || []);
+      setPhysicalExams(pExams || []);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
+
+  const patientProfilesMap = React.useMemo(() => {
+    const map = new Map<string, PatientOperationalProfile>();
+    patients.forEach(p => {
+      map.set(
+        p.id,
+        HospitalOperationalEngine.buildPatientOperationalProfile(p, {
+          familyFiles,
+          problems: problems.filter(pr => pr.patient_id === p.id),
+          physicalExams: physicalExams.filter(ex => ex.patient_id === p.id)
+        })
+      );
+    });
+    return map;
+  }, [patients, familyFiles, problems, physicalExams]);
 
   const handleAddClinic = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -186,7 +214,9 @@ const ClinicsModule: React.FC = () => {
               <div className="py-20 flex justify-center"><Loader2 className="animate-spin text-primary-600" size={40} /></div>
             ) : activeTab === 'appointments' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredAppointments.map((app: any) => (
+                {filteredAppointments.map((app: any) => {
+                  const prof = patientProfilesMap.get(app.patient_id);
+                  return (
                   <div key={app.id} className="bg-white p-6 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all">
                     <div className="flex justify-between items-start mb-4">
                       <div className="flex items-center gap-3">
@@ -195,7 +225,19 @@ const ClinicsModule: React.FC = () => {
                          </div>
                          <div>
                             <h4 className="font-bold text-gray-800">{app.patients?.name}</h4>
-                            <p className="text-xs text-gray-400">#{app.id.slice(0, 8)}</p>
+                            <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                              <span className="text-xs text-gray-400">#{app.id.slice(0, 8)}</span>
+                              {prof?.familyFile && (
+                                <span className="px-2 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded text-[10px] font-bold font-mono">
+                                  {prof.familyFile.file_code}
+                                </span>
+                              )}
+                              {prof?.hasAllergyAlert && (
+                                <span className="px-2 py-0.5 bg-rose-100 text-rose-800 border border-rose-300 rounded text-[10px] font-black flex items-center gap-1">
+                                  <ShieldAlert size={11} /> حساسية
+                                </span>
+                              )}
+                            </div>
                          </div>
                       </div>
                       <span className={`px-3 py-1 rounded-full text-[10px] font-bold border ${
@@ -220,6 +262,15 @@ const ClinicsModule: React.FC = () => {
                     </div>
 
                     <div className="flex gap-2 pt-4 border-t">
+                       <button
+                         onClick={() => {
+                           const pObj = patients.find(p => p.id === app.patient_id) || app.patients;
+                           if (pObj) setPatientFor360(pObj);
+                         }}
+                         className="px-3 py-2 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer"
+                       >
+                         <Activity size={13} className="text-primary-600" /> بطاقة المريض
+                       </button>
                        {app.status === 'WAITING' && (
                          <button 
                            onClick={() => updateAppointmentStatus(app.id, 'IN_PROGRESS')}
@@ -243,7 +294,7 @@ const ClinicsModule: React.FC = () => {
                        )}
                     </div>
                   </div>
-                ))}
+                )})}
               </div>
             ) : activeTab === 'clinic_history' ? (
               <div className="space-y-4">
@@ -429,47 +480,14 @@ const ClinicsModule: React.FC = () => {
       )}
 
       {showAddAppointment && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl animate-in zoom-in-95">
-             <div className="p-6 border-b flex justify-between items-center">
-                <h3 className="font-bold text-lg">حجز موعد كشف</h3>
-                <button onClick={() => setShowAddAppointment(false)}><X size={20} /></button>
-             </div>
-             <form onSubmit={handleAddAppointment} className="p-8 space-y-4">
-                <div>
-                   <label className="text-xs font-bold text-gray-500">المريض</label>
-                   <select name="patient_id" className="w-full mt-1 border rounded-xl p-3 bg-gray-50">
-                      {patients.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                   </select>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-bold text-gray-500">العيادة</label>
-                    <select name="clinic_id" className="w-full mt-1 border rounded-xl p-3 bg-gray-50">
-                        {clinics.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-gray-500">الطبيب</label>
-                    <select name="doctor_id" className="w-full mt-1 border rounded-xl p-3 bg-gray-50">
-                        {doctors.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="text-xs font-bold text-gray-500">التاريخ</label>
-                    <input name="date" type="date" required className="w-full mt-1 border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500" />
-                  </div>
-                  <div>
-                    <label className="text-xs font-bold text-gray-500">الوقت</label>
-                    <input name="time" type="time" required className="w-full mt-1 border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-primary-500" />
-                  </div>
-                </div>
-                <button type="submit" className="w-full py-4 bg-primary-600 text-white rounded-xl font-bold shadow-lg hover:bg-primary-700 transition-all">تأكيد حجز الموعد</button>
-             </form>
-          </div>
-        </div>
+        <QuickClinicBookingModal
+          isOpen={showAddAppointment}
+          onClose={() => setShowAddAppointment(false)}
+          allPatients={patients}
+          onBookingSuccess={() => {
+            loadData();
+          }}
+        />
       )}
 
       {selectedAppointment && (
@@ -484,6 +502,12 @@ const ClinicsModule: React.FC = () => {
         />
       )}
 
+      <PatientClinical360Modal
+        isOpen={!!patientFor360}
+        onClose={() => setPatientFor360(null)}
+        patient={patientFor360}
+        onDataUpdated={loadData}
+      />
 
     </div>
   );

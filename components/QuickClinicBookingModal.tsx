@@ -1,16 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Patient, Clinic, Doctor, LinkedModuleType, AppointmentTriggerType } from '../types.ts';
 import { DB } from '../store.ts';
 import { 
   X, Calendar, Clock, Stethoscope, AlertCircle, CheckCircle, 
-  Loader2, Sparkles, Building2, Copy, Check, Info, FileText
+  Loader2, Sparkles, Building2, Copy, Check, Info, FileText,
+  User, CheckCircle2, AlertTriangle, ChevronLeft, ChevronRight,
+  Filter, Sun, Moon, Sparkle, RefreshCw, CalendarDays
 } from 'lucide-react';
 import { getClinicRequirements, formatBookingRequirementsText } from '../constants/clinicRequirements.ts';
 
 interface QuickClinicBookingModalProps {
   isOpen: boolean;
   onClose: () => void;
-  patient: Patient;
+  patient?: Patient | null;
+  allPatients?: Patient[];
   suggestedModule?: LinkedModuleType | string;
   initialModule?: LinkedModuleType | string;
   suggestedReason?: string;
@@ -20,10 +23,20 @@ interface QuickClinicBookingModalProps {
   onBookingSuccess?: (appointment: any) => void;
 }
 
+interface TimeSlot {
+  time24: string;      // e.g. "09:20"
+  time12: string;      // e.g. "09:20 ص" or "05:40 م"
+  period: 'morning' | 'evening';
+  isBooked: boolean;
+  bookedPatientName?: string;
+  appointmentStatus?: string;
+}
+
 export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = ({
   isOpen,
   onClose,
-  patient,
+  patient: initialPatient,
+  allPatients = [],
   suggestedModule,
   initialModule,
   suggestedReason,
@@ -49,10 +62,21 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
 
   const [clinics, setClinics] = useState<Clinic[]>([]);
   const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [patientsList, setPatientsList] = useState<Patient[]>(allPatients);
+  const [selectedPatientId, setSelectedPatientId] = useState<string>(initialPatient?.id || '');
+  const [patientSearch, setPatientSearch] = useState('');
+  
   const [selectedClinicId, setSelectedClinicId] = useState('');
   const [selectedDoctorId, setSelectedDoctorId] = useState('');
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [time, setTime] = useState(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+  const [time, setTime] = useState('09:00');
+  const [slotInterval, setSlotInterval] = useState<number>(20); // 15, 20, 30 min
+  const [slotFilter, setSlotFilter] = useState<'available_only' | 'all' | 'morning' | 'evening'>('available_only');
+  const [showCustomTimeInput, setShowCustomTimeInput] = useState(false);
+
+  const [existingAppointments, setExistingAppointments] = useState<any[]>([]);
+  const [loadingAppointments, setLoadingAppointments] = useState(false);
+
   const [notes, setNotes] = useState(activeReason ? `[اقتراح متابعة مستحقة] ${activeReason}` : '');
   const [triggerType, setTriggerType] = useState<AppointmentTriggerType>(defaultTrigger);
   const [loading, setLoading] = useState(true);
@@ -60,56 +84,87 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
   const [success, setSuccess] = useState(false);
   const [copiedReqs, setCopiedReqs] = useState(false);
 
+  // Active patient object
+  const currentPatient = useMemo(() => {
+    if (initialPatient) return initialPatient;
+    return patientsList.find(p => p.id === selectedPatientId) || null;
+  }, [initialPatient, patientsList, selectedPatientId]);
+
   useEffect(() => {
     if (isOpen) {
-      loadClinicsAndDoctors();
+      loadInitialData();
       if (activeReason) {
         setNotes(`[اقتراح متابعة مستحقة] ${activeReason}`);
       }
+      if (initialPatient?.id) {
+        setSelectedPatientId(initialPatient.id);
+      }
     }
-  }, [isOpen, activeModuleRaw, activeReason]);
+  }, [isOpen, activeModuleRaw, activeReason, initialPatient]);
 
-  const loadClinicsAndDoctors = async () => {
+  // Load clinics, doctors, and patients
+  const loadInitialData = async () => {
     setLoading(true);
     try {
-      const [allClinics, allDoctors] = await Promise.all([
+      const [allClinics, allDoctors, allP] = await Promise.all([
         DB.getClinics(),
-        DB.getDoctors()
+        DB.getDoctors(),
+        patientsList.length > 0 ? Promise.resolve(patientsList) : DB.getPatients()
       ]);
       setClinics(allClinics || []);
       setDoctors(allDoctors || []);
+      setPatientsList(allP || []);
 
-      // مطابقة العيادة الأنسب بناءً على normalizedModule
-      let matchedClinic = allClinics.find((c: Clinic) => c.linked_module === normalizedModule);
+      // Auto-match clinic
+      let matchedClinic = (allClinics || []).find((c: Clinic) => c.linked_module === normalizedModule);
       if (!matchedClinic && normalizedModule) {
         if (normalizedModule === 'child_followup') {
-          matchedClinic = allClinics.find((c: Clinic) => c.name.includes('طفل') || c.specialty?.includes('أطفال'));
+          matchedClinic = (allClinics || []).find((c: Clinic) => c.name.includes('طفل') || c.specialty?.includes('أطفال'));
         } else if (normalizedModule === 'maternal_care') {
-          matchedClinic = allClinics.find((c: Clinic) => c.name.includes('أمومة') || c.name.includes('حوامل') || c.name.includes('نساء'));
+          matchedClinic = (allClinics || []).find((c: Clinic) => c.name.includes('أمومة') || c.name.includes('حوامل') || c.name.includes('نساء'));
         } else if (normalizedModule === 'family_planning') {
-          matchedClinic = allClinics.find((c: Clinic) => c.name.includes('تنظيم') || c.specialty?.includes('تنظيم'));
+          matchedClinic = (allClinics || []).find((c: Clinic) => c.name.includes('تنظيم') || c.specialty?.includes('تنظيم'));
         } else if (normalizedModule === 'geriatric_care') {
-          matchedClinic = allClinics.find((c: Clinic) => c.name.includes('مسن') || c.name.includes('كبار'));
+          matchedClinic = (allClinics || []).find((c: Clinic) => c.name.includes('مسن') || c.name.includes('كبار'));
         } else if (normalizedModule === 'dental') {
-          matchedClinic = allClinics.find((c: Clinic) => c.name.includes('أسنان') || c.specialty?.includes('أسنان'));
+          matchedClinic = (allClinics || []).find((c: Clinic) => c.name.includes('أسنان') || c.specialty?.includes('أسنان'));
         } else if (normalizedModule === 'premarital') {
-          matchedClinic = allClinics.find((c: Clinic) => c.name.includes('زواج') || c.name.includes('مقبلين'));
+          matchedClinic = (allClinics || []).find((c: Clinic) => c.name.includes('زواج') || c.name.includes('مقبلين'));
         }
       }
 
       if (matchedClinic) {
         setSelectedClinicId(matchedClinic.id);
-        const matchingDoc = allDoctors.find((d: Doctor) => d.clinic_id === matchedClinic.id);
+        const matchingDoc = (allDoctors || []).find((d: Doctor) => d.clinic_id === matchedClinic.id);
         if (matchingDoc) setSelectedDoctorId(matchingDoc.id);
-      } else if (allClinics.length > 0) {
+      } else if (allClinics && allClinics.length > 0) {
         setSelectedClinicId(allClinics[0].id);
-        const matchingDoc = allDoctors.find((d: Doctor) => d.clinic_id === allClinics[0].id);
+        const matchingDoc = (allDoctors || []).find((d: Doctor) => d.clinic_id === allClinics[0].id);
         if (matchingDoc) setSelectedDoctorId(matchingDoc.id);
       }
     } catch (e) {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Fetch appointments for selected clinic, doctor, and date
+  useEffect(() => {
+    if (isOpen && date && selectedClinicId) {
+      loadAppointmentsForDate();
+    }
+  }, [isOpen, date, selectedClinicId, selectedDoctorId]);
+
+  const loadAppointmentsForDate = async () => {
+    setLoadingAppointments(true);
+    try {
+      const appts = await DB.getClinicAppointments(selectedClinicId, selectedDoctorId || undefined, date);
+      setExistingAppointments(appts || []);
+    } catch (e) {
+      console.error("Error loading clinic appointments for slots:", e);
+    } finally {
+      setLoadingAppointments(false);
     }
   };
 
@@ -125,14 +180,124 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
     ? getClinicRequirements(selectedClinic.linked_module, selectedClinic.name)
     : (normalizedModule ? getClinicRequirements(normalizedModule) : null);
 
+  // Quick date shortcuts
+  const setQuickDate = (offsetDays: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + offsetDays);
+    setDate(d.toISOString().split('T')[0]);
+  };
+
+  // Format 24h string to 12h Arabic
+  const formatTime12 = (time24: string): string => {
+    const [hStr, mStr] = time24.split(':');
+    let h = parseInt(hStr, 10);
+    const m = mStr || '00';
+    const isPm = h >= 12;
+    if (h === 0) h = 12;
+    else if (h > 12) h -= 12;
+    return `${h.toString().padStart(2, '0')}:${m} ${isPm ? 'م' : 'ص'}`;
+  };
+
+  // Format date display (e.g. الأحد، 12 سبتمبر 2026)
+  const formattedDateTitle = useMemo(() => {
+    try {
+      const [year, month, day] = date.split('-').map(Number);
+      const d = new Date(year, month - 1, day);
+      return d.toLocaleDateString('ar-EG', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch {
+      return date;
+    }
+  }, [date]);
+
+  // Generate Slots with Availability
+  const timeSlots = useMemo<TimeSlot[]>(() => {
+    const slots: TimeSlot[] = [];
+
+    const generatePeriodSlots = (startHour: number, startMin: number, endHour: number, endMin: number, period: 'morning' | 'evening') => {
+      let currentMinutes = startHour * 60 + startMin;
+      const endMinutes = endHour * 60 + endMin;
+
+      while (currentMinutes <= endMinutes) {
+        const h = Math.floor(currentMinutes / 60);
+        const m = currentMinutes % 60;
+        const time24 = `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
+        const time12 = formatTime12(time24);
+
+        // Check if there is an existing appointment occupying this slot
+        const matchingApp = existingAppointments.find(app => {
+          if (app.status === 'CANCELLED') return false;
+          if (!app.time) return false;
+          const appTime24 = app.time.trim().slice(0, 5);
+          // Check exact or within interval
+          const [appH, appM] = appTime24.split(':').map(Number);
+          const appMinutes = appH * 60 + appM;
+          return Math.abs(appMinutes - currentMinutes) < slotInterval;
+        });
+
+        slots.push({
+          time24,
+          time12,
+          period,
+          isBooked: !!matchingApp,
+          bookedPatientName: matchingApp ? (matchingApp.patients?.name || 'مريض محجوز') : undefined,
+          appointmentStatus: matchingApp?.status
+        });
+
+        currentMinutes += slotInterval;
+      }
+    };
+
+    // Morning shift: 08:30 to 14:00
+    generatePeriodSlots(8, 30, 13, 50, 'morning');
+
+    // Evening shift: 16:00 to 21:30
+    generatePeriodSlots(16, 0, 21, 20, 'evening');
+
+    return slots;
+  }, [slotInterval, existingAppointments]);
+
+  // Summary counts
+  const availableSlotsCount = useMemo(() => timeSlots.filter(s => !s.isBooked).length, [timeSlots]);
+  const bookedSlotsCount = useMemo(() => timeSlots.filter(s => s.isBooked).length, [timeSlots]);
+
+  // Filtered slots for display
+  const displayedSlots = useMemo(() => {
+    if (slotFilter === 'available_only') {
+      return timeSlots.filter(s => !s.isBooked);
+    }
+    if (slotFilter === 'morning') {
+      return timeSlots.filter(s => s.period === 'morning');
+    }
+    if (slotFilter === 'evening') {
+      return timeSlots.filter(s => s.period === 'evening');
+    }
+    return timeSlots;
+  }, [timeSlots, slotFilter]);
+
+  // Filtered patients for dropdown if patient is not fixed
+  const filteredPatientsList = useMemo(() => {
+    if (!patientSearch.trim()) return patientsList.slice(0, 50);
+    const q = patientSearch.toLowerCase().trim();
+    return patientsList.filter(p => 
+      p.name.toLowerCase().includes(q) || 
+      (p.phone && p.phone.includes(q)) || 
+      (p.national_id && p.national_id.includes(q))
+    ).slice(0, 50);
+  }, [patientsList, patientSearch]);
+
   const handleCopyRequirements = () => {
     if (!clinicReqs || !selectedClinic) return;
     const text = formatBookingRequirementsText({
-      patientName: patient.name,
+      patientName: currentPatient?.name || 'المريض',
       clinicName: selectedClinic.name,
       doctorName: selectedDoctor?.name,
       date,
-      time,
+      time: formatTime12(time),
       room: selectedClinic.room,
       requirements: clinicReqs.requirements,
       preparationNotes: clinicReqs.preparationNotes
@@ -144,15 +309,23 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!currentPatient) {
+      alert('يرجى اختيار المريض أولاً');
+      return;
+    }
     if (!selectedClinicId) {
       alert('يرجى اختيار العيادة');
+      return;
+    }
+    if (!time) {
+      alert('يرجى اختيار موعد أو وقت الكشف');
       return;
     }
 
     setSaving(true);
     try {
       const payload: any = {
-        patient_id: patient.id,
+        patient_id: currentPatient.id,
         clinic_id: selectedClinicId,
         doctor_id: selectedDoctorId || null,
         date,
@@ -186,28 +359,41 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
   const filteredDoctors = doctors.filter(d => !selectedClinicId || d.clinic_id === selectedClinicId);
 
   return (
-    <div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-200 overflow-y-auto" dir="rtl">
-      <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[92vh]">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-5 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300">
-              <Calendar size={20} />
+    <div className="fixed inset-0 z-[120] bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-200 overflow-y-auto" dir="rtl">
+      <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col my-auto max-h-[94vh]">
+        
+        {/* Modal Header */}
+        <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950 text-white p-5 flex items-center justify-between shrink-0 shadow-sm">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-indigo-500/25 border border-indigo-400/40 flex items-center justify-center text-indigo-300 shadow-inner">
+              <CalendarDays size={22} />
             </div>
             <div>
-              <h3 className="font-black text-base">حجز عيادة وموعد كشف</h3>
-              <p className="text-xs text-indigo-200 font-bold">{patient.name} ({patient.national_id || '—'})</p>
+              <div className="flex items-center gap-2">
+                <h3 className="font-black text-base tracking-tight">حجز موعد كشف جديد</h3>
+                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] px-2 py-0.5 rounded-full font-bold border border-emerald-400/30">
+                  عرض المواعيد الفارغة
+                </span>
+              </div>
+              <p className="text-xs text-indigo-200 font-bold mt-0.5">
+                {currentPatient ? (
+                  <span>المريض: {currentPatient.name} {currentPatient.phone ? `(${currentPatient.phone})` : ''}</span>
+                ) : (
+                  <span>اختيار المريض وجدول المواعيد المتاحة</span>
+                )}
+              </p>
             </div>
           </div>
           <button 
             onClick={onClose}
             className="p-2 hover:bg-white/10 rounded-full transition-colors text-slate-300 hover:text-white cursor-pointer"
+            title="إغلاق"
           >
             <X size={20} />
           </button>
         </div>
 
-        {/* Reason / Context Alert */}
+        {/* Suggested Reason Alert */}
         {suggestedReason && (
           <div className="bg-amber-50 border-b border-amber-200 p-3.5 flex items-start gap-2.5 text-xs text-amber-900 shrink-0">
             <Sparkles size={16} className="text-amber-600 shrink-0 mt-0.5" />
@@ -218,45 +404,108 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
           </div>
         )}
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-4 overflow-y-auto flex-1">
+        {/* Form Body */}
+        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1 custom-scrollbar">
           {loading ? (
-            <div className="py-12 flex flex-col items-center justify-center gap-2 text-slate-400">
-              <Loader2 size={32} className="animate-spin text-indigo-600" />
-              <span className="text-xs font-bold">جاري تحميل بيانات العيادات والأطباء...</span>
+            <div className="py-16 flex flex-col items-center justify-center gap-2 text-slate-400">
+              <Loader2 size={36} className="animate-spin text-indigo-600" />
+              <span className="text-xs font-bold">جاري تحميل بيانات العيادات والأطباء والمواعيد المتاحة...</span>
             </div>
           ) : (
             <>
-              {/* اختيار العيادة */}
-              <div>
-                <label className="block text-xs font-black text-slate-700 mb-1.5">
-                  العيادة التخصصية <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <Building2 size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <select
-                    required
-                    value={selectedClinicId}
-                    onChange={e => handleClinicChange(e.target.value)}
-                    className="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black text-slate-800 focus:bg-white focus:border-indigo-600 focus:ring-4 focus:ring-indigo-600/10 outline-none transition-all"
-                  >
-                    <option value="">-- اختر العيادة --</option>
-                    {clinics.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name} {c.room ? `(غرفة: ${c.room})` : ''} {c.linked_module ? `[بروتوكول معتمد]` : ''}
-                      </option>
-                    ))}
-                  </select>
+              {/* Patient Selector if not passed */}
+              {!initialPatient && (
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                  <label className="block text-xs font-black text-slate-700">
+                    اختيار المريض <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      placeholder="بحث بالاسم أو الرقم القومي أو الهاتف..."
+                      value={patientSearch}
+                      onChange={e => setPatientSearch(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold outline-none focus:border-indigo-600"
+                    />
+                    <select
+                      required
+                      value={selectedPatientId}
+                      onChange={e => setSelectedPatientId(e.target.value)}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 outline-none focus:border-indigo-600"
+                    >
+                      <option value="">-- اختر المريض من القائمة ({filteredPatientsList.length}) --</option>
+                      {filteredPatientsList.map(p => (
+                        <option key={p.id} value={p.id}>
+                          {p.name} {p.phone ? `(${p.phone})` : ''} {p.national_id ? `[${p.national_id}]` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  {currentPatient && (
+                    <div className="flex items-center gap-2 text-[11px] text-indigo-800 font-bold pt-1">
+                      <User size={13} className="text-indigo-600" />
+                      <span>المريض المحدد: {currentPatient.name}</span>
+                      {currentPatient.date_of_birth && <span className="text-slate-500">| تاريخ الميلاد: {currentPatient.date_of_birth}</span>}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Clinic and Doctor Selection */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Clinic */}
+                <div>
+                  <label className="block text-xs font-black text-slate-700 mb-1.5">
+                    العيادة التخصصية <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Building2 size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <select
+                      required
+                      value={selectedClinicId}
+                      onChange={e => handleClinicChange(e.target.value)}
+                      className="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black text-slate-800 focus:bg-white focus:border-indigo-600 focus:ring-4 focus:ring-indigo-600/10 outline-none transition-all"
+                    >
+                      <option value="">-- اختر العيادة --</option>
+                      {clinics.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name} {c.room ? `(غرفة: ${c.room})` : ''} {c.linked_module ? `[بروتوكول معتمد]` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Doctor */}
+                <div>
+                  <label className="block text-xs font-black text-slate-700 mb-1.5">
+                    الطبيب المعالج
+                  </label>
+                  <div className="relative">
+                    <Stethoscope size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <select
+                      value={selectedDoctorId}
+                      onChange={e => setSelectedDoctorId(e.target.value)}
+                      className="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-600 focus:ring-4 focus:ring-indigo-600/10 outline-none transition-all"
+                    >
+                      <option value="">-- طبيب النوبتجية / متاح --</option>
+                      {filteredDoctors.map(d => (
+                        <option key={d.id} value={d.id}>
+                          د/ {d.name} ({d.specialty || 'عام'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                 </div>
               </div>
 
-              {/* بطاقة تنبيهات ومتطلبات زيارة هذه العيادة */}
+              {/* Clinic Requirements Card */}
               {clinicReqs && (
                 <div className="bg-sky-50/80 border-2 border-sky-200 rounded-2xl p-3.5 sm:p-4 space-y-2.5 animate-in fade-in duration-200">
                   <div className="flex items-center justify-between gap-2 border-b border-sky-200 pb-2">
                     <div className="flex items-center gap-2 text-sky-950 font-black text-xs">
                       <FileText size={16} className="text-sky-600 shrink-0" />
-                      <span>تنبيهات ومتطلبات زيارة هذه العيادة:</span>
+                      <span>متطلبات وإرشادات العيادة:</span>
                       <span className="bg-sky-200/80 text-sky-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
                         {clinicReqs.badge}
                       </span>
@@ -290,78 +539,276 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                       </li>
                     ))}
                   </ul>
-
-                  {clinicReqs.preparationNotes && clinicReqs.preparationNotes.length > 0 && (
-                    <div className="bg-white/70 border border-sky-200/70 rounded-xl p-2.5 text-[11px] text-sky-900 font-bold space-y-1">
-                      <div className="flex items-center gap-1 text-sky-950 font-black">
-                        <Info size={12} className="text-sky-600" />
-                        <span>إرشادات تحضير المريض:</span>
-                      </div>
-                      {clinicReqs.preparationNotes.map((note, idx) => (
-                        <p key={idx} className="text-slate-700 font-semibold">• {note}</p>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
 
-              {/* اختيار الطبيب (اختياري) */}
-              <div>
-                <label className="block text-xs font-black text-slate-700 mb-1.5">
-                  الطبيب المعالج
-                </label>
-                <div className="relative">
-                  <Stethoscope size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <select
-                    value={selectedDoctorId}
-                    onChange={e => setSelectedDoctorId(e.target.value)}
-                    className="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-bold text-slate-800 focus:bg-white focus:border-indigo-600 focus:ring-4 focus:ring-indigo-600/10 outline-none transition-all"
-                  >
-                    <option value="">-- طبيب النوبتجية / متاح --</option>
-                    {filteredDoctors.map(d => (
-                      <option key={d.id} value={d.id}>
-                        د/ {d.name} ({d.specialty || 'عام'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* التاريخ والوقت */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-black text-slate-700 mb-1.5">
+              {/* Date Selection and Quick Buttons */}
+              <div className="space-y-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <label className="block text-xs font-black text-slate-800">
                     تاريخ الحجز <span className="text-rose-500">*</span>
+                    <span className="text-slate-500 text-[11px] font-medium mr-2">({formattedDateTitle})</span>
                   </label>
-                  <div className="relative">
-                    <Calendar size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="date"
-                      required
-                      value={date}
-                      onChange={e => setDate(e.target.value)}
-                      className="w-full pr-10 pl-3 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black text-slate-800 focus:bg-white focus:border-indigo-600 outline-none transition-all"
-                    />
+
+                  {/* Quick Date Chips */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto">
+                    <button
+                      type="button"
+                      onClick={() => setQuickDate(0)}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-black transition-all cursor-pointer"
+                    >
+                      اليوم
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuickDate(1)}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-black transition-all cursor-pointer"
+                    >
+                      غداً
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuickDate(2)}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-black transition-all cursor-pointer"
+                    >
+                      بعد غد
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setQuickDate(7)}
+                      className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-black transition-all cursor-pointer"
+                    >
+                      + أسبوع
+                    </button>
                   </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-black text-slate-700 mb-1.5">
-                    الوقت المقدر
-                  </label>
-                  <div className="relative">
-                    <Clock size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                    <input
-                      type="time"
-                      value={time}
-                      onChange={e => setTime(e.target.value)}
-                      className="w-full pr-10 pl-3 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black text-slate-800 focus:bg-white focus:border-indigo-600 outline-none transition-all"
-                    />
-                  </div>
+                <div className="relative">
+                  <Calendar size={16} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="date"
+                    required
+                    value={date}
+                    onChange={e => setDate(e.target.value)}
+                    className="w-full pr-10 pl-4 py-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-black text-slate-800 focus:bg-white focus:border-indigo-600 outline-none transition-all"
+                  />
                 </div>
               </div>
 
-              {/* مصدر الحجز */}
+              {/* 🌟 SLOTS SECTION: EMPTY / AVAILABLE APPOINTMENTS VIEWER 🌟 */}
+              <div className="border-2 border-indigo-100 bg-gradient-to-b from-indigo-50/40 via-white to-slate-50/60 rounded-3xl p-4 sm:p-5 space-y-4 shadow-sm">
+                
+                {/* Section Header with Stats & Filter */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-100 pb-3">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-sm">
+                      <Clock size={16} />
+                    </div>
+                    <div>
+                      <h4 className="font-black text-xs text-indigo-950 flex items-center gap-1.5">
+                        <span>المواعيد والفترات المتاحة للاستقبال</span>
+                        {loadingAppointments && <Loader2 size={13} className="animate-spin text-indigo-600" />}
+                      </h4>
+                      <div className="flex items-center gap-2 text-[11px] font-bold mt-0.5">
+                        <span className="text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-full border border-emerald-200">
+                          {availableSlotsCount} موعد فارغ ومتاح
+                        </span>
+                        <span className="text-amber-700 bg-amber-100/80 px-2 py-0.5 rounded-full border border-amber-200">
+                          {bookedSlotsCount} موعد محجوز
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Slot Interval Configuration */}
+                  <div className="flex items-center gap-1 self-end sm:self-auto bg-white p-1 rounded-xl border border-slate-200 text-[10px] font-black text-slate-600">
+                    <span className="px-1.5 text-slate-400 font-bold">مدة الكشف:</span>
+                    <button
+                      type="button"
+                      onClick={() => setSlotInterval(15)}
+                      className={`px-2 py-1 rounded-lg transition-all ${slotInterval === 15 ? 'bg-indigo-600 text-white' : 'hover:bg-slate-100'}`}
+                    >
+                      15 د
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSlotInterval(20)}
+                      className={`px-2 py-1 rounded-lg transition-all ${slotInterval === 20 ? 'bg-indigo-600 text-white' : 'hover:bg-slate-100'}`}
+                    >
+                      20 د
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSlotInterval(30)}
+                      className={`px-2 py-1 rounded-lg transition-all ${slotInterval === 30 ? 'bg-indigo-600 text-white' : 'hover:bg-slate-100'}`}
+                    >
+                      30 د
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter Tabs */}
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 bg-slate-100/80 p-1 rounded-2xl">
+                    <button
+                      type="button"
+                      onClick={() => setSlotFilter('available_only')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                        slotFilter === 'available_only'
+                          ? 'bg-emerald-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <CheckCircle2 size={14} />
+                      <span>المواعيد الفارغة فقط ({availableSlotsCount})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSlotFilter('all')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                        slotFilter === 'all'
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Calendar size={14} />
+                      <span>الكل ({timeSlots.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSlotFilter('morning')}
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1 cursor-pointer ${
+                        slotFilter === 'morning'
+                          ? 'bg-amber-600 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Sun size={13} />
+                      <span>صباحاً</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSlotFilter('evening')}
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1 cursor-pointer ${
+                        slotFilter === 'evening'
+                          ? 'bg-indigo-900 text-white shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Moon size={13} />
+                      <span>مساءً</span>
+                    </button>
+                  </div>
+
+                  {/* Selected Slot Banner */}
+                  <div className="text-xs font-black px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl flex items-center gap-1.5">
+                    <CheckCircle size={14} className="text-emerald-600 shrink-0" />
+                    <span>الموعد المختار: <strong>{formatTime12(time)} ({time})</strong></span>
+                  </div>
+                </div>
+
+                {/* Slots Grid */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5 max-h-56 overflow-y-auto p-1 custom-scrollbar">
+                  {displayedSlots.map(slot => {
+                    const isSelected = time === slot.time24;
+                    const isBooked = slot.isBooked;
+
+                    if (isBooked) {
+                      return (
+                        <div
+                          key={slot.time24}
+                          className="p-2.5 rounded-2xl border border-rose-200/80 bg-rose-50/50 text-slate-400 flex flex-col justify-between select-none opacity-80"
+                          title={`محجوز للمريض: ${slot.bookedPatientName || 'مريض'}`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="font-bold text-xs line-through text-slate-500">{slot.time12}</span>
+                            <span className="text-[9px] font-black px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded-md">
+                              محجوز
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-slate-500 font-bold truncate mt-1">
+                            {slot.bookedPatientName || 'محجوز'}
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={slot.time24}
+                        type="button"
+                        onClick={() => {
+                          setTime(slot.time24);
+                          setShowCustomTimeInput(false);
+                        }}
+                        className={`p-2.5 rounded-2xl border text-right transition-all flex flex-col justify-between cursor-pointer transform active:scale-95 ${
+                          isSelected
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-4 ring-emerald-500/20'
+                            : 'bg-white hover:bg-emerald-50/70 border-emerald-200 text-slate-800 hover:border-emerald-400 hover:shadow-sm'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 w-full">
+                          <span className={`font-black text-xs ${isSelected ? 'text-white' : 'text-slate-900'}`}>
+                            {slot.time12}
+                          </span>
+                          {isSelected ? (
+                            <span className="w-4 h-4 rounded-full bg-white text-emerald-600 flex items-center justify-center">
+                              <Check size={11} className="stroke-[3]" />
+                            </span>
+                          ) : (
+                            <span className="text-[9px] font-black px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded-md">
+                              متاح
+                            </span>
+                          )}
+                        </div>
+                        <span className={`text-[10px] font-bold mt-1 ${isSelected ? 'text-emerald-100' : 'text-emerald-700'}`}>
+                          {slot.period === 'morning' ? 'فترة صباحية' : 'فترة مسائية'}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {displayedSlots.length === 0 && (
+                  <div className="text-center py-8 bg-white rounded-2xl border border-dashed border-slate-200 space-y-2">
+                    <AlertTriangle size={24} className="text-amber-500 mx-auto" />
+                    <p className="text-xs font-bold text-slate-700">لا توجد فترات متاحة وفق الفلتر المحدد لهذا اليوم</p>
+                    <button
+                      type="button"
+                      onClick={() => setSlotFilter('all')}
+                      className="text-[11px] font-black text-indigo-600 hover:underline"
+                    >
+                      عرض جميع الفترات أو اختيار تاريخ آخر
+                    </button>
+                  </div>
+                )}
+
+                {/* Manual Time Input Toggle */}
+                <div className="pt-2 border-t border-indigo-100/60 flex items-center justify-between text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setShowCustomTimeInput(!showCustomTimeInput)}
+                    className="text-[11px] font-black text-indigo-700 hover:text-indigo-900 underline flex items-center gap-1 cursor-pointer"
+                  >
+                    <Clock size={13} />
+                    <span>{showCustomTimeInput ? 'إخفاء الإدخال اليدوي للوقت' : 'تحديد وقت يدوي مخصص (حالات طارئة/استثنائية)'}</span>
+                  </button>
+
+                  {showCustomTimeInput && (
+                    <div className="flex items-center gap-2 animate-in fade-in">
+                      <span className="text-[11px] text-slate-500 font-bold">الوقت اليدوي:</span>
+                      <input
+                        type="time"
+                        value={time}
+                        onChange={e => setTime(e.target.value)}
+                        className="px-2.5 py-1 bg-white border border-indigo-300 rounded-xl text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Trigger Type Selection */}
               <div>
                 <label className="block text-xs font-black text-slate-700 mb-1.5">
                   مصدر ونوع الحجز
@@ -403,7 +850,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                 </div>
               </div>
 
-              {/* ملاحظات / شكوى */}
+              {/* Notes */}
               <div>
                 <label className="block text-xs font-black text-slate-700 mb-1.5">
                   ملاحظات أو سبب الزيارة
@@ -417,7 +864,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                 />
               </div>
 
-              {/* أزرار الإجراء */}
+              {/* Actions Footer */}
               <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
@@ -430,22 +877,22 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                 <button
                   type="submit"
                   disabled={saving || success}
-                  className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/20 flex items-center gap-2 transition-all disabled:opacity-50 cursor-pointer"
+                  className="px-7 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all disabled:opacity-50 cursor-pointer transform hover:-translate-y-0.5"
                 >
                   {saving ? (
                     <>
                       <Loader2 size={16} className="animate-spin" />
-                      <span>جاري الحجز...</span>
+                      <span>جاري تأكيد الحجز...</span>
                     </>
                   ) : success ? (
                     <>
                       <CheckCircle size={16} className="text-emerald-300" />
-                      <span>تم الحجز بنجاح!</span>
+                      <span>تم حجز الموعد بنجاح!</span>
                     </>
                   ) : (
                     <>
-                      <Calendar size={16} />
-                      <span>تأكيد حجز الموعد</span>
+                      <CalendarDays size={16} />
+                      <span>تأكيد حجز الموعد ({formatTime12(time)})</span>
                     </>
                   )}
                 </button>

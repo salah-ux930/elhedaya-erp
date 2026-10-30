@@ -1,14 +1,15 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AR, ROOMS, calculateAge, BLOOD_TYPES } from '../constants.ts';
 import { DB } from '../store.ts';
 import PatientTimeline from '../components/PatientTimeline.tsx';
 import QuickClinicBookingModal from '../components/QuickClinicBookingModal.tsx';
+import PatientClinical360Modal from '../components/PatientClinical360Modal.tsx';
+import { HospitalOperationalEngine, PatientOperationalProfile } from '../services/hospitalOperationalEngine.ts';
 import { DialysisSession, Patient } from '../types.ts';
 import { 
   UserPlus, Search, Clock, Activity, ArrowRight, 
   CheckCircle2, AlertCircle, MapPin, Scale, HeartPulse, MoreVertical, Loader2, X, BellRing, UserCheck,
-  Users, Calendar, Stethoscope
+  Users, Calendar, Stethoscope, ShieldAlert, FolderOpen, CreditCard
 } from 'lucide-react';
 
 interface ReceptionProps {
@@ -27,6 +28,11 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [clinics, setClinics] = useState<any[]>([]);
   const [doctors, setDoctors] = useState<any[]>([]);
+  const [familyFiles, setFamilyFiles] = useState<any[]>([]);
+  const [problems, setProblems] = useState<any[]>([]);
+  const [physicalExams, setPhysicalExams] = useState<any[]>([]);
+  const [fundingEntities, setFundingEntities] = useState<any[]>([]);
+  const [patientFor360, setPatientFor360] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
   const [showClinicBookingModal, setShowClinicBookingModal] = useState(false);
 
@@ -37,24 +43,47 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [s, p, ca, cl, dr] = await Promise.all([
+      const [s, p, ca, cl, dr, ff, probs, pExams, fe] = await Promise.all([
         DB.getSessions(),
         DB.getPatients(),
         DB.getClinicAppointments(),
         DB.getClinics(),
-        DB.getDoctors()
+        DB.getDoctors(),
+        DB.getFamilyFiles(),
+        DB.getPatientProblems(),
+        DB.getPhysicalExams(),
+        DB.getFundingEntities()
       ]);
       setSessions(s || []);
       setPatients(p || []);
       setClinicAppointments(ca || []);
       setClinics(cl || []);
       setDoctors(dr || []);
+      setFamilyFiles(ff || []);
+      setProblems(probs || []);
+      setPhysicalExams(pExams || []);
+      setFundingEntities(fe || []);
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
     }
   };
+
+  // خريطة الملف التشغيلي الموحد لكل مريض لظهور الاستحقاق والحساسية والمتابعات فوراً في الاستقبال
+  const patientProfilesMap = useMemo(() => {
+    const map = new Map<string, PatientOperationalProfile>();
+    patients.forEach(p => {
+      const prof = HospitalOperationalEngine.buildPatientOperationalProfile(p, {
+        familyFiles,
+        problems: problems.filter(pr => pr.patient_id === p.id),
+        physicalExams: physicalExams.filter(ex => ex.patient_id === p.id),
+        fundingEntities
+      });
+      map.set(p.id, prof);
+    });
+    return map;
+  }, [patients, familyFiles, problems, physicalExams, fundingEntities]);
 
   const updateAppointmentStatus = async (id: string, status: string) => {
     try {
@@ -204,7 +233,7 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         <div className="lg:col-span-2 space-y-4">
           <div className="flex justify-between items-center bg-white p-2 rounded-2xl border border-gray-100">
-             <div className="flex gap-2">
+             <div className="flex items-center gap-2">
                 {!initialMode && (
                   <>
                     <button 
@@ -223,6 +252,18 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
                 )}
                 {initialMode === 'dialysis' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار الجلسات</div>}
                 {initialMode === 'clinics' && <div className="px-6 py-2 font-black text-primary-900 border-r-4 border-primary-600">قائمة انتظار العيادات</div>}
+                
+                <button
+                  onClick={() => {
+                    setSelectedPatient(null);
+                    setShowClinicBookingModal(true);
+                  }}
+                  className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-black text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer mr-2"
+                  title="حجز موعد كشف مع عرض الفترات والمواعيد المتاحة"
+                >
+                  <Stethoscope size={15} />
+                  <span>حجز كشف (المواعيد الفارغة)</span>
+                </button>
              </div>
              <button onClick={loadData} className="p-2 text-primary-600">
                {loading ? <Loader2 className="animate-spin" size={20} /> : <Clock size={20} />}
@@ -231,50 +272,121 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
 
           <div className="space-y-3">
             {activeQueue === 'dialysis' ? (
-              sessions.map(session => (
+              sessions.map(session => {
+                const prof = patientProfilesMap.get(session.patient_id);
+                return (
                 <div key={session.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${session.status === 'ACTIVE' ? 'border-green-100 bg-green-50/20' : session.status === 'WAITING' ? 'border-yellow-100 bg-yellow-50/20' : 'border-gray-100'}`}>
-                   {/* ... content stays fairly same for dialysis but showing sessions ... */}
-                   <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg ${session.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : session.status === 'WAITING' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
+                   <div className="flex items-start gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center font-bold text-lg shrink-0 ${session.status === 'ACTIVE' ? 'bg-green-100 text-green-700' : session.status === 'WAITING' ? 'bg-yellow-100 text-yellow-700' : 'bg-blue-100 text-blue-700'}`}>
                       {session.patients?.name?.[0] || '?'}
                     </div>
                     <div>
-                      <h4 className="font-bold text-gray-800">
-                        {session.patients?.name}
-                        <span className="text-primary-600 text-xs mr-2 font-bold">{calculateAge(session.patients?.date_of_birth)}</span>
-                      </h4>
-                      <div className="flex items-center gap-3 mt-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="font-bold text-gray-800">
+                          {session.patients?.name}
+                          <span className="text-primary-600 text-xs mr-2 font-bold">{calculateAge(session.patients?.date_of_birth)}</span>
+                        </h4>
+                        {prof?.familyFile && (
+                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-md text-[10px] font-bold font-mono">
+                            {prof.familyFile.file_code}
+                          </span>
+                        )}
+                        {prof && (
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                            prof.billingEligibility.status === 'FREE_SOCIAL'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : prof.billingEligibility.status === 'FUNDED'
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : 'bg-slate-50 text-slate-600 border-slate-200'
+                          }`}>
+                            {prof.billingEligibility.badgeText}
+                          </span>
+                        )}
+                        {prof?.hasAllergyAlert && (
+                          <span className="px-2 py-0.5 bg-rose-100 text-rose-800 border border-rose-300 rounded-md text-[10px] font-black flex items-center gap-1">
+                            <ShieldAlert size={11} /> حساسية دوائية
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 mt-1">
                         <span className="text-xs text-gray-500 flex items-center gap-1"><MapPin size={12} /> {session.room || 'بانتظار التخصيص'}</span>
                         <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {session.start_time || '--:--'}</span>
+                        {prof && prof.familyDueFollowUps.length > 0 && (
+                          <span className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                            تنبيه أسري: {prof.familyDueFollowUps[0].memberName} ({prof.familyDueFollowUps[0].title})
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 w-full md:w-auto">
+                  <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                    <button
+                      onClick={() => {
+                        const pObj = patients.find(pt => pt.id === session.patient_id) || session.patients;
+                        if (pObj) setPatientFor360(pObj);
+                      }}
+                      className="px-3 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Activity size={13} className="text-primary-600" /> بطاقة المريض
+                    </button>
                     <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${session.status === 'ACTIVE' ? 'bg-green-50 text-green-700 border-green-200' : session.status === 'WAITING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-gray-50 text-gray-600'}`}>
                       {session.status === 'ACTIVE' ? AR.inSession : session.status === 'FINISHED' ? AR.completed : AR.waiting}
                     </div>
-                    <button className="p-2 text-gray-400 hover:text-primary-600 bg-gray-50 rounded-lg"><MoreVertical size={18} /></button>
                   </div>
                 </div>
-              ))
+              )})
             ) : (
-              clinicAppointments.map(app => (
+              clinicAppointments.map(app => {
+                const prof = patientProfilesMap.get(app.patient_id);
+                return (
                 <div key={app.id} className={`bg-white p-5 rounded-2xl border flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all hover:shadow-md ${app.status === 'IN_PROGRESS' ? 'border-blue-100 bg-blue-50/20' : app.status === 'WAITING' ? 'border-yellow-100 bg-yellow-50/20' : 'border-gray-100'}`}>
-                   <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-lg">
+                   <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-lg shrink-0">
                       {app.patients?.name?.[0]}
                     </div>
                     <div>
-                      <h4 className="font-bold text-gray-800">{app.patients?.name}</h4>
-                      <div className="flex items-center gap-3 mt-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h4 className="font-bold text-gray-800">{app.patients?.name}</h4>
+                        {prof?.familyFile && (
+                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-800 border border-indigo-200 rounded-md text-[10px] font-bold font-mono">
+                            {prof.familyFile.file_code}
+                          </span>
+                        )}
+                        {prof && (
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
+                            prof.billingEligibility.status === 'FREE_SOCIAL'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : prof.billingEligibility.status === 'FUNDED'
+                                ? 'bg-blue-50 text-blue-800 border-blue-200'
+                                : 'bg-slate-50 text-slate-600 border-slate-200'
+                          }`}>
+                            {prof.billingEligibility.badgeText}
+                          </span>
+                        )}
+                        {prof?.hasAllergyAlert && (
+                          <span className="px-2 py-0.5 bg-rose-100 text-rose-800 border border-rose-300 rounded-md text-[10px] font-black flex items-center gap-1">
+                            <ShieldAlert size={11} /> حساسية
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-3 mt-1">
                         <span className="text-xs text-indigo-600 flex items-center gap-1 font-bold"><Stethoscope size={12} /> د/ {app.doctors?.name}</span>
                         <span className="text-xs text-gray-500 flex items-center gap-1"><Clock size={12} /> {app.time}</span>
                       </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-3 w-full md:w-auto">
+                  <div className="flex items-center gap-2 w-full md:w-auto justify-end">
+                    <button
+                      onClick={() => {
+                        const pObj = patients.find(pt => pt.id === app.patient_id) || app.patients;
+                        if (pObj) setPatientFor360(pObj);
+                      }}
+                      className="px-3 py-1.5 bg-primary-50 hover:bg-primary-100 text-primary-700 border border-primary-200 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      <Activity size={13} className="text-primary-600" /> بطاقة المريض
+                    </button>
                     <div className={`px-4 py-1.5 rounded-full text-xs font-bold border ${app.status === 'IN_PROGRESS' ? 'bg-blue-50 text-blue-700 border-blue-200' : app.status === 'WAITING' ? 'bg-yellow-50 text-yellow-700 border-yellow-200' : 'bg-green-50 text-green-700 border-green-200'}`}>
                        {app.status === 'WAITING' ? 'انتظار الكشف' : app.status === 'IN_PROGRESS' ? 'داخل العيادة' : 'مكتمل'}
                     </div>
@@ -288,7 +400,7 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
                     )}
                   </div>
                 </div>
-              ))
+              )})
             )}
             
             {activeQueue === 'dialysis' && sessions.length === 0 && !loading && (
@@ -328,52 +440,90 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
             </div>
 
             <div className="space-y-2 max-h-96 overflow-y-auto custom-scrollbar">
-              {searchTerm && filteredPatients.length > 0 && filteredPatients.map(p => (
+              {searchTerm && filteredPatients.length > 0 && filteredPatients.map(p => {
+                const prof = patientProfilesMap.get(p.id);
+                return (
                 <div 
                   key={p.id}
-                  className="w-full flex items-center justify-between p-3 rounded-xl hover:bg-primary-50 border border-transparent hover:border-primary-100 transition-all group"
+                  className="w-full flex flex-col gap-2 p-3 rounded-xl hover:bg-primary-50/60 border border-slate-100 hover:border-primary-200 transition-all group"
                 >
-                  <button 
-                    onClick={() => { setSelectedPatient(p); setShowHistoryModal(true); }}
-                    className="text-right hover:text-primary-600 transition-colors"
-                  >
-                    <div className="font-bold text-gray-700 group-hover:text-primary-700">
-                      {p.name}
-                      <span className="text-primary-500 text-[10px] mr-1">({calculateAge(p.date_of_birth)})</span>
+                  <div className="flex items-center justify-between gap-2">
+                    <button 
+                      onClick={() => { setSelectedPatient(p); setShowHistoryModal(true); }}
+                      className="text-right hover:text-primary-600 transition-colors"
+                    >
+                      <div className="font-bold text-gray-800 group-hover:text-primary-700 flex items-center gap-1.5 flex-wrap">
+                        <span>{p.name}</span>
+                        <span className="text-primary-500 text-[10px]">({calculateAge(p.date_of_birth)})</span>
+                      </div>
+                      <div className="text-xs text-gray-400 font-mono">{p.phone}</div>
+                    </button>
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => setPatientFor360(p)}
+                        title="بطاقة المريض"
+                        className="px-2.5 py-1.5 bg-primary-50 text-primary-700 border border-primary-200 rounded-lg hover:bg-primary-100 text-[11px] font-bold transition-all cursor-pointer"
+                      >
+                        بطاقة المريض
+                      </button>
+                      {activeQueue === 'dialysis' && (
+                        <button 
+                          onClick={() => confirmAttendanceOnly(p)}
+                          title="تسجيل حضور فقط"
+                          className="p-2 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-600 hover:text-white transition-all"
+                        >
+                          <UserCheck size={17} />
+                        </button>
+                      )}
+                      {activeQueue === 'clinics' && (
+                        <button 
+                          onClick={() => { setSelectedPatient(p); setShowClinicBookingModal(true); }}
+                          title="حجز موعد عيادة"
+                          className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"
+                        >
+                          <Stethoscope size={17} />
+                        </button>
+                      )}
+                      {activeQueue === 'dialysis' && (
+                        <button 
+                          onClick={() => handleCheckIn(p)}
+                          title="بدء جلسة مباشرة"
+                          className="p-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-600 hover:text-white transition-all"
+                        >
+                          <Activity size={17} />
+                        </button>
+                      )}
                     </div>
-                    <div className="text-xs text-gray-400">{p.phone}</div>
-                  </button>
-                  <div className="flex gap-2">
-                    {activeQueue === 'dialysis' && (
-                      <button 
-                        onClick={() => confirmAttendanceOnly(p)}
-                        title="تسجيل حضور فقط"
-                        className="p-2 bg-yellow-50 text-yellow-600 rounded-lg hover:bg-yellow-600 hover:text-white transition-all"
-                      >
-                        <UserCheck size={18} />
-                      </button>
-                    )}
-                    {activeQueue === 'clinics' && (
-                      <button 
-                        onClick={() => { setSelectedPatient(p); setShowClinicBookingModal(true); }}
-                        title="حجز موعد عيادة"
-                        className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-600 hover:text-white transition-all"
-                      >
-                        <Stethoscope size={18} />
-                      </button>
-                    )}
-                    {activeQueue === 'dialysis' && (
-                      <button 
-                        onClick={() => handleCheckIn(p)}
-                        title="بدء جلسة مباشرة"
-                        className="p-2 bg-primary-50 text-primary-600 rounded-lg hover:bg-primary-600 hover:text-white transition-all"
-                      >
-                        <Activity size={18} />
-                      </button>
-                    )}
                   </div>
+
+                  {/* شريط الاستحقاق الاجتماعي والملف العائلي في نتائج بحث الاستقبال */}
+                  {prof && (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-100">
+                      {prof.familyFile ? (
+                        <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold font-mono">
+                          ملف: {prof.familyFile.file_code}
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px] font-bold">
+                          بدون ملف عائلي
+                        </span>
+                      )}
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                        prof.billingEligibility.status === 'FREE_SOCIAL'
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-slate-100 text-slate-600'
+                      }`}>
+                        {prof.billingEligibility.badgeText}
+                      </span>
+                      {prof.hasAllergyAlert && (
+                        <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded text-[10px] font-black">
+                          حساسية دوائية
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
-              ))}
+              )})}
               
               {searchTerm && filteredPatients.length === 0 && (
                 <div className="p-6 text-center bg-indigo-50/80 rounded-2xl border-2 border-dashed border-indigo-200 animate-in zoom-in-95 space-y-3">
@@ -520,7 +670,7 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
         </div>
       )}
 
-      {showClinicBookingModal && selectedPatient && (
+      {showClinicBookingModal && (
         <QuickClinicBookingModal
           isOpen={showClinicBookingModal}
           onClose={() => {
@@ -528,6 +678,7 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
             setSelectedPatient(null);
           }}
           patient={selectedPatient}
+          allPatients={patients}
           onBookingSuccess={() => {
             loadData();
           }}
@@ -541,6 +692,14 @@ const ReceptionModule: React.FC<ReceptionProps> = ({ initialMode }) => {
            </div>
         </div>
       )}
+
+      {/* بطاقة القرار السريري الموحدة 360 */}
+      <PatientClinical360Modal
+        isOpen={!!patientFor360}
+        onClose={() => setPatientFor360(null)}
+        patient={patientFor360}
+        onDataUpdated={loadData}
+      />
 
       <style>{`
         .custom-scrollbar::-webkit-scrollbar { width: 6px; }
