@@ -68,8 +68,19 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
   const isElderly = geriatricElig.eligible;
   const isReproductiveAge = familyPlanningElig.eligible;
 
+  const normalizeTabModuleId = (raw?: string): string => {
+    if (!raw) return 'history';
+    const m = raw.trim().toLowerCase();
+    if (m === 'child_followup' || m === 'child') return 'child';
+    if (m === 'maternal_care' || m === 'maternal') return 'maternal';
+    if (m === 'geriatric_care' || m === 'geriatric') return 'geriatric';
+    return m;
+  };
+
   // Active Module Tab
-  const [activeTab, setActiveTab] = useState<string>(initialModule || initialModuleId || 'history');
+  const [activeTab, setActiveTab] = useState<string>(() =>
+    normalizeTabModuleId(initialModule || initialModuleId || 'history')
+  );
 
   // Modals for sub-components
   const [showHistoryExamModal, setShowHistoryExamModal] = useState(false);
@@ -92,7 +103,7 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
 
   // Sub-forms open state (Add new records)
   const [childSubTab, setChildSubTab] = useState<'under5' | 'over5'>(isUnder5 ? 'under5' : 'over5');
-  const [showAddForm, setShowAddForm] = useState(false);
+  const [showAddForm, setShowAddForm] = useState<boolean>(() => Boolean(activeAppointment) || normalizeTabModuleId(initialModule || initialModuleId) === 'child');
   const [submitting, setSubmitting] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [tableErrors, setTableErrors] = useState<Record<string, string>>({});
@@ -1333,11 +1344,16 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                                 weight_kg: Number(t.weight_kg.value) || null,
                                 height_cm: Number(t.height_cm.value) || null,
                                 head_circumference_cm: Number(t.head_circumference_cm.value) || null,
+                                hemoglobin_level: Number(t.hemoglobin_level?.value) || null,
                                 feeding_type: t.feeding_type.value || null,
+                                weaning_started: Boolean(t.weaning_started?.checked),
                                 mandatory_vaccines_up_to_date: t.mandatory_vaccines.checked,
+                                other_vaccines: t.other_vaccines?.value || null,
                                 vitamin_a_supplement_given: t.vitamin_a.checked,
                                 vitamin_d_supplement_given: t.vitamin_d.checked,
+                                parental_concerns: t.parental_concerns?.value || null,
                                 clinical_assessment: t.clinical_assessment.value || null,
+                                health_education_topics: t.health_education_topics?.value || null,
                                 doctor_signature: t.doctor_signature.value || null
                               });
                               if (!saved || !saved.id) {
@@ -1356,10 +1372,10 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                           className="p-5 bg-white border-2 border-emerald-200 rounded-3xl space-y-4 shadow-md"
                         >
                           <h5 className="font-black text-sm text-emerald-950">نموذج فحص نمو الطفل دون 5 سنوات (Form 5A / 5C)</h5>
-                          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs font-bold">
+                          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-xs font-bold">
                             <div>
                               <label className="block mb-1 text-slate-700">العمر بالشهور *</label>
-                              <input name="age_months" type="number" required placeholder="مثال: 6" className="w-full p-2.5 border rounded-xl" />
+                              <input name="age_months" type="number" defaultValue={childElig.ageMonths !== null ? childElig.ageMonths : ''} required placeholder="مثال: 6" className="w-full p-2.5 border rounded-xl" />
                             </div>
                             <div>
                               <label className="block mb-1 text-slate-700">الوزن (كجم)</label>
@@ -1373,9 +1389,13 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               <label className="block mb-1 text-slate-700">محيط الرأس (سم)</label>
                               <input name="head_circumference_cm" type="number" step="0.5" placeholder="مثال: 42" className="w-full p-2.5 border rounded-xl" />
                             </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">الهيموجلوبين Hb (g/dL)</label>
+                              <input name="hemoglobin_level" type="number" step="0.1" placeholder="مثال: 11.5" className="w-full p-2.5 border rounded-xl" />
+                            </div>
                           </div>
 
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs font-bold">
                             <div>
                               <label className="block mb-1 text-slate-700">نوع التغذية والرضاعة</label>
                               <select name="feeding_type" className="w-full p-2.5 border rounded-xl">
@@ -1386,8 +1406,12 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               </select>
                             </div>
                             <div>
+                              <label className="block mb-1 text-slate-700">تطعيمات إضافية / ملاحظات التطعيم</label>
+                              <input name="other_vaccines" placeholder="أي تطعيمات إضافية..." className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                            <div>
                               <label className="block mb-1 text-slate-700">اسم الطبيب الفاحص</label>
-                              <input name="doctor_signature" placeholder="اسم الطبيب" className="w-full p-2.5 border rounded-xl" />
+                              <input name="doctor_signature" defaultValue={activeAppointment?.doctors?.name || ''} placeholder="اسم الطبيب" className="w-full p-2.5 border rounded-xl" />
                             </div>
                           </div>
 
@@ -1397,6 +1421,10 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               <span>التطعيمات الإجبارية المقررة مكتملة حسب السن</span>
                             </label>
                             <label className="flex items-center gap-2 cursor-pointer">
+                              <input name="weaning_started" type="checkbox" defaultChecked={(childElig.ageMonths ?? 0) >= 6} className="w-4 h-4 rounded text-emerald-600" />
+                              <span>بدء الفطام وإدخال التغذية التكميلية</span>
+                            </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
                               <input name="vitamin_a" type="checkbox" className="w-4 h-4 rounded text-emerald-600" />
                               <span>تم إعطاء كبسولة فيتامين (أ) المقررة</span>
                             </label>
@@ -1404,6 +1432,17 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                               <input name="vitamin_d" type="checkbox" defaultChecked className="w-4 h-4 rounded text-emerald-600" />
                               <span>يتناول جرعات فيتامين (د) الوقائية</span>
                             </label>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-bold">
+                            <div>
+                              <label className="block mb-1 text-slate-700">شكوى أو ملاحظات الأم / ولي الأمر</label>
+                              <input name="parental_concerns" placeholder="الشهية، النوم، التسنين، الحركة..." className="w-full p-2.5 border rounded-xl" />
+                            </div>
+                            <div>
+                              <label className="block mb-1 text-slate-700">موضوعات التثقيف الصحي المقدمة للأم</label>
+                              <input name="health_education_topics" defaultValue="التغذية السليمة للطفل، جدول التطعيمات الدورية، والوقاية من النزلات المعوية" className="w-full p-2.5 border rounded-xl" />
+                            </div>
                           </div>
 
                           <div>

@@ -28,7 +28,13 @@ const handleError = (error: any, fallbackMessage: string) => {
     throw new Error(`تعذر الاتصال بقاعدة البيانات. يرجى التحقق من اتصال الإنترنت أو خادم Supabase.`);
   }
   const code = error?.code;
-  if (['42P01', 'PGRST107', 'PGRST116'].includes(code) || msg.includes('schema cache')) {
+  const missingColumnMatch = msg.match(/Could not find the '([^']+)' column of '([^']+)' in the schema cache/i);
+  if (code === 'PGRST204' || missingColumnMatch) {
+    const colName = missingColumnMatch?.[1] || 'غير محدد';
+    const tableName = missingColumnMatch?.[2] || 'غير محدد';
+    throw new Error(`MISSING_COLUMN: العمود '${colName}' غير موجود في جدول '${tableName}'. يرجى تشغيل ملف الـ Migration في لوحة تحكم Supabase.`);
+  }
+  if (['42P01', 'PGRST107', 'PGRST116', 'PGRST205'].includes(code) || /Could not find the table/i.test(msg)) {
     throw new Error(`MISSING_TABLE: الجدول غير موجود. يرجى تشغيل SQL Schema في لوحة تحكم Supabase.`);
   }
   throw new Error(error?.message || fallbackMessage);

@@ -145,6 +145,15 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
         }
       }
 
+      if (!matchedClinic && normalizedModule && normalizedModule !== 'dental') {
+        matchedClinic = (allClinics || []).find(
+          (c: Clinic) =>
+            c.specialty?.includes('طب الأسرة') ||
+            c.name.includes('أسرة') ||
+            (!c.name.includes('أسنان') && !c.name.includes('اسنان'))
+        );
+      }
+
       if (matchedClinic) {
         setSelectedClinicId(matchedClinic.id);
         const matchingDoc = (allDoctors || []).find((d: Doctor) => d.clinic_id === matchedClinic.id);
@@ -208,10 +217,10 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
 
   const clinicalEligibility = useMemo(() => {
     if (!effectiveModuleForEligibility) {
-      return { isEligible: true, reason: '', isRuleConfigured: true };
+      return { eligible: true, reason: '', badgeText: '' };
     }
     if (!currentPatient) {
-      return { isEligible: false, reason: 'يرجى اختيار المريض للتحقق من الأهلية السريرية للعيادة.', isRuleConfigured: true };
+      return { eligible: false, reason: 'يرجى اختيار المريض للتحقق من الأهلية السريرية للعيادة.', badgeText: 'غير محدد' };
     }
     return evaluateClinicalModuleEligibility(currentPatient, effectiveModuleForEligibility);
   }, [currentPatient, effectiveModuleForEligibility]);
@@ -379,7 +388,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
       alert('يرجى اختيار العيادة');
       return;
     }
-    if (!clinicalEligibility.isEligible) {
+    if (!clinicalEligibility.eligible) {
       alert(clinicalEligibility.reason);
       return;
     }
@@ -396,6 +405,19 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
 
     setSaving(true);
     try {
+      const childCheck = evaluateClinicalModuleEligibility(currentPatient, 'child', 'under5');
+      const isDentalSelected =
+        selectedClinic?.linked_module === 'dental' ||
+        (selectedClinic?.name || '').includes('أسنان') ||
+        (selectedClinic?.name || '').includes('اسنان');
+      const finalNotes =
+        notes.trim() ||
+        (!isDentalSelected && (effectiveModuleForEligibility === 'child_followup' || effectiveModuleForEligibility === 'child' || childCheck.eligible)
+          ? childCheck.eligible
+            ? 'متابعة وفحص نمو الطفل دون 5 سنوات (Form 5A & 5C)'
+            : 'متابعة وفحص صحة الطفل والسن المدرسي (Form 5D)'
+          : '');
+
       const payload: any = {
         patient_id: currentPatient.id,
         clinic_id: selectedClinicId,
@@ -403,7 +425,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
         date,
         time,
         status: 'WAITING',
-        notes: notes.trim(),
+        notes: finalNotes,
         triggered_by: triggerType
       };
 
@@ -572,7 +594,7 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
               </div>
 
               {/* Clinical Eligibility Warning Banner */}
-              {!clinicalEligibility.isEligible && (
+              {!clinicalEligibility.eligible && (
                 <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-3.5 flex items-start gap-2.5 text-xs text-amber-950 animate-in fade-in">
                   <AlertCircle size={18} className="text-amber-600 shrink-0 mt-0.5" />
                   <div>
@@ -988,8 +1010,8 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                 </button>
                 <button
                   type="submit"
-                  disabled={saving || success || !clinicalEligibility.isEligible || isSelectedDateTimeInPast}
-                  title={!clinicalEligibility.isEligible ? clinicalEligibility.reason : isSelectedDateTimeInPast ? 'لا يمكن حجز موعد في الماضي' : 'تأكيد حجز الموعد'}
+                  disabled={saving || success || !clinicalEligibility.eligible || isSelectedDateTimeInPast}
+                  title={!clinicalEligibility.eligible ? clinicalEligibility.reason : isSelectedDateTimeInPast ? 'لا يمكن حجز موعد في الماضي' : 'تأكيد حجز الموعد'}
                   className="px-7 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transform hover:-translate-y-0.5"
                 >
                   {saving ? (
