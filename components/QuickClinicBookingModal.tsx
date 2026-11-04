@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { getClinicRequirements, formatBookingRequirementsText } from '../constants/clinicRequirements.ts';
 import { evaluateClinicalModuleEligibility } from '../services/followupSuggestions.ts';
+import { resolveBookingVisitAndForm, ExamFormMode } from '../utils/clinicalBookingRouter.ts';
 
 const getLocalTodayStr = (): string => {
   const now = new Date();
@@ -189,8 +190,11 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
     }
   };
 
+  const [subFormOverride, setSubFormOverride] = useState<ExamFormMode | undefined>(undefined);
+
   const handleClinicChange = (cId: string) => {
     setSelectedClinicId(cId);
+    setSubFormOverride(undefined);
     const matchingDoc = doctors.find(d => d.clinic_id === cId);
     setSelectedDoctorId(matchingDoc ? matchingDoc.id : '');
   };
@@ -200,6 +204,12 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
   const clinicReqs = selectedClinic 
     ? getClinicRequirements(selectedClinic.linked_module, selectedClinic.name)
     : (normalizedModule ? getClinicRequirements(normalizedModule) : null);
+
+  // التحديد التلقائي لنوع الحجز والنموذج الطبي (ف1 - ف10) بناءً على تخصص العيادة المختارة وخصائص المريض
+  const resolvedBookingRoute = useMemo(
+    () => resolveBookingVisitAndForm(selectedClinic, currentPatient, notes, subFormOverride),
+    [selectedClinic, currentPatient, notes, subFormOverride]
+  );
 
   // Determine effective clinical module for eligibility verification
   const effectiveModuleForEligibility = useMemo(() => {
@@ -405,18 +415,9 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
 
     setSaving(true);
     try {
-      const childCheck = evaluateClinicalModuleEligibility(currentPatient, 'child', 'under5');
-      const isDentalSelected =
-        selectedClinic?.linked_module === 'dental' ||
-        (selectedClinic?.name || '').includes('أسنان') ||
-        (selectedClinic?.name || '').includes('اسنان');
-      const finalNotes =
-        notes.trim() ||
-        (!isDentalSelected && (effectiveModuleForEligibility === 'child_followup' || effectiveModuleForEligibility === 'child' || childCheck.eligible)
-          ? childCheck.eligible
-            ? 'متابعة وفحص نمو الطفل دون 5 سنوات (Form 5A & 5C)'
-            : 'متابعة وفحص صحة الطفل والسن المدرسي (Form 5D)'
-          : '');
+      const cleanedUserNotes = notes.replace(/\[FORM:[a-z0-9_|:]+\]\s*/gi, '').trim();
+      const autoDescription = `${resolvedBookingRoute.formTitle} (${resolvedBookingRoute.formCodeBadge})`;
+      const finalNotes = `${resolvedBookingRoute.bookingMetadataTag} ${cleanedUserNotes || autoDescription}`;
 
       const payload: any = {
         patient_id: currentPatient.id,
@@ -600,6 +601,107 @@ export const QuickClinicBookingModal: React.FC<QuickClinicBookingModalProps> = (
                   <div>
                     <p className="font-black">الحجز متوقف للعيادة/الوحدة المحددة:</p>
                     <p className="font-bold mt-0.5">{clinicalEligibility.reason}</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Automatic Booking Type & Family Health Record Form Routing Card */}
+              {selectedClinic && (
+                <div className="bg-emerald-50/80 border-2 border-emerald-200 rounded-2xl p-4 space-y-3 animate-in fade-in">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-200/80 pb-2.5">
+                    <div className="flex items-center gap-2 text-emerald-950 font-black text-xs">
+                      <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                      <span>التوجيه التلقائي لنوع الحجز والنموذج الطبي (حسب تخصص العيادة):</span>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className="px-2.5 py-0.5 bg-white text-emerald-900 border border-emerald-300 rounded-lg text-[11px] font-black font-mono">
+                        كود التردد (ف2ب): {resolvedBookingRoute.visitCode} - {resolvedBookingRoute.visitTypeLabel}
+                      </span>
+                      <span className="px-2.5 py-0.5 bg-emerald-700 text-white rounded-lg text-[11px] font-black">
+                        {resolvedBookingRoute.formCodeBadge}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div className="bg-white/90 p-3 rounded-xl border border-emerald-200/80 space-y-1">
+                      <span className="text-[10px] font-black text-slate-500 block">
+                        النموذج الذي سيُفتح تلقائياً للطبيب وقت الكشف:
+                      </span>
+                      <p className="font-black text-emerald-950 text-xs">{resolvedBookingRoute.formTitle}</p>
+                      <p className="text-[11px] text-slate-600 font-bold">{resolvedBookingRoute.formSubtitle}</p>
+
+                      {/* Sub-form selector when clinic supports multiple sub-forms (e.g. Maternal ANC vs Postpartum, or Family Medicine general vs chronic) */}
+                      {(resolvedBookingRoute.examFormMode === 'maternal_anc' ||
+                        resolvedBookingRoute.examFormMode === 'maternal_postpartum') && (
+                        <div className="pt-2 flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSubFormOverride('maternal_anc')}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer transition-all ${
+                              resolvedBookingRoute.examFormMode === 'maternal_anc'
+                                ? 'bg-rose-600 text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-rose-50'
+                            }`}
+                          >
+                            متابعة حمل (ف6أ)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSubFormOverride('maternal_postpartum')}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer transition-all ${
+                              resolvedBookingRoute.examFormMode === 'maternal_postpartum'
+                                ? 'bg-rose-600 text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-rose-50'
+                            }`}
+                          >
+                            متابعة بعد الولادة والنفاس (ف6ب)
+                          </button>
+                        </div>
+                      )}
+
+                      {(resolvedBookingRoute.examFormMode === 'general' ||
+                        resolvedBookingRoute.examFormMode === 'chronic_followup') && (
+                        <div className="pt-2 flex flex-wrap items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setSubFormOverride('general')}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer transition-all ${
+                              resolvedBookingRoute.examFormMode === 'general'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-indigo-50'
+                            }`}
+                          >
+                            فحص شامل / زيارة دورية (ف1)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSubFormOverride('chronic_followup')}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-black cursor-pointer transition-all ${
+                              resolvedBookingRoute.examFormMode === 'chronic_followup'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-slate-100 text-slate-700 hover:bg-indigo-50'
+                            }`}
+                          >
+                            متابعة أمراض مزمنة ضغط/سكر (ف4أ/ب/ج)
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-white/90 p-3 rounded-xl border border-emerald-200/80 space-y-1.5">
+                      <span className="text-[10px] font-black text-slate-500 block">
+                        الترحيل التلقائي إلى الملف العائلي فور حفظ الكشف:
+                      </span>
+                      <ul className="space-y-1 text-[11px] font-bold text-slate-800">
+                        {resolvedBookingRoute.autoSyncTargets.map((target, idx) => (
+                          <li key={idx} className="flex items-start gap-1.5">
+                            <Check size={13} className="text-emerald-600 shrink-0 mt-0.5" />
+                            <span>{target}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   </div>
                 </div>
               )}

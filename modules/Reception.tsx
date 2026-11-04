@@ -9,6 +9,7 @@ import {
   classifyAndDeduplicateAppointments,
   isRecordDateInPast
 } from '../utils/permissions.ts';
+import { resolveBookingVisitAndForm } from '../utils/clinicalBookingRouter.ts';
 import { Patient } from '../types.ts';
 import {
   UserPlus,
@@ -256,6 +257,8 @@ const ReceptionModule: React.FC<ReceptionProps> = () => {
             {activeClinicsList.map((app) => {
               const prof = patientProfilesMap.get(app.patient_id);
               const isOldAbandonedAppointment = isRecordDateInPast(app.date, todayStr);
+              const pObj = patients.find((pt) => pt.id === app.patient_id) || app.patients;
+              const routeInfo = resolveBookingVisitAndForm(app.clinics, pObj, app.notes || app.triggered_by || '');
               return (
                 <div
                   key={app.id}
@@ -279,6 +282,9 @@ const ReceptionModule: React.FC<ReceptionProps> = () => {
                             {prof.familyFile.file_code || prof.familyFile.family_code}
                           </span>
                         )}
+                        <span className="px-2 py-0.5 bg-teal-50 text-teal-800 border border-teal-200 rounded-md text-[10px] font-black">
+                          {routeInfo.formCodeBadge}: {routeInfo.visitTypeLabel} (ف2ب كود {routeInfo.visitCode})
+                        </span>
                         {prof && (
                           <span
                             className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${
@@ -305,7 +311,7 @@ const ReceptionModule: React.FC<ReceptionProps> = () => {
                       </div>
                       <div className="flex flex-wrap items-center gap-3 mt-1">
                         <span className="text-xs text-indigo-600 flex items-center gap-1 font-bold">
-                          <Stethoscope size={12} /> د/ {app.doctors?.name || 'طبيب العيادة'}
+                          <Stethoscope size={12} /> د/ {app.doctors?.name || 'طبيب العيادة'} ({app.clinics?.name || 'العيادة'})
                         </span>
                         <span className="text-xs text-gray-500 flex items-center gap-1">
                           <Clock size={12} /> {app.date ? `${app.date} | ` : ''}

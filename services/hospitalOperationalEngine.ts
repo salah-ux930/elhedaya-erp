@@ -627,17 +627,24 @@ export class HospitalOperationalEngine {
   }
 
   /**
-   * التحديث العكسي التلقائي للملف العائلي (Auto Write-Back)
-   * يُستدعى تلقائياً فور انتهاء كشف عيادة، أو جلسة غسيل، أو صرف دواء من الصيدلية
+   * التحديث العكسي التلقائي الشامل للملف العائلي (Triple Auto Write-Back: ف2ب + ف2أ + سجل المشكلات المزمنة)
+   * يُستدعى تلقائياً فور انتهاء كشف عيادة، أو صرف دواء من الصيدلية، أو نتيجة تحليل
    */
   static async syncClinicalEventToFamilyFile(event: {
     patient_id: string;
+    appointment_id?: string;
     event_type: 'CLINIC_EXAM' | 'DIALYSIS_SESSION' | 'PHARMACY_DISPENSE' | 'LAB_RESULT';
     date?: string;
+    visit_code?: number;
+    visit_type?: string;
+    clinic_name?: string;
     doctor_or_staff?: string;
     complaint_or_reason?: string;
+    clinical_exam_summary?: string;
+    investigations_summary?: string;
     diagnosis_or_summary: string;
     treatment_or_medications?: string;
+    significant_event_description?: string;
     chronic_disease_to_register?: string;
     new_chronic_condition?: string;
   }): Promise<void> {
@@ -651,20 +658,43 @@ export class HospitalOperationalEngine {
       LAB_RESULT: 'نتيجة تحليل معملي'
     };
 
+    const visitCodeLabels: Record<number, string> = {
+      1: 'متابعة الحمل',
+      2: 'تنظيم الأسرة',
+      3: 'متابعة طفل',
+      4: 'أمراض مزمنة',
+      5: 'زيارة دورية',
+      6: 'أسنان'
+    };
+
+    const resolvedVisitCode =
+      event.visit_code && event.visit_code >= 1 && event.visit_code <= 6
+        ? event.visit_code
+        : 5;
+    const resolvedVisitType =
+      event.visit_type || visitCodeLabels[resolvedVisitCode] || typePrefixMap[event.event_type];
+
     try {
-      // 1. Add automatic entry to patient_visits (سجل التردد والزيارات بالملف العائلي)
+      // 1. Add automatic entry to patient_visits (نموذج التردد ف2ب بالملف العائلي)
       await DB.addPatientVisit({
         patient_id: event.patient_id,
+        appointment_id: event.appointment_id || null,
         visit_date: visitDate,
-        complaint: event.complaint_or_reason || typePrefixMap[event.event_type],
-        diagnosis: `[${typePrefixMap[event.event_type]}] ${event.diagnosis_or_summary}`,
-        complaint_and_diagnosis: `[${typePrefixMap[event.event_type]}] ${event.diagnosis_or_summary}`,
-        treatment: event.treatment_or_medications || 'تم التوثيق تلقائياً بالملف العائلي',
+        visit_code: resolvedVisitCode,
+        visit_type: resolvedVisitType,
+        clinic_name: event.clinic_name || null,
+        complaint: event.complaint_or_reason || resolvedVisitType,
+        chief_complaint: event.complaint_or_reason || resolvedVisitType,
+        clinical_exam: event.clinical_exam_summary || null,
+        investigations: event.investigations_summary || null,
+        diagnosis: event.diagnosis_or_summary,
+        management: event.treatment_or_medications || 'تم التوثيق تلقائياً بالملف العائلي',
         treatment_plan: event.treatment_or_medications || 'تم التوثيق تلقائياً بالملف العائلي',
+        doctor_name: event.doctor_or_staff || 'النظام الآلي',
         doctor_signature: event.doctor_or_staff || 'النظام الآلي'
       });
 
-      // 2. If a chronic condition is flagged and not yet in patient_problem_list, add it
+      // 2. If a chronic condition is flagged and not yet in patient_problem_list, add it (التاريخ المرضي لأفراد الأسرة)
       const chronicToSave = event.chronic_disease_to_register || event.new_chronic_condition;
       if (chronicToSave && chronicToSave.trim()) {
         const existingProbs = await DB.getPatientProblems(event.patient_id);
@@ -678,7 +708,7 @@ export class HospitalOperationalEngine {
             problem_name: chronicToSave.trim(),
             onset_date: visitDate,
             problem_type: 'chronic',
-            notes: `تم رصده وتحديثه تلقائياً من ${typePrefixMap[event.event_type]}`,
+            notes: `تم رصده وتحديثه تلقائياً من ${resolvedVisitType}`,
             status: 'active'
           });
         }

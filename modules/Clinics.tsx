@@ -15,6 +15,7 @@ import PatientClinical360Modal from '../components/PatientClinical360Modal.tsx';
 import { HospitalOperationalEngine, PatientOperationalProfile } from '../services/hospitalOperationalEngine.ts';
 import { evaluateClinicalModuleEligibility } from '../services/followupSuggestions.ts';
 import { classifyAndDeduplicateAppointments, isRecordDateInPast } from '../utils/permissions.ts';
+import { resolveBookingVisitAndForm, stripBookingMetadataTag } from '../utils/clinicalBookingRouter.ts';
 
 function getLocalTodayStr(): string {
   const now = new Date();
@@ -307,6 +308,10 @@ const ClinicsModule: React.FC = () => {
                 {filteredAppointments.map((app: any) => {
                   const prof = patientProfilesMap.get(app.patient_id);
                   const isOldAbandoned = isRecordDateInPast(app.date, todayStr);
+                  const pObj = patients.find(p => p.id === app.patient_id) || app.patients;
+                  const cObj = clinics.find(c => c.id === app.clinic_id) || app.clinics;
+                  const routeInfo = resolveBookingVisitAndForm(cObj, pObj, app.notes || app.triggered_by || '');
+                  const cleanNote = stripBookingMetadataTag(app.notes);
                   return (
                   <div key={app.id} className={`bg-white p-6 rounded-2xl border shadow-sm hover:shadow-md transition-all ${isOldAbandoned ? 'border-amber-300 bg-amber-50/10' : 'border-gray-100'}`}>
                     <div className="flex justify-between items-start mb-4">
@@ -323,6 +328,9 @@ const ClinicsModule: React.FC = () => {
                                   {prof.familyFile.file_code}
                                 </span>
                               )}
+                              <span className="px-2 py-0.5 bg-teal-50 text-teal-800 border border-teal-200 rounded text-[10px] font-black">
+                                {routeInfo.formCodeBadge}: {routeInfo.visitTypeLabel}
+                              </span>
                               {prof?.hasAllergyAlert && (
                                 <span className="px-2 py-0.5 bg-rose-100 text-rose-800 border border-rose-300 rounded text-[10px] font-black flex items-center gap-1">
                                   <ShieldAlert size={11} /> حساسية
@@ -364,6 +372,20 @@ const ClinicsModule: React.FC = () => {
                           <Clock size={14} className="text-gray-400" />
                           <span>{app.date} | {app.time}</span>
                        </div>
+                       <div className="p-2.5 bg-slate-50 border border-slate-100 rounded-xl text-[11px] font-bold text-slate-700 flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-1.5 text-indigo-800">
+                            <FileText size={13} className="text-indigo-600 shrink-0" />
+                            <span>يفتح للطبيب: {routeInfo.formTitle}</span>
+                          </span>
+                          <span className="px-2 py-0.5 bg-white border border-slate-200 rounded text-[10px] font-mono text-slate-600 shrink-0">
+                            ف2ب كود ({routeInfo.visitCode})
+                          </span>
+                       </div>
+                       {cleanNote && (
+                         <p className="text-[11px] text-gray-500 font-medium bg-amber-50/40 px-2.5 py-1.5 rounded-lg border border-amber-100">
+                           ملاحظة الحجز: {cleanNote}
+                         </p>
+                       )}
                     </div>
 
                     <div className="flex gap-2 pt-4 border-t">
