@@ -15,6 +15,7 @@ import {
   Heart,
   Smile,
   Award,
+  Lock,
 } from 'lucide-react';
 
 export interface ClinicalModuleItem {
@@ -27,6 +28,7 @@ export interface ClinicalModuleItem {
   isCompleted: boolean;
   badge?: string;
   eligible?: boolean;
+  lockReason?: string;
 }
 
 export interface FamilyUnifiedNavigationTreeProps {
@@ -296,21 +298,31 @@ export const FamilyUnifiedNavigationTree: React.FC<FamilyUnifiedNavigationTreePr
         {clinicalModules.map((mod) => {
           const ModIcon = mod.icon;
           const isModActive = activeSection === 'clinical' && activeClinicalModule === mod.id;
+          const isLocked = mod.eligible === false && !mod.isCompleted;
 
           return (
             <button
               key={mod.id}
               type="button"
-              onClick={() => onSelectClinicalModule(mod.id)}
-              className={`w-full text-right p-2.5 rounded-2xl flex items-center justify-between transition-all cursor-pointer border ${
-                isModActive
-                  ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white border-purple-700 shadow-xs font-black'
-                  : 'bg-white hover:bg-purple-50/60 text-slate-700 border-slate-200/70 hover:border-purple-200 font-bold'
+              disabled={isLocked}
+              title={isLocked ? `مغلق: ${mod.lockReason || 'غير متوافق مع عمر أو نوع الفرد'}` : mod.title}
+              onClick={() => {
+                if (isLocked) return;
+                onSelectClinicalModule(mod.id);
+              }}
+              className={`w-full text-right p-2.5 rounded-2xl flex items-center justify-between transition-all border ${
+                isLocked
+                  ? 'bg-slate-100/70 text-slate-400 border-dashed border-slate-200 opacity-60 cursor-not-allowed select-none'
+                  : isModActive
+                  ? 'bg-gradient-to-r from-purple-700 to-indigo-700 text-white border-purple-700 shadow-xs font-black cursor-pointer'
+                  : 'bg-white hover:bg-purple-50/60 text-slate-700 border-slate-200/70 hover:border-purple-200 font-bold cursor-pointer'
               }`}
             >
               <div className="flex items-center gap-2.5 min-w-0">
-                {/* أيقونة حالة الاكتمال */}
-                {mod.isCompleted ? (
+                {/* أيقونة حالة الاكتمال أو القفل */}
+                {isLocked ? (
+                  <Lock size={15} className="shrink-0 text-slate-400" aria-label="غير متاح لهذا الفرد" />
+                ) : mod.isCompleted ? (
                   <CheckCircle2
                     size={16}
                     className={`shrink-0 ${
@@ -330,7 +342,9 @@ export const FamilyUnifiedNavigationTree: React.FC<FamilyUnifiedNavigationTreePr
 
                 <div
                   className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 ${
-                    isModActive
+                    isLocked
+                      ? 'bg-slate-200/70 text-slate-400'
+                      : isModActive
                       ? 'bg-white/20 text-white'
                       : 'bg-purple-100/70 text-purple-700'
                   }`}
@@ -339,10 +353,14 @@ export const FamilyUnifiedNavigationTree: React.FC<FamilyUnifiedNavigationTreePr
                 </div>
 
                 <div className="truncate">
-                  <span className="text-xs font-black block truncate leading-tight">
+                  <span className={`text-xs font-black block truncate leading-tight ${isLocked ? 'line-through decoration-slate-300' : ''}`}>
                     {mod.title}
                   </span>
-                  {mod.subTitle && (
+                  {isLocked ? (
+                    <span className="text-[9px] block truncate font-bold text-rose-500/90">
+                      مغلق: {mod.lockReason || 'غير متوافق مع العمر/النوع'}
+                    </span>
+                  ) : mod.subTitle ? (
                     <span
                       className={`text-[9px] block truncate font-mono ${
                         isModActive ? 'text-purple-200' : 'text-slate-400 font-medium'
@@ -350,7 +368,7 @@ export const FamilyUnifiedNavigationTree: React.FC<FamilyUnifiedNavigationTreePr
                     >
                       {mod.subTitle}
                     </span>
-                  )}
+                  ) : null}
                 </div>
               </div>
 

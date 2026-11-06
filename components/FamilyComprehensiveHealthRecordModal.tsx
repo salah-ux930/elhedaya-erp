@@ -4,7 +4,7 @@ import {
   Baby, HeartHandshake, Sparkles, Smile, Clock, CheckCircle2, 
   AlertCircle, Plus, Trash2, Printer, ArrowRight, Stethoscope,
   ChevronDown, ChevronUp, ExternalLink, Save, Check, Filter,
-  Eye, Droplets, Info, CalendarCheck, CheckCircle, AlertTriangle
+  Eye, Droplets, Info, CalendarCheck, CheckCircle, AlertTriangle, Lock
 } from 'lucide-react';
 import { DB } from '../store.ts';
 import { calculateAge, BLOOD_TYPES } from '../constants.ts';
@@ -606,6 +606,12 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
     return moduleGroups.flatMap(g => g.modules).find(m => m.id === activeTab);
   }, [moduleGroups, activeTab]);
 
+  useEffect(() => {
+    if (!loading && activeTabModule && !activeTabModule.available && activeTabModule.count === 0) {
+      setActiveTab('history');
+    }
+  }, [loading, activeTabModule]);
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/70 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200 print:static print:bg-white print:p-0 print:m-0 print:block" dir="rtl">
       <div className="bg-slate-50 w-full max-w-6xl rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[95vh] print:static print:w-full print:max-h-none print:shadow-none print:border-none print:rounded-none print:p-0 print:m-0 print:overflow-visible">
@@ -718,33 +724,53 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                       const Icon = mod.icon;
                       const isActive = activeTab === mod.id;
                       const isAllowed = mod.available;
+                      const isLockedIneligible = !isAllowed && mod.count === 0;
 
                       return (
                         <button
                           key={mod.id}
                           type="button"
-                          onClick={() => handleTabClick(mod.id)}
-                          className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 cursor-pointer ${
-                            isActive
-                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 scale-[1.02]'
+                          disabled={isLockedIneligible}
+                          onClick={() => {
+                            if (isLockedIneligible) return;
+                            handleTabClick(mod.id);
+                          }}
+                          className={`px-3 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                            isLockedIneligible
+                              ? 'bg-slate-100/70 text-slate-400 border border-dashed border-slate-300 opacity-60 cursor-not-allowed select-none'
+                              : isActive
+                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 scale-[1.02] cursor-pointer'
                               : isAllowed
-                              ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 hover:border-slate-300'
-                              : 'bg-slate-100/80 text-slate-500 border border-slate-200/80 hover:bg-slate-200/60'
+                              ? 'bg-white hover:bg-slate-50 text-slate-700 border border-slate-200/90 hover:border-slate-300 cursor-pointer'
+                              : 'bg-slate-100/80 text-slate-500 border border-slate-200/80 hover:bg-slate-200/60 cursor-pointer'
                           }`}
-                          title={!isAllowed ? `${mod.reason} (متاح لعرض السجلات التاريخية فقط)` : mod.title}
+                          title={!isAllowed ? mod.reason : mod.title}
                         >
-                          <ModuleProgressRing
-                            percent={mod.count > 0 ? 100 : 0}
-                            hasData={mod.count > 0}
-                            size={16}
-                            strokeWidth={2.5}
-                            color={isActive ? '#ffffff' : (mod.id === 'maternal' ? '#e11d48' : '#4f46e5')}
-                          />
+                          {isLockedIneligible ? (
+                            <Lock size={14} className="text-slate-400 shrink-0" />
+                          ) : (
+                            <ModuleProgressRing
+                              percent={mod.count > 0 ? 100 : 0}
+                              hasData={mod.count > 0}
+                              size={16}
+                              strokeWidth={2.5}
+                              color={isActive ? '#ffffff' : (mod.id === 'maternal' ? '#e11d48' : '#4f46e5')}
+                            />
+                          )}
 
-                          <Icon size={14} className={isActive ? 'text-white' : 'text-slate-600 shrink-0'} />
-                          <span className="whitespace-nowrap">{mod.title}</span>
+                          <Icon size={14} className={isActive ? 'text-white' : isLockedIneligible ? 'text-slate-400 shrink-0' : 'text-slate-600 shrink-0'} />
+                          <div className="flex flex-col text-right leading-tight">
+                            <span className={`whitespace-nowrap ${isLockedIneligible ? 'line-through decoration-slate-300' : ''}`}>
+                              {mod.title}
+                            </span>
+                            {isLockedIneligible && (
+                              <span className="text-[9px] font-bold text-rose-500/90 whitespace-nowrap">
+                                مغلق: {mod.badge}
+                              </span>
+                            )}
+                          </div>
 
-                          {mod.id === 'maternal' && (
+                          {mod.id === 'maternal' && isAllowed && (
                             <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold shrink-0 ${
                               isActive ? 'bg-rose-400/90 text-white' : 'bg-rose-100 text-rose-800 border border-rose-200'
                             }`}>
@@ -758,13 +784,13 @@ export const FamilyComprehensiveHealthRecordModal: React.FC<Props> = ({
                             }`}>
                               ({mod.count})
                             </span>
-                          ) : (
+                          ) : !isLockedIneligible ? (
                             <span className="text-[10px] font-mono text-slate-300">
                               (0)
                             </span>
-                          )}
+                          ) : null}
 
-                          {!isAllowed && (
+                          {!isAllowed && mod.count > 0 && (
                             <span className={`text-[9px] px-1.5 py-0.5 rounded font-bold shrink-0 ${
                               isActive ? 'bg-amber-400 text-slate-950' : 'bg-amber-100 text-amber-800'
                             }`}>

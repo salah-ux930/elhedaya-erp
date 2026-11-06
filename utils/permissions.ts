@@ -1147,6 +1147,76 @@ export function detectFamilyFileDuplicates(
   };
 }
 
+/**
+ * يتحقق من أن الاسم المدخل رباعي على الأقل (يتكون من 4 مقاطع/كلمات على الأقل)
+ * ولا يحتوي على أرقام، ويعيد الاسم بعد تطبيع المسافات الزائدة.
+ */
+export function validateQuadrupleName(
+  rawName?: string | null,
+  fieldLabel: string = 'اسم المريض'
+): {
+  valid: boolean;
+  normalizedName: string;
+  wordCount: number;
+  reason: string;
+} {
+  const normalizedName = String(rawName || '')
+    .trim()
+    .replace(/\s+/g, ' ');
+
+  if (!normalizedName) {
+    return {
+      valid: false,
+      normalizedName: '',
+      wordCount: 0,
+      reason: `يرجى إدخال ${fieldLabel} رباعياً بالكامل (4 مقاطع على الأقل).`
+    };
+  }
+
+  if (/\d/.test(normalizedName)) {
+    return {
+      valid: false,
+      normalizedName,
+      wordCount: 0,
+      reason: `${fieldLabel} يجب أن يحتوي على حروف فقط بدون أرقام.`
+    };
+  }
+
+  const words = normalizedName.split(' ').filter((w) => w.trim().length > 0);
+
+  if (words.length < 4) {
+    return {
+      valid: false,
+      normalizedName,
+      wordCount: words.length,
+      reason: `لا يمكن الحفظ: يجب إدخال ${fieldLabel} رباعياً بالكامل (4 أسماء على الأقل — المدخل حالياً ${
+        words.length === 1
+          ? 'اسم واحد فقط'
+          : words.length === 2
+          ? 'اسمان فقط'
+          : '3 أسماء فقط'
+      }).`
+    };
+  }
+
+  const hasTooShortPart = words.slice(0, 4).some((w) => w.length < 2);
+  if (hasTooShortPart) {
+    return {
+      valid: false,
+      normalizedName,
+      wordCount: words.length,
+      reason: `يرجى كتابة مقاطع ${fieldLabel} الأربعة بشكل كامل وصحيح (حرفين على الأقل لكل اسم).`
+    };
+  }
+
+  return {
+    valid: true,
+    normalizedName,
+    wordCount: words.length,
+    reason: ''
+  };
+}
+
 export interface FamilyFilePreSaveValidationResult {
   valid: boolean;
   reason: string;

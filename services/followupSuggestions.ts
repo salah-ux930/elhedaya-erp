@@ -293,34 +293,55 @@ export function evaluateClinicalModuleEligibility(
     };
   }
 
-  // 5) فحص المقبلين على الزواج أو أي وحدة تخصصية أخرى بدون قاعدة طبية موحدة موثقة
+  // 5) فحص المقبلين على الزواج (العمر >= 15 سنة)
   if (mod === 'premarital') {
     if (ageYears === null) {
       return {
-        eligible: false,
-        reason: 'معيار الأهلية يحتاج إعداداً من الإدارة الطبية (تاريخ الميلاد غير مسجل للتحقق من أهلية فحص المقبلين على الزواج). يُسمح بعرض السجلات التاريخية فقط.',
-        badgeText: 'معيار الأهلية يحتاج إعداداً من الإدارة الطبية',
-        requiresAdminSetup: true,
+        eligible: true,
+        reason: '',
+        badgeText: 'مؤهل (فحص ما قبل الزواج)',
         ageYears,
         ageMonths,
         normalizedGender,
       };
     }
-    if (ageYears < 18) {
+    if (ageYears < 15) {
       return {
         eligible: false,
-        reason: `غير مؤهل لفحص المقبلين على الزواج: العمر الحالي (${ageYears} سنة) أقل من سن البلوغ القانوني المعتمد في الجدول (18 سنة). يُسمح بعرض السجلات التاريخية فقط.`,
-        badgeText: 'غير مؤهل (أقل من 18 سنة)',
+        reason: `غير متاح: فحص راغبي الزواج مخصص للفئة العمرية (15 سنة فأكثر) وعمر المريض الحالي (${ageYears} سنة).`,
+        badgeText: 'خاص بسن 15 سنة فأكثر',
         ageYears,
         ageMonths,
         normalizedGender,
       };
     }
     return {
-      eligible: false,
-      reason: 'معيار الأهلية يحتاج إعداداً من الإدارة الطبية قبل فتح توثيق جديد في هذه الوحدة. يُسمح بعرض السجلات التاريخية فقط.',
-      badgeText: 'معيار الأهلية يحتاج إعداداً من الإدارة الطبية',
-      requiresAdminSetup: true,
+      eligible: true,
+      reason: '',
+      badgeText: 'مؤهل (فحص ما قبل الزواج)',
+      ageYears,
+      ageMonths,
+      normalizedGender,
+    };
+  }
+
+  // 6) متابعة الأمراض المزمنة (ضغط / سكر / أمراض مزمنة)
+  if (mod === 'chronic_followup' || mod === 'chronic') {
+    const hasRecordedChronic = Array.isArray((patient as any)?.chronic_conditions) && (patient as any).chronic_conditions.length > 0;
+    if (ageYears !== null && ageYears < 15 && !hasRecordedChronic) {
+      return {
+        eligible: false,
+        reason: `غير متاح: نموذج متابعة الأمراض المزمنة (الضغط/السكر) مخصص للبالغين (15 سنة فأكثر) أو المسجل لديهم مرض مزمن.`,
+        badgeText: 'خاص بالبالغين أو أصحاب الأمراض المزمنة',
+        ageYears,
+        ageMonths,
+        normalizedGender,
+      };
+    }
+    return {
+      eligible: true,
+      reason: '',
+      badgeText: 'متاح لمتابعة الأمراض المزمنة',
       ageYears,
       ageMonths,
       normalizedGender,

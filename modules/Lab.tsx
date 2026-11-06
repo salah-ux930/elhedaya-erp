@@ -200,8 +200,8 @@ const LabModule: React.FC = () => {
       setPatients([...patients, newP]);
       setSelectedPatientId(newP.id);
       setShowPatientModal(false);
-    } catch (err) {
-      alert("خطأ في إضافة المريض");
+    } catch (err: any) {
+      alert(err?.message || "خطأ في إضافة المريض");
     }
   };
 

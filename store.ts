@@ -13,7 +13,8 @@ import {
   normalizeIdentifier,
   validateNewFamilyFileInput,
   validateNewFamilyMemberInput,
-  validateNewWaitingDateNotInPast
+  validateNewWaitingDateNotInPast,
+  validateQuadrupleName
 } from './utils/permissions.ts';
 
 /**
@@ -40,16 +41,158 @@ const handleError = (error: any, fallbackMessage: string) => {
   throw new Error(error?.message || fallbackMessage);
 };
 
+export function toSupabaseAuthEmail(username: string): string {
+  const clean = String(username || '').trim().toLowerCase();
+  if (/^[a-z0-9._+-]+@[a-z0-9.-]+\.[a-z]{2,}$/.test(clean)) {
+    return clean;
+  }
+  const bytes = new TextEncoder().encode(clean || 'staff');
+  const hex = Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  return `u_${hex}@elhedaya.local`;
+}
+
+export function toSupabaseAuthPassword(password: string): string {
+  const raw = String(password || '');
+  return raw.length >= 6 ? raw : `${raw}_elhedaya_auth`;
+}
+
 export class DB {
+  private static authInitPromise: Promise<boolean> | null = null;
+
+  /**
+   * يضمن وجود جلسة Supabase Auth (role = authenticated) للمستخدم المسجل دخوله
+   * حتى تعمل جميع سياسات الحماية (RLS: TO authenticated) بأمان.
+   */
+  static async ensureSupabaseAuthSession(explicitUser?: any, explicitPassword?: string): Promise<boolean> {
+    if (this.authInitPromise) {
+      return this.authInitPromise;
+    }
+
+    this.authInitPromise = (async () => {
+      try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        if (sessionData?.session?.access_token) {
+          return true;
+        }
+
+        let targetUser = explicitUser;
+        if (!targetUser) {
+          const saved = localStorage.getItem('dialysis_user');
+          if (saved) {
+            try {
+              targetUser = JSON.parse(saved);
+            } catch {
+              targetUser = null;
+            }
+          }
+        }
+
+        const username = String(targetUser?.username || '').trim();
+        const rawPassword = String(explicitPassword ?? targetUser?.password ?? '');
+
+        if (!username || !rawPassword) {
+          return false;
+        }
+
+        const email = toSupabaseAuthEmail(username);
+        const derivedPassword = toSupabaseAuthPassword(rawPassword);
+
+        // 1. محاولة تسجيل الدخول عبر Supabase Auth بالبريد المشتق وكلمة المرور المشتقة
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+          email,
+          password: derivedPassword
+        });
+        if (!signInErr && signInData?.session) {
+          return true;
+        }
+
+        // 2. إذا كانت كلمة المرور الأصلية مختلفة، جرب كلمة المرور الأصلية مباشرة
+        if (rawPassword !== derivedPassword && rawPassword.length >= 6) {
+          const { data: rawSignInData, error: rawSignInErr } = await supabase.auth.signInWithPassword({
+            email,
+            password: rawPassword
+          });
+          if (!rawSignInErr && rawSignInData?.session) {
+            return true;
+          }
+        }
+
+        // 3. في حال لم يتم مزامنة الحساب بعد في auth.users، حاول إنشاء حساب Supabase Auth مطابق
+        const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+          email,
+          password: derivedPassword,
+          options: {
+            data: {
+              username,
+              name: targetUser?.name || username,
+              role: targetUser?.role || 'STAFF'
+            }
+          }
+        });
+        if (!signUpErr && signUpData?.session) {
+          return true;
+        }
+
+        return false;
+      } catch (e) {
+        console.warn('Supabase Auth session initialization note:', e);
+        return false;
+      } finally {
+        this.authInitPromise = null;
+      }
+    })();
+
+    return this.authInitPromise;
+  }
+
   static async login(username: string, password: string): Promise<User | null> {
-    const { data, error } = await supabase.from('system_users').select('*').eq('username', username).eq('password', password).single();
-    if (error || !data) return null;
+    const cleanUsername = String(username || '').trim();
+    const email = toSupabaseAuthEmail(cleanUsername);
+    const derivedPassword = toSupabaseAuthPassword(password);
+
+    // 1. محاولة المصادقة عبر Supabase Auth أولاً للحصول على جلسة authenticated
+    await supabase.auth.signInWithPassword({
+      email,
+      password: derivedPassword
+    });
+
+    // 2. جلب بيانات وصلاحيات الموظف من جدول system_users
+    const { data, error } = await supabase
+      .from('system_users')
+      .select('*')
+      .eq('username', cleanUsername)
+      .eq('password', password)
+      .single();
+
+    if (error || !data) {
+      return null;
+    }
+
+    // 3. التأكد من تفعيل جلسة Supabase Auth لهذا المستخدم
+    await this.ensureSupabaseAuthSession(data, password);
     return data as User;
+  }
+
+  static async logout(): Promise<void> {
+    try {
+      await supabase.auth.signOut();
+    } catch (e) {
+      console.warn('Supabase signOut note:', e);
+    }
   }
 
   // --- Patients ---
   static async addPatient(p: Partial<Patient>) {
+    await this.ensureSupabaseAuthSession();
     assertClientCrudPermission('patients', 'create');
+
+    const nameCheck = validateQuadrupleName(p.name, 'اسم المريض');
+    if (!nameCheck.valid) {
+      throw new Error(nameCheck.reason);
+    }
+
     // Phone validation (Must start with 01 and have 11 digits)
     const phoneRegex = /^01\d{9}$/;
     if (p.phone && !phoneRegex.test(p.phone)) {
@@ -69,13 +212,15 @@ export class DB {
       }
     }
 
-    const { data, error } = await supabase.from('patients').insert([p]).select();
+    const payload = { ...p, name: nameCheck.normalizedName };
+    const { data, error } = await supabase.from('patients').insert([payload]).select();
     if (error) return handleError(error, "فشل إضافة المريض");
     return data?.[0];
   }
 
   static async getPatients() {
     try {
+      await this.ensureSupabaseAuthSession();
       const { data, error } = await supabase.from('patients').select('*').order('created_at', { ascending: false });
       if (error) {
         console.warn("Supabase getPatients warning:", error.message || error);
@@ -467,6 +612,7 @@ export class DB {
   // --- Family Files (الملفات العائلية) ---
   static async getFamilyFiles() {
     try {
+      await this.ensureSupabaseAuthSession();
       const { data, error } = await supabase.from('family_files').select('*, family_file_members(*, patients(*))').order('created_at', { ascending: false });
       if (error) { if (['42P01', 'PGRST116'].includes(error.code)) return []; throw error; }
       return (data || []).map((file: any) => ({
@@ -476,6 +622,7 @@ export class DB {
     } catch (e) { return []; }
   }
   static async addFamilyFile(f: any) {
+    await this.ensureSupabaseAuthSession();
     assertClientCrudPermission('family_files', 'create');
     const [existingFiles, existingPatients] = await Promise.all([
       this.getFamilyFiles(),
@@ -490,6 +637,7 @@ export class DB {
     return data?.[0];
   }
   static async updateFamilyFile(id: string, f: any) {
+    await this.ensureSupabaseAuthSession();
     assertClientCrudPermission('family_files', 'update', id);
     const [existingFiles, existingPatients] = await Promise.all([
       this.getFamilyFiles(),
@@ -504,6 +652,7 @@ export class DB {
     return data?.[0];
   }
   static async addFamilyMember(m: any) {
+    await this.ensureSupabaseAuthSession();
     assertClientCrudPermission('family_files', 'create');
     const [existingFiles, existingPatients] = await Promise.all([
       this.getFamilyFiles(),
@@ -518,12 +667,14 @@ export class DB {
     return data?.[0];
   }
   static async updateFamilyMember(id: string, m: any) {
+    await this.ensureSupabaseAuthSession();
     assertClientCrudPermission('family_files', 'update', id);
     const { data, error } = await supabase.from('family_file_members').update(m).eq('id', id).select();
     if (error) return handleError(error, "فشل تحديث بيانات الفرد");
     return data?.[0];
   }
   static async deleteFamilyMember(id: string) {
+    await this.ensureSupabaseAuthSession();
     assertClientCrudPermission('family_files', 'delete', id);
     const { error } = await supabase.from('family_file_members').delete().eq('id', id);
     if (error) return handleError(error, "فشل حذف الفرد من الأسرة");
@@ -533,6 +684,7 @@ export class DB {
   // --- Clinical Encounters (اللقاءات السريرية) ---
   static async getClinicalEncounters(patientId?: string) {
     try {
+      await this.ensureSupabaseAuthSession();
       let query = supabase.from('clinical_encounters').select('*, patients(*), doctors(*), clinics(*)').order('encounter_date', { ascending: false });
       if (patientId) query = query.eq('patient_id', patientId);
       const { data, error } = await query;
@@ -541,6 +693,7 @@ export class DB {
     } catch (e) { return []; }
   }
   static async addClinicalEncounter(e: any) {
+    await this.ensureSupabaseAuthSession();
     const { data, error } = await supabase.from('clinical_encounters').insert([e]).select();
     if (error) return handleError(error, "فشل إنشاء اللقاء الطبي");
     if (data?.[0] && e.appointment_id) {
@@ -552,12 +705,14 @@ export class DB {
   // --- Patient Vitals & Problems ---
   static async getPatientVitals(patientId: string) {
     try {
+      await this.ensureSupabaseAuthSession();
       const { data, error } = await supabase.from('patient_vitals').select('*').eq('patient_id', patientId).order('measured_at', { ascending: false });
       if (error) { if (['42P01'].includes(error.code)) return []; throw error; }
       return data || [];
     } catch (e) { return []; }
   }
   static async addPatientVitals(v: any) {
+    await this.ensureSupabaseAuthSession();
     const { data, error } = await supabase.from('patient_vitals').insert([v]).select();
     if (error) return handleError(error, "فشل تسجيل العلامات الحيوية");
     return data?.[0];
@@ -565,6 +720,7 @@ export class DB {
 
   static async getPatientProblems(patientId?: string) {
     try {
+      await this.ensureSupabaseAuthSession();
       let query = supabase.from('patient_problem_list').select('*, patients(*)').order('onset_date', { ascending: false });
       if (patientId) query = query.eq('patient_id', patientId);
       const { data, error } = await query;
@@ -573,11 +729,13 @@ export class DB {
     } catch (e) { return []; }
   }
   static async addPatientProblem(prob: any) {
+    await this.ensureSupabaseAuthSession();
     const { data, error } = await supabase.from('patient_problem_list').insert([prob]).select();
     if (error) return handleError(error, "فشل إضافة التاريخ المرضي");
     return data?.[0];
   }
   static async deletePatientProblem(id: string) {
+    await this.ensureSupabaseAuthSession();
     const { error } = await supabase.from('patient_problem_list').delete().eq('id', id);
     if (error) return handleError(error, "فشل حذف التاريخ المرضي");
     return true;
@@ -586,6 +744,7 @@ export class DB {
   // --- Patient Deaths (بيانات الوفيات) ---
   static async getPatientDeaths() {
     try {
+      await this.ensureSupabaseAuthSession();
       const { data, error } = await supabase.from('patient_deaths').select('*, patients(*)').order('death_date', { ascending: false });
       if (error) {
         if (['42P01', 'PGRST116', 'PGRST107'].includes(error.code)) {
@@ -603,6 +762,7 @@ export class DB {
 
   static async addPatientDeath(death: any) {
     try {
+      await this.ensureSupabaseAuthSession();
       const { data, error } = await supabase.from('patient_deaths').insert([death]).select();
       if (error) {
         if (['42P01', 'PGRST116', 'PGRST107'].includes(error.code)) {
@@ -636,6 +796,7 @@ export class DB {
 
   static async deletePatientDeath(id: string) {
     try {
+      await this.ensureSupabaseAuthSession();
       const { error } = await supabase.from('patient_deaths').delete().eq('id', id);
       if (error) {
         if (['42P01', 'PGRST116', 'PGRST107'].includes(error.code)) {
@@ -664,6 +825,7 @@ export class DB {
   // --- Accreditation Specialized Forms Generic Fetch/Save ---
   static async getAccreditationRecords(tableName: string, patientId?: string) {
     try {
+      await this.ensureSupabaseAuthSession();
       let query = supabase.from(tableName).select('*').order('created_at', { ascending: false });
       if (patientId) query = query.eq('patient_id', patientId);
       const { data, error } = await query;
@@ -684,6 +846,7 @@ export class DB {
 
   static async addAccreditationRecord(tableName: string, record: any) {
     try {
+      await this.ensureSupabaseAuthSession();
       const { data, error } = await supabase.from(tableName).insert([record]).select();
       if (error) {
         console.warn(`Supabase insert (${tableName}) warning, caching locally:`, error.message || error);
@@ -716,6 +879,7 @@ export class DB {
 
   static async deleteAccreditationRecord(tableName: string, id: string) {
     try {
+      await this.ensureSupabaseAuthSession();
       const { error } = await supabase.from(tableName).delete().eq('id', id);
       const local = localStorage.getItem(`local_accreditation_${tableName}`);
       if (local) {
@@ -739,6 +903,7 @@ export class DB {
   // --- History & Physical Exams (نموذج الفحص الشامل والتاريخ المرضي) ---
   static async getPhysicalExams(patientId?: string) {
     try {
+      await this.ensureSupabaseAuthSession();
       let query = supabase.from('history_physical_exams').select('*, patients(*)').order('exam_date', { ascending: false });
       if (patientId) query = query.eq('patient_id', patientId);
       const { data, error } = await query;
@@ -770,6 +935,7 @@ export class DB {
 
   static async getPhysicalExamForAppointment(appointmentId?: string, patientId?: string) {
     try {
+      await this.ensureSupabaseAuthSession();
       if (appointmentId) {
         const { data, error } = await supabase
           .from('history_physical_exams')
@@ -797,6 +963,7 @@ export class DB {
   }
 
   static async saveClinicPhysicalExam(examData: any) {
+    await this.ensureSupabaseAuthSession();
     // Check if an existing record matches appointment_id or (patient_id AND exam_date)
     let existingId: string | null = null;
     if (examData.appointment_id) {
@@ -847,6 +1014,7 @@ export class DB {
 
   static async addPhysicalExam(exam: any) {
     try {
+      await this.ensureSupabaseAuthSession();
       const { data, error } = await supabase.from('history_physical_exams').insert([exam]).select();
       if (error) {
         console.warn("Supabase insert history_physical_exams warning, saving locally:", error.message || error);
@@ -879,6 +1047,7 @@ export class DB {
 
   static async deletePhysicalExam(id: string) {
     try {
+      await this.ensureSupabaseAuthSession();
       const { error } = await supabase.from('history_physical_exams').delete().eq('id', id);
       const local = localStorage.getItem('local_history_physical_exams');
       if (local) {
@@ -902,6 +1071,7 @@ export class DB {
   // --- Visits Form (نموذج التردد) ---
   static async getPatientVisits(patientId?: string) {
     try {
+      await this.ensureSupabaseAuthSession();
       let query = supabase.from('patient_visits').select('*, patients(*)').order('visit_date', { ascending: false });
       if (patientId) query = query.eq('patient_id', patientId);
       const { data, error } = await query;
@@ -932,6 +1102,7 @@ export class DB {
 
   static async addPatientVisit(visit: any) {
     try {
+      await this.ensureSupabaseAuthSession();
       const { data, error } = await supabase.from('patient_visits').insert([visit]).select();
       if (error) {
         console.warn("Supabase insert patient_visits warning, saving locally:", error.message || error);

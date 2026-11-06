@@ -7,7 +7,8 @@ import PatientClinical360Modal from '../components/PatientClinical360Modal.tsx';
 import { HospitalOperationalEngine, PatientOperationalProfile } from '../services/hospitalOperationalEngine.ts';
 import {
   classifyAndDeduplicateAppointments,
-  isRecordDateInPast
+  isRecordDateInPast,
+  validateQuadrupleName
 } from '../utils/permissions.ts';
 import { resolveBookingVisitAndForm } from '../utils/clinicalBookingRouter.ts';
 import { Patient } from '../types.ts';
@@ -50,6 +51,7 @@ const ReceptionModule: React.FC<ReceptionProps> = () => {
   const [patientFor360, setPatientFor360] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [quickAddError, setQuickAddError] = useState<string | null>(null);
   const [showClinicBookingModal, setShowClinicBookingModal] = useState(false);
 
   useEffect(() => {
@@ -119,11 +121,19 @@ const ReceptionModule: React.FC<ReceptionProps> = () => {
 
   const handleQuickAddPatient = async (e: React.FormEvent) => {
     e.preventDefault();
+    setQuickAddError(null);
     const target = e.target as any;
+
+    const nameCheck = validateQuadrupleName(target.name?.value, 'اسم المريض');
+    if (!nameCheck.valid) {
+      setQuickAddError(nameCheck.reason);
+      return;
+    }
+
     try {
       setLoading(true);
       const newPatient = await DB.addPatient({
-        name: target.name.value,
+        name: nameCheck.normalizedName,
         national_id: target.national_id.value,
         phone: target.phone.value,
         blood_type: target.blood_type.value,
@@ -132,6 +142,7 @@ const ReceptionModule: React.FC<ReceptionProps> = () => {
       });
 
       setShowQuickAddModal(false);
+      setQuickAddError(null);
       setSearchTerm('');
       await loadData();
 
@@ -139,8 +150,8 @@ const ReceptionModule: React.FC<ReceptionProps> = () => {
         setSelectedPatient(newPatient);
         setShowClinicBookingModal(true);
       }
-    } catch (err) {
-      alert('خطأ في إضافة المريض الجديد');
+    } catch (err: any) {
+      setQuickAddError(err?.message || 'خطأ في إضافة المريض الجديد');
     } finally {
       setLoading(false);
     }
@@ -516,9 +527,15 @@ const ReceptionModule: React.FC<ReceptionProps> = () => {
               </button>
             </div>
             <form onSubmit={handleQuickAddPatient} className="p-8 space-y-4">
+              {quickAddError && (
+                <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-bold flex items-center gap-2">
+                  <AlertTriangle size={16} className="shrink-0 text-rose-600" />
+                  <span>{quickAddError}</span>
+                </div>
+              )}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-xs font-bold text-gray-500 mr-2">الاسم بالكامل</label>
+                  <label className="text-xs font-bold text-gray-500 mr-2">الاسم رباعياً بالكامل *</label>
                   <input
                     name="name"
                     defaultValue={
@@ -527,7 +544,7 @@ const ReceptionModule: React.FC<ReceptionProps> = () => {
                         : ''
                     }
                     required
-                    placeholder="اسم المريض"
+                    placeholder="الاسم رباعياً (4 أسماء على الأقل)"
                     className="w-full border rounded-xl p-3 bg-gray-50 focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-sm"
                   />
                 </div>

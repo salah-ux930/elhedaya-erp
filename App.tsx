@@ -18,6 +18,7 @@ import MedicalRecordsModule from './modules/MedicalRecords.tsx';
 import ClinicsModule from './modules/Clinics.tsx';
 import FamilyFilesModule from './modules/FamilyFiles.tsx';
 import PharmacyModule from './modules/Pharmacy.tsx';
+import { DB } from './store.ts';
 import { ShieldAlert, Lock, Info } from 'lucide-react';
 import {
   canAccessTab,
@@ -50,7 +51,14 @@ const App: React.FC = () => {
   
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(!!currentUser);
 
+  useEffect(() => {
+    if (isAuthenticated && currentUser) {
+      DB.ensureSupabaseAuthSession(currentUser);
+    }
+  }, [isAuthenticated, currentUser]);
+
   const handleLogout = () => {
+    DB.logout();
     localStorage.removeItem('dialysis_user');
     setCurrentUser(null);
     setIsAuthenticated(false);
@@ -61,6 +69,7 @@ const App: React.FC = () => {
     localStorage.setItem('dialysis_user', JSON.stringify(user));
     setCurrentUser(user);
     setIsAuthenticated(true);
+    DB.ensureSupabaseAuthSession(user);
     const firstAllowed = getFirstAllowedTab(user);
     setActiveTab(firstAllowed || 'dashboard');
   };

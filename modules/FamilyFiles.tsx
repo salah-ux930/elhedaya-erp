@@ -13,7 +13,8 @@ import {
   detectFamilyFileDuplicates,
   validateNewFamilyFileInput,
   validateNewFamilyMemberInput,
-  deduplicateFollowupsById
+  deduplicateFollowupsById,
+  validateQuadrupleName
 } from "../utils/permissions.ts";
 import {
   FolderOpen,
@@ -92,8 +93,8 @@ const FamilyFilesModule: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // Operational Hub vs Directory View State
-  const [mainWorkspaceMode, setMainWorkspaceMode] = useState<"worklist" | "directory">("worklist");
+  // Operational Hub vs Directory View State (opens directly on Family Files Directory & Search)
+  const [mainWorkspaceMode, setMainWorkspaceMode] = useState<"worklist" | "directory">("directory");
   const [worklistCategoryFilter, setWorklistCategoryFilter] = useState<
     "ALL" | "CRITICAL_CLINICAL" | "MATERNAL_CHILD" | "CHRONIC_GERIATRIC" | "SOCIAL_HOUSING"
   >("ALL");
@@ -512,7 +513,14 @@ const FamilyFilesModule: React.FC = () => {
     try {
       const candidateFamilyCode = (target.family_code?.value || `FF-${Math.floor(1000 + Math.random() * 9000)}`).trim();
       const candidateFamilyNumber = target.family_number?.value?.trim() || null;
-      const candidateHeadName = (target.head_name?.value || "").trim();
+      const rawHeadName = (target.head_name?.value || "").trim();
+
+      const headNameCheck = validateQuadrupleName(rawHeadName, "اسم رب الأسرة");
+      if (!headNameCheck.valid) {
+        setFormError(headNameCheck.reason);
+        return;
+      }
+      const candidateHeadName = headNameCheck.normalizedName;
 
       const preSaveCheck = validateNewFamilyFileInput(
         {
@@ -614,7 +622,13 @@ const FamilyFilesModule: React.FC = () => {
     const combinedRole = notes ? `${role} | ${notes}` : role;
 
     // جلب قيم حقول بيانات المريض الاختيارية لتحديثها
-    const memberName = target.member_name.value.trim();
+    const rawMemberName = target.member_name.value.trim();
+    const memberNameCheck = validateQuadrupleName(rawMemberName, "اسم فرد الأسرة");
+    if (!memberNameCheck.valid) {
+      setFormError(memberNameCheck.reason);
+      return;
+    }
+    const memberName = memberNameCheck.normalizedName;
     const memberGender = target.member_gender.value;
     const memberDob = target.member_dob.value;
     const memberInsurance = target.member_insurance.value;
@@ -778,24 +792,6 @@ const FamilyFilesModule: React.FC = () => {
               type="button"
               onClick={() => {
                 setSelectedFamilyFile(null);
-                setMainWorkspaceMode("worklist");
-              }}
-              className={`flex-1 lg:flex-initial px-4 py-2.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
-                !selectedFamilyFile && mainWorkspaceMode === "worklist"
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-600 hover:text-slate-900"
-              }`}
-            >
-              <CalendarCheck size={16} className="text-primary-600" />
-              <span>01. لوحة المهام والمتابعات اليومية</span>
-              <span className="font-mono tabular-nums text-[11px] text-primary-700">
-                ({operationalWorklist.length})
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setSelectedFamilyFile(null);
                 setMainWorkspaceMode("directory");
               }}
               className={`flex-1 lg:flex-initial px-4 py-2.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
@@ -805,9 +801,27 @@ const FamilyFilesModule: React.FC = () => {
               }`}
             >
               <FolderOpen size={16} className="text-indigo-600" />
-              <span>02. سجل الملفات العائلية والبحث</span>
+              <span>01. سجل الملفات العائلية والبحث</span>
               <span className="font-mono tabular-nums text-[11px] text-indigo-700">
                 ({familyFiles.length})
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedFamilyFile(null);
+                setMainWorkspaceMode("worklist");
+              }}
+              className={`flex-1 lg:flex-initial px-4 py-2.5 rounded-lg text-xs font-black transition-all flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer ${
+                !selectedFamilyFile && mainWorkspaceMode === "worklist"
+                  ? "bg-white text-slate-900 shadow-sm"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <CalendarCheck size={16} className="text-primary-600" />
+              <span>02. لوحة المهام والمتابعات اليومية</span>
+              <span className="font-mono tabular-nums text-[11px] text-primary-700">
+                ({operationalWorklist.length})
               </span>
             </button>
           </div>
@@ -1113,6 +1127,12 @@ const FamilyFilesModule: React.FC = () => {
               ? appointments.some((a: any) => a.patient_id === currentPatientId && a.module === "dental")
               : false;
 
+            const childModElig = evaluateClinicalModuleEligibility(activePatient, "child");
+            const maternalModElig = evaluateClinicalModuleEligibility(activePatient, "maternal");
+            const fpModElig = evaluateClinicalModuleEligibility(activePatient, "family_planning");
+            const premaritalModElig = evaluateClinicalModuleEligibility(activePatient, "premarital");
+            const geriatricModElig = evaluateClinicalModuleEligibility(activePatient, "geriatric");
+
             const clinicalModulesStatusList: ClinicalModuleItem[] = [
               {
                 id: "history",
@@ -1122,6 +1142,7 @@ const FamilyFilesModule: React.FC = () => {
                 icon: Shield,
                 color: "purple",
                 isCompleted: !!hasHistory,
+                eligible: true,
               },
               {
                 id: "significant",
@@ -1131,6 +1152,7 @@ const FamilyFilesModule: React.FC = () => {
                 icon: ClipboardList,
                 color: "amber",
                 isCompleted: !!hasSignificant,
+                eligible: true,
               },
               {
                 id: "clinical",
@@ -1140,6 +1162,7 @@ const FamilyFilesModule: React.FC = () => {
                 icon: Stethoscope,
                 color: "indigo",
                 isCompleted: !!hasClinicalExam,
+                eligible: true,
               },
               {
                 id: "visits",
@@ -1149,6 +1172,7 @@ const FamilyFilesModule: React.FC = () => {
                 icon: CalendarCheck,
                 color: "teal",
                 isCompleted: !!hasVisits,
+                eligible: true,
               },
               {
                 id: "child",
@@ -1158,6 +1182,8 @@ const FamilyFilesModule: React.FC = () => {
                 icon: Baby,
                 color: "emerald",
                 isCompleted: !!hasChildHealth,
+                eligible: childModElig.eligible,
+                lockReason: childModElig.badgeText || "خاص بالأطفال دون 18 سنة",
               },
               {
                 id: "maternal",
@@ -1167,6 +1193,8 @@ const FamilyFilesModule: React.FC = () => {
                 icon: Heart,
                 color: "rose",
                 isCompleted: !!hasMaternal,
+                eligible: maternalModElig.eligible,
+                lockReason: maternalModElig.badgeText || "خاص بالإناث (15-49 سنة)",
               },
               {
                 id: "family_planning",
@@ -1176,6 +1204,8 @@ const FamilyFilesModule: React.FC = () => {
                 icon: Users,
                 color: "fuchsia",
                 isCompleted: !!hasFamilyPlanning,
+                eligible: fpModElig.eligible,
+                lockReason: fpModElig.badgeText || "خاص بالإناث (15-49 سنة)",
               },
               {
                 id: "premarital",
@@ -1185,6 +1215,8 @@ const FamilyFilesModule: React.FC = () => {
                 icon: CheckCircle2,
                 color: "cyan",
                 isCompleted: !!hasPremarital,
+                eligible: premaritalModElig.eligible,
+                lockReason: premaritalModElig.badgeText || "خاص بسن الزواج (15 سنة فأكثر)",
               },
               {
                 id: "geriatric",
@@ -1194,6 +1226,8 @@ const FamilyFilesModule: React.FC = () => {
                 icon: Award,
                 color: "orange",
                 isCompleted: !!hasGeriatric,
+                eligible: geriatricModElig.eligible,
+                lockReason: geriatricModElig.badgeText || "خاص بكبار السن (60 سنة فأكثر)",
               },
               {
                 id: "dental",
@@ -1203,6 +1237,7 @@ const FamilyFilesModule: React.FC = () => {
                 icon: Smile,
                 color: "blue",
                 isCompleted: !!hasDental,
+                eligible: true,
               },
             ];
 

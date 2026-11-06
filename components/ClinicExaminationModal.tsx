@@ -3,7 +3,7 @@ import {
   X, Save, Activity, ChevronDown, ChevronUp, Stethoscope, 
   FileText, Shield, AlertCircle, CheckCircle2, HeartPulse, 
   FlaskConical, Loader2, Sparkles, Scale, Info, Users, User, Clock, ShieldAlert, FolderOpen,
-  Baby, Syringe, Brain, Eye, Ear, HeartHandshake, Smile, Send
+  Baby, Syringe, Brain, Eye, Ear, HeartHandshake, Smile, Send, ArrowRight, Lock
 } from 'lucide-react';
 import { DB } from '../store.ts';
 import { HospitalOperationalEngine, PatientOperationalProfile } from '../services/hospitalOperationalEngine.ts';
@@ -13,7 +13,8 @@ import { evaluateClinicalModuleEligibility } from '../services/followupSuggestio
 import {
   ExamFormMode,
   EXAM_FORM_METADATA,
-  resolveBookingVisitAndForm
+  resolveBookingVisitAndForm,
+  getSmartOrderedExamModes
 } from '../utils/clinicalBookingRouter.ts';
 
 interface ClinicExaminationModalProps {
@@ -80,6 +81,11 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
         appointment.notes
       ),
     [appointment.clinics, resolvedPatient, appointment.notes]
+  );
+
+  const smartExamModes = useMemo(
+    () => getSmartOrderedExamModes(resolvedPatient, initialRoute.examFormMode),
+    [resolvedPatient, initialRoute.examFormMode]
   );
 
   const [examMode, setExamMode] = useState<ExamFormMode>(() => initialRoute.examFormMode);
@@ -874,11 +880,11 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 overflow-y-auto" dir="rtl">
-      <div className="bg-white w-full max-w-4xl rounded-3xl shadow-2xl flex flex-col max-h-[93vh] overflow-hidden border border-gray-100 animate-in zoom-in-95">
+    <div className="fixed inset-0 z-50 bg-slate-50 w-screen h-screen flex flex-col overflow-hidden animate-in fade-in duration-200" dir="rtl">
+      <div className="bg-slate-50 w-full h-full flex flex-col overflow-hidden">
         
-        {/* Header */}
-        <div className={`p-5 sm:p-6 text-white flex justify-between items-start shrink-0 rounded-t-3xl ${
+        {/* Full-Page Header */}
+        <div className={`px-6 py-4 text-white flex flex-wrap justify-between items-center gap-4 shrink-0 shadow-md ${
           examMode === 'child_under5' || examMode === 'child_over5'
             ? 'bg-gradient-to-r from-emerald-800 via-teal-800 to-emerald-900'
             : examMode === 'maternal_anc' || examMode === 'maternal_postpartum' || examMode === 'family_planning'
@@ -887,8 +893,19 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
             ? 'bg-gradient-to-r from-sky-800 via-cyan-800 to-sky-900'
             : 'bg-gradient-to-r from-indigo-900 via-slate-900 to-indigo-950'
         }`}>
-          <div className="flex items-start gap-3">
-            <div className="p-3 bg-white/15 rounded-2xl shrink-0 mt-0.5">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={saving}
+              className="px-3.5 py-2 bg-white/15 hover:bg-white/25 text-white rounded-xl text-xs font-black flex items-center gap-2 transition-all border border-white/20 cursor-pointer shrink-0"
+              title="العودة لقائمة العيادات"
+            >
+              <ArrowRight size={17} />
+              <span>العودة للعيادات</span>
+            </button>
+
+            <div className="p-3 bg-white/15 rounded-2xl shrink-0 hidden sm:flex">
               {examMode === 'child_under5' || examMode === 'child_over5' ? (
                 <Baby size={24} />
               ) : examMode === 'maternal_anc' || examMode === 'maternal_postpartum' || examMode === 'family_planning' ? (
@@ -940,34 +957,35 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
               </div>
             </div>
           </div>
-          <button 
-            onClick={onClose} 
-            disabled={saving}
-            className="p-1.5 hover:bg-white/10 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
-            title="إغلاق"
-          >
-            <X size={22} />
-          </button>
-        </div>
 
-        {/* Examination Form Mode Selector Bar (All Official Family File Forms F1 - F9) */}
-        <div className="bg-slate-100 border-b border-slate-200 px-4 py-2.5 flex flex-col gap-2 shrink-0">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 text-[11px] font-black text-slate-700">
-              <span>النموذج المحدد تلقائياً حسب الحجز وتخصص العيادة (يمكن التبديل عند الحاجة):</span>
-            </div>
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={() => setShowComprehensiveModal(true)}
-              className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 rounded-xl text-[11px] font-black flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
+              className="px-3.5 py-2 bg-white/15 hover:bg-white/25 text-white border border-white/25 rounded-xl text-xs font-black flex items-center gap-1.5 transition-colors cursor-pointer shrink-0"
             >
-              <FolderOpen size={13} className="text-indigo-600" />
-              <span>فتح السجل الصحي التراكمي الكامل</span>
+              <FolderOpen size={15} />
+              <span>السجل الصحي التراكمي الكامل</span>
+            </button>
+            <button 
+              onClick={onClose} 
+              disabled={saving}
+              className="p-2 hover:bg-white/15 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+              title="إغلاق"
+            >
+              <X size={22} />
             </button>
           </div>
+        </div>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
-            {ALL_EXAM_MODES.map(item => {
+        {/* Examination Form Mode Selector Bar (Smart Filtered by Patient Age/Gender & Booked Clinic) */}
+        <div className="bg-white border-b border-slate-200 px-6 py-2.5 flex flex-col gap-2 shrink-0 shadow-xs">
+          <div className="flex items-center gap-2 overflow-x-auto pb-1">
+            <span className="text-[11px] font-black text-emerald-800 bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0 ml-1">
+              النماذج المتاحة للمريض ({smartExamModes.eligibleModes.length}):
+            </span>
+
+            {smartExamModes.eligibleModes.map(item => {
               const isSelected = examMode === item.mode;
               return (
                 <button
@@ -977,26 +995,76 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
                     setExamMode(item.mode);
                     setUserManuallySwitchedMode(true);
                   }}
-                  className={`px-2.5 py-1.5 rounded-xl text-[11px] font-black flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                     isSelected
-                      ? 'bg-indigo-700 text-white shadow-xs'
-                      : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'
+                      ? 'bg-indigo-700 text-white shadow-xs ring-2 ring-indigo-300'
+                      : item.isBookedClinicForm
+                      ? 'bg-emerald-50 text-emerald-900 hover:bg-emerald-100 border-2 border-emerald-400'
+                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'
                   }`}
                 >
                   <span className={`px-1.5 py-0.2 rounded text-[10px] font-mono ${
-                    isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                    isSelected
+                      ? 'bg-white/20 text-white'
+                      : item.isBookedClinicForm
+                      ? 'bg-emerald-600 text-white'
+                      : 'bg-white text-slate-600 border border-slate-200'
                   }`}>
                     {item.badge}
                   </span>
                   <span>{item.shortLabel}</span>
+                  {item.isBookedClinicForm && (
+                    <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-black ${
+                      isSelected
+                        ? 'bg-emerald-400 text-slate-950'
+                        : 'bg-emerald-200/80 text-emerald-950'
+                    }`}>
+                      نموذج العيادة المحجوزة
+                    </span>
+                  )}
                 </button>
               );
             })}
+
+            {smartExamModes.ineligibleModes.length > 0 && (
+              <>
+                <div className="h-6 w-[1px] bg-slate-300 mx-1 shrink-0" />
+                <span className="text-[10px] font-bold text-slate-400 shrink-0 flex items-center gap-1">
+                  <Lock size={11} />
+                  <span>نماذج غير متوافقة مع عمر/نوع المريض:</span>
+                </span>
+                {smartExamModes.ineligibleModes.map(item => (
+                  <button
+                    key={item.mode}
+                    type="button"
+                    disabled
+                    title={item.detailedReason}
+                    className="px-2.5 py-1 rounded-xl text-right bg-slate-100/70 text-slate-400 border border-dashed border-slate-200 opacity-60 cursor-not-allowed flex items-center gap-1.5 whitespace-nowrap shrink-0 select-none"
+                  >
+                    <Lock size={12} className="text-slate-400 shrink-0" />
+                    <div className="flex flex-col leading-tight">
+                      <div className="flex items-center gap-1">
+                        <span className="px-1 py-0.1 rounded text-[9px] font-mono bg-slate-200/70 text-slate-500">
+                          {item.badge}
+                        </span>
+                        <span className="text-[11px] font-bold line-through decoration-slate-300">
+                          {item.shortLabel}
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-bold text-rose-500/90">
+                        مغلق: {item.shortLockReason}
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         </div>
 
-        {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1">
+        {/* Full-Page Form Body */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto px-4 sm:px-8 py-6">
+          <div className="max-w-7xl mx-auto space-y-6 bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 shadow-xs">
           
           {errorMessage && (
             <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-start gap-3 text-rose-800 text-sm">
@@ -2541,14 +2609,15 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
           </div>
 
           {/* Footer Action Buttons */}
-          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-4 border-t border-slate-200">
+          <div className="flex flex-col-reverse sm:flex-row gap-3 pt-5 border-t border-slate-200 sticky bottom-0 bg-white py-3 z-10">
             <button
               type="button"
               onClick={onClose}
               disabled={saving}
-              className="px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-colors disabled:opacity-50 text-sm text-center cursor-pointer"
+              className="px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl transition-colors disabled:opacity-50 text-sm text-center cursor-pointer flex items-center justify-center gap-2"
             >
-              إلغاء وتراجع
+              <ArrowRight size={16} />
+              <span>العودة لقائمة العيادات</span>
             </button>
             <button
               type="submit"
@@ -2568,7 +2637,7 @@ export const ClinicExaminationModal: React.FC<ClinicExaminationModalProps> = ({
               )}
             </button>
           </div>
-
+          </div>
         </form>
       </div>
 

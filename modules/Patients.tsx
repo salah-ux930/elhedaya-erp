@@ -6,7 +6,7 @@ import PatientTimeline from '../components/PatientTimeline.tsx';
 import FamilyComprehensiveHealthRecordModal from '../components/FamilyComprehensiveHealthRecordModal.tsx';
 import QuickClinicBookingModal from '../components/QuickClinicBookingModal.tsx';
 import { calculatePatientSuggestedFollowups } from '../services/followupSuggestions.ts';
-import { deduplicateFollowupsById, normalizeIdentifier } from '../utils/permissions.ts';
+import { deduplicateFollowupsById, normalizeIdentifier, validateQuadrupleName } from '../utils/permissions.ts';
 import { Patient, FundingEntity, DialysisSession, Service, Store, SuggestedFollowup } from '../types.ts';
 import { 
   Plus, Search, UserPlus, History, Phone, FileText, Loader2, 
@@ -23,6 +23,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [prefillData, setPrefillData] = useState<{ name?: string; phone?: string; national_id?: string }>({});
@@ -82,12 +83,19 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
 
   const handleAddPatient = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     const target = e.target as any;
-    
+
+    const nameCheck = validateQuadrupleName(target.name?.value, 'اسم المريض');
+    if (!nameCheck.valid) {
+      setFormError(nameCheck.reason);
+      return;
+    }
+
     // التحقق المسبق من رقم الهاتف
     const phone = target.phone.value;
     if (!/^01\d{9}$/.test(phone)) {
-      alert("رقم الهاتف غير صحيح! يجب أن يبدأ بـ 01 ويتكون من 11 رقم.");
+      setFormError("رقم الهاتف غير صحيح! يجب أن يبدأ بـ 01 ويتكون من 11 رقماً.");
       return;
     }
 
@@ -95,7 +103,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
     if (natVal) {
       const existingDup = patients.find(p => normalizeIdentifier(p.national_id) === natVal);
       if (existingDup) {
-        alert(`لا يمكن إنشاء تكرار جديد: الرقم القومي (${natVal}) مسجل بالفعل للمريض «${existingDup.name}».`);
+        setFormError(`لا يمكن إنشاء تكرار جديد: الرقم القومي (${natVal}) مسجل بالفعل للمريض «${existingDup.name}».`);
         return;
       }
     }
@@ -103,7 +111,7 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
     try {
       setLoading(true);
       const newPatient = await DB.addPatient({
-        name: target.name.value,
+        name: nameCheck.normalizedName,
         national_id: target.national_id.value,
         phone: phone,
         gender: target.gender.value || null,
@@ -132,8 +140,6 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
         });
       }
 
-      alert("تمت إضافة المريض بنجاح");
-      
       // إعادة تعيين الحقول
       setAddToFamilyFile(false);
       setSelectedFamilyFileId('');
@@ -142,11 +148,12 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
       setFamilyNotes('');
       setIsFamilyHead(false);
       setPrefillData({});
+      setFormError(null);
 
       setView('list');
       loadData();
     } catch (err: any) {
-      alert(err.message || "خطأ في إضافة المريض");
+      setFormError(err.message || "خطأ في إضافة المريض");
     } finally {
       setLoading(false);
     }
@@ -390,9 +397,18 @@ const PatientModule: React.FC<{ setTab?: (tab: string) => void }> = ({ setTab })
             <button onClick={() => { setView('list'); setPrefillData({}); }}><X size={24}/></button>
           </div>
           <form onSubmit={handleAddPatient} className="space-y-6">
+            {formError && (
+              <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-700 font-bold text-xs flex items-center gap-2">
+                <AlertCircle size={18} className="shrink-0 text-rose-600" />
+                <span>{formError}</span>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <input name="name" defaultValue={prefillData.name || ''} required placeholder="الاسم رباعياً بالكامل" className="p-4 border-2 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-primary-500" />
-              <input name="phone" defaultValue={prefillData.phone || ''} required placeholder="رقم الهاتف (01xxxxxxxxx)" className="p-4 border-2 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-primary-500" />
+              <div className="space-y-1">
+                <input name="name" defaultValue={prefillData.name || ''} required placeholder="الاسم رباعياً بالكامل (4 أسماء على الأقل) *" className="w-full p-4 border-2 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-primary-500" />
+                <span className="text-[11px] font-bold text-slate-500 block pr-2">يشترط إدخال الاسم رباعياً على الأقل (مثال: أحمد محمد علي حسن)</span>
+              </div>
+              <input name="phone" defaultValue={prefillData.phone || ''} required placeholder="رقم الهاتف (01xxxxxxxxx)" className="p-4 border-2 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-primary-500 self-start" />
               <input name="national_id" defaultValue={prefillData.national_id || ''} required placeholder="الرقم القومي" className="p-4 border-2 rounded-2xl outline-none font-mono text-sm focus:ring-2 focus:ring-primary-500" />
               <input name="dob" type="date" required className="p-4 border-2 rounded-2xl outline-none text-sm focus:ring-2 focus:ring-primary-500" />
               <select name="gender" required className="p-4 border-2 rounded-2xl outline-none font-bold text-sm focus:ring-2 focus:ring-primary-500">

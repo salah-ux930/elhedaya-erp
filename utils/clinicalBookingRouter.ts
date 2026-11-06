@@ -128,6 +128,215 @@ export const EXAM_FORM_METADATA: Record<
   }
 };
 
+export interface ExamModeEligibilityInfo {
+  mode: ExamFormMode;
+  shortLabel: string;
+  badge: string;
+  eligible: boolean;
+  shortLockReason: string;
+  detailedReason: string;
+  isBookedClinicForm: boolean;
+}
+
+export const ALL_EXAM_MODE_DEFINITIONS: { mode: ExamFormMode; shortLabel: string; badge: string }[] = [
+  { mode: 'child_under5', shortLabel: 'طفل < 5 سنوات', badge: 'ف5أ/ب/ج' },
+  { mode: 'child_over5', shortLabel: 'السن المدرسي 5-18', badge: 'ف5د' },
+  { mode: 'maternal_anc', shortLabel: 'متابعة الحمل', badge: 'ف6أ' },
+  { mode: 'maternal_postpartum', shortLabel: 'ما بعد الولادة', badge: 'ف6ب' },
+  { mode: 'family_planning', shortLabel: 'تنظيم الأسرة', badge: 'ف7' },
+  { mode: 'chronic_followup', shortLabel: 'أمراض مزمنة (ضغط/سكر)', badge: 'ف4أ/ب/ج' },
+  { mode: 'dental', shortLabel: 'فحص الأسنان', badge: 'ف3' },
+  { mode: 'premarital', shortLabel: 'فحص راغبي الزواج', badge: 'ف8أ/ب' },
+  { mode: 'geriatric', shortLabel: 'تقييم المسنين', badge: 'ف9' },
+  { mode: 'general', shortLabel: 'الفحص الشامل العام', badge: 'ف1' }
+];
+
+/**
+ * يقيّم مدى ملاءمة النموذج الطبي (ف1 إلى ف9) لعمر ونوع المريض الحالي،
+ * ويعيد سبب الإغلاق السريري المختصر والمفصل عند عدم التوافق.
+ */
+export function evaluateExamFormModeEligibility(
+  patient?: Partial<Patient> | null,
+  mode?: ExamFormMode
+): {
+  eligible: boolean;
+  shortLockReason: string;
+  detailedReason: string;
+  badgeText: string;
+} {
+  const targetMode = mode || 'general';
+  const pat = (patient as Patient) || null;
+
+  if (targetMode === 'general' || targetMode === 'dental') {
+    return {
+      eligible: true,
+      shortLockReason: '',
+      detailedReason: '',
+      badgeText: 'متاح لجميع الأعمار'
+    };
+  }
+
+  if (targetMode === 'child_under5') {
+    const res = evaluateClinicalModuleEligibility(pat, 'child', 'under5');
+    if (res.eligible) {
+      return { eligible: true, shortLockReason: '', detailedReason: '', badgeText: res.badgeText };
+    }
+    const ageLabel = res.ageYears !== null ? ` (العمر الحالي: ${res.ageYears} سنة)` : '';
+    return {
+      eligible: false,
+      shortLockReason: 'خاص بالأطفال < 5 سنوات',
+      detailedReason: res.reason || `غير متاح: هذا النموذج مخصص للأطفال دون 5 سنوات فقط${ageLabel}.`,
+      badgeText: res.badgeText
+    };
+  }
+
+  if (targetMode === 'child_over5') {
+    const res = evaluateClinicalModuleEligibility(pat, 'child', 'over5');
+    if (res.eligible) {
+      return { eligible: true, shortLockReason: '', detailedReason: '', badgeText: res.badgeText };
+    }
+    const ageLabel =
+      res.ageYears !== null
+        ? res.ageYears < 5
+          ? ` (العمر الحالي: ${res.ageMonths ?? res.ageYears} شهر — دون 5 سنوات)`
+          : ` (العمر الحالي: ${res.ageYears} سنة — بالغ)`
+        : '';
+    return {
+      eligible: false,
+      shortLockReason: 'خاص بالسن المدرسي (5–17 سنة)',
+      detailedReason: res.reason || `غير متاح: هذا النموذج مخصص لسن المدرسة والمراهقين (5 إلى 17 سنة)${ageLabel}.`,
+      badgeText: res.badgeText
+    };
+  }
+
+  if (targetMode === 'maternal_anc' || targetMode === 'maternal_postpartum') {
+    const res = evaluateClinicalModuleEligibility(pat, 'maternal');
+    if (res.eligible) {
+      return { eligible: true, shortLockReason: '', detailedReason: '', badgeText: res.badgeText };
+    }
+    const shortReason =
+      res.normalizedGender === 'male'
+        ? 'خاص بالإناث (15–49 سنة) — المريض ذكر'
+        : res.ageYears !== null && res.ageYears < 15
+        ? `خاص بسن الإنجاب (15–49 سنة) — طفلة (${res.ageYears} سنة)`
+        : 'خاص بالإناث في سن الإنجاب (15–49 سنة)';
+    return {
+      eligible: false,
+      shortLockReason: shortReason,
+      detailedReason: res.reason || 'غير متاح: نماذج متابعة الحمل والنفاس مخصصة للإناث في سن الإنجاب (15 - 49 سنة) فقط.',
+      badgeText: res.badgeText
+    };
+  }
+
+  if (targetMode === 'family_planning') {
+    const res = evaluateClinicalModuleEligibility(pat, 'family_planning');
+    if (res.eligible) {
+      return { eligible: true, shortLockReason: '', detailedReason: '', badgeText: res.badgeText };
+    }
+    const shortReason =
+      res.normalizedGender === 'male'
+        ? 'خاص بالإناث (15–49 سنة) — المريض ذكر'
+        : res.ageYears !== null && res.ageYears < 15
+        ? `خاص بسن الإنجاب (15–49 سنة) — طفلة (${res.ageYears} سنة)`
+        : 'خاص بالإناث في سن الإنجاب (15–49 سنة)';
+    return {
+      eligible: false,
+      shortLockReason: shortReason,
+      detailedReason: res.reason || 'غير متاح: نموذج تنظيم الأسرة مخصص للإناث في سن الإنجاب (15 - 49 سنة) فقط.',
+      badgeText: res.badgeText
+    };
+  }
+
+  if (targetMode === 'chronic_followup') {
+    const res = evaluateClinicalModuleEligibility(pat, 'chronic_followup');
+    if (res.eligible) {
+      return { eligible: true, shortLockReason: '', detailedReason: '', badgeText: res.badgeText };
+    }
+    return {
+      eligible: false,
+      shortLockReason: 'خاص بالبالغين (≥ 15 سنة) أو أصحاب المزمن',
+      detailedReason: res.reason || 'غير متاح: نموذج متابعة الأمراض المزمنة مخصص للبالغين (15 سنة فأكثر) أو المسجل لديهم أمراض مزمنة.',
+      badgeText: res.badgeText
+    };
+  }
+
+  if (targetMode === 'premarital') {
+    const res = evaluateClinicalModuleEligibility(pat, 'premarital');
+    if (res.eligible) {
+      return { eligible: true, shortLockReason: '', detailedReason: '', badgeText: res.badgeText };
+    }
+    return {
+      eligible: false,
+      shortLockReason: 'خاص بسن الزواج (≥ 15 سنة)',
+      detailedReason: res.reason || 'غير متاح: فحص راغبي الزواج مخصص للفئة العمرية (15 سنة فأكثر).',
+      badgeText: res.badgeText
+    };
+  }
+
+  if (targetMode === 'geriatric') {
+    const res = evaluateClinicalModuleEligibility(pat, 'geriatric');
+    if (res.eligible) {
+      return { eligible: true, shortLockReason: '', detailedReason: '', badgeText: res.badgeText };
+    }
+    return {
+      eligible: false,
+      shortLockReason: 'خاص بكبار السن (≥ 60 سنة)',
+      detailedReason: res.reason || 'غير متاح: تقييم المسنين الشامل مخصص لكبار السن (60 سنة فأكثر) فقط.',
+      badgeText: res.badgeText
+    };
+  }
+
+  return {
+    eligible: true,
+    shortLockReason: '',
+    detailedReason: '',
+    badgeText: ''
+  };
+}
+
+/**
+ * يعيد قائمة النماذج الطبية مرتبة بذكاء للمريض:
+ * 1) النماذج المتوافقة مع عمر ونوع المريض (مع وضع نموذج العيادة المحجوزة في الصدارة).
+ * 2) النماذج غير المتوافقة مع عمر أو نوع المريض (مغلقة وباهتة مع سبب الإغلاق السريري).
+ */
+export function getSmartOrderedExamModes(
+  patient?: Partial<Patient> | null,
+  bookedClinicMode?: ExamFormMode
+): {
+  eligibleModes: ExamModeEligibilityInfo[];
+  ineligibleModes: ExamModeEligibilityInfo[];
+  allModes: ExamModeEligibilityInfo[];
+} {
+  const evaluated: ExamModeEligibilityInfo[] = ALL_EXAM_MODE_DEFINITIONS.map((def) => {
+    const elig = evaluateExamFormModeEligibility(patient, def.mode);
+    return {
+      mode: def.mode,
+      shortLabel: def.shortLabel,
+      badge: def.badge,
+      eligible: elig.eligible,
+      shortLockReason: elig.shortLockReason,
+      detailedReason: elig.detailedReason,
+      isBookedClinicForm: Boolean(bookedClinicMode && def.mode === bookedClinicMode && elig.eligible)
+    };
+  });
+
+  const eligibleModes = evaluated
+    .filter((m) => m.eligible)
+    .sort((a, b) => {
+      if (a.isBookedClinicForm && !b.isBookedClinicForm) return -1;
+      if (!a.isBookedClinicForm && b.isBookedClinicForm) return 1;
+      return 0;
+    });
+
+  const ineligibleModes = evaluated.filter((m) => !m.eligible);
+
+  return {
+    eligibleModes,
+    ineligibleModes,
+    allModes: [...eligibleModes, ...ineligibleModes]
+  };
+}
+
 /**
  * يستنتج تلقائياً نوع الحجز والنموذج الطبي المعتمد (ف1 إلى ف10) وكود التردد (ف2ب)
  * بناءً على تخصص العيادة المختارة وخصائص المريض (العمر/النوع) وملاحظات الحجز.
@@ -277,6 +486,22 @@ export function resolveBookingVisitAndForm(
       ) {
         mode = 'child_over5';
       } else if (ageYears !== null && ageYears >= 60 && hintText.includes('مسن')) {
+        mode = 'geriatric';
+      } else {
+        mode = 'general';
+      }
+    }
+  }
+
+  // الحارس السريري الذكي: منع اختيار نموذج غير متوافق مع عمر أو نوع المريض (مثل فتح نموذج حمل لطفل ذكر)
+  if (patient && (patient.date_of_birth || (patient as any).birth_date || patient.gender)) {
+    const modeCheck = evaluateExamFormModeEligibility(patient, mode);
+    if (!modeCheck.eligible) {
+      if ((ageYears !== null && ageYears < 5) || (ageMonths !== null && ageMonths < 60)) {
+        mode = 'child_under5';
+      } else if (ageYears !== null && ageYears >= 5 && ageYears < 18) {
+        mode = 'child_over5';
+      } else if (ageYears !== null && ageYears >= 60) {
         mode = 'geriatric';
       } else {
         mode = 'general';
